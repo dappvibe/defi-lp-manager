@@ -80,7 +80,7 @@ class PoolMonitor {
           const { args } = log;
           const { sqrtPriceX96, amount0, amount1, tick } = args;
 
-          const newPriceT1T0 = parseFloat(calculatePrice(sqrtPriceX96, poolInfo.token1.decimals, poolInfo.token0.decimals));
+          const newPriceT1T0 = parseFloat(calculatePrice(sqrtPriceX96, poolInfo.token0.decimals, poolInfo.token1.decimals));
           let volume;
           let volumeTokenSymbol;
 
