@@ -2,28 +2,36 @@
  * Contract interaction service
  * Handles creation and interaction with Ethereum contracts
  */
-const { ethers } = require('ethers');
+const { getContract } = require('viem');
 const { getProvider } = require('./provider');
 const { erc20: erc20Abi, uniswapV3Pool: poolAbi } = require('../../../data/abis');
 
 /**
  * Create an ERC20 token contract instance
  * @param {string} tokenAddress - The token contract address
- * @returns {ethers.Contract} The contract instance
+ * @returns {Object} The contract instance
  */
 function createErc20Contract(tokenAddress) {
-  const provider = getProvider();
-  return new ethers.Contract(tokenAddress, erc20Abi, provider);
+  const client = getProvider();
+  return getContract({
+    address: tokenAddress,
+    abi: erc20Abi,
+    client
+  });
 }
 
 /**
  * Create a Uniswap V3 pool contract instance
  * @param {string} poolAddress - The pool contract address
- * @returns {ethers.Contract} The contract instance
+ * @returns {Object} The contract instance
  */
 function createPoolContract(poolAddress) {
-  const provider = getProvider();
-  return new ethers.Contract(poolAddress, poolAbi, provider);
+  const client = getProvider();
+  return getContract({
+    address: poolAddress,
+    abi: poolAbi,
+    client
+  });
 }
 
 /**
@@ -36,8 +44,8 @@ async function getTokenInfo(tokenAddress) {
 
   try {
     const [symbol, decimals] = await Promise.all([
-      tokenContract.symbol(),
-      tokenContract.decimals()
+      tokenContract.read.symbol(),
+      tokenContract.read.decimals()
     ]);
 
     return {

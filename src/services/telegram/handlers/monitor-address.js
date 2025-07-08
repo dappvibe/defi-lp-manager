@@ -3,15 +3,16 @@
  * Processes an Ethereum address and sets up pool monitoring
  * @param {TelegramBot} bot - The bot instance
  * @param {Object} msg - Message object from Telegram
- * @param {Object} provider - Ethereum provider instance
+ * @param {Object} provider - Viem client instance
  * @param {Object} monitoredPools - Object containing monitored pools
  * @param {string} timezone - Timezone for time display
  */
-const { ethers } = require('ethers');
+const { getContract } = require('viem');
 const { getTokenInfo, createPoolContract } = require('../../blockchain/contracts');
 const poolMonitor = require('../../monitoring/pool-monitor');
 const { getTimeInTimezone } = require('../../../utils/time');
 const { calculatePrice } = require('../../blockchain/price-calculator');
+const { uniswapV3Pool: poolAbi } = require('../../../../data/abis');
 
 async function handleMonitorAddress(bot, msg, provider, monitoredPools, timezone) {
   const chatId = msg.chat.id;
@@ -32,8 +33,8 @@ async function handleMonitorAddress(bot, msg, provider, monitoredPools, timezone
 
     // Get token0 and token1 addresses
     const [token0Address, token1Address] = await Promise.all([
-      poolContract.token0(),
-      poolContract.token1()
+      poolContract.read.token0(),
+      poolContract.read.token1()
     ]);
 
     // Get token info
@@ -43,13 +44,14 @@ async function handleMonitorAddress(bot, msg, provider, monitoredPools, timezone
     ]);
 
     // Get current price
-    const slot0 = await poolContract.slot0();
-    const sqrtPriceX96 = slot0.sqrtPriceX96.toString();
+    const slot0 = await poolContract.read.slot0();
+    const sqrtPriceX96 = slot0[0]; // slot0 returns an array [sqrtPriceX96, tick, observationIndex, observationCardinality, observationCardinalityNext, feeProtocol, unlocked]
+    const tick = slot0[1];
     const priceT1T0 = parseFloat(calculatePrice(sqrtPriceX96, token1Info.decimals, token0Info.decimals));
 
     // Update the loading message with the initial price info
     const time = getTimeInTimezone(timezone);
-    const initialText = `${priceT1T0.toFixed(8)} ${token1Info.symbol}/${token0Info.symbol} ${time}\nTick: ${slot0.tick}\nLast Swap: N/A`;
+    const initialText = `${priceT1T0.toFixed(8)} ${token1Info.symbol}/${token0Info.symbol} ${time}\nTick: ${tick}\nLast Swap: N/A`;
 
     const updatedMessage = await bot.editMessageText(initialText, {
       chat_id: chatId,
