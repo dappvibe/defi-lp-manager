@@ -17,12 +17,23 @@ const CHAIN_MAP = {
 };
 
 /**
+ * Map network names to Alchemy URLs
+ */
+const ALCHEMY_URL_MAP = {
+    'mainnet': 'eth-mainnet.g.alchemy.com',
+    'sepolia': 'eth-sepolia.g.alchemy.com',
+    'polygon': 'polygon-mainnet.g.alchemy.com',
+    'arbitrum': 'arb-mainnet.g.alchemy.com'
+};
+
+/**
  * Create a provider instance for interacting with the blockchain
  * @returns {PublicClient} The viem client instance
  */
 function createProvider() {
     const chain = CHAIN_MAP[config.blockchain.network] || mainnet;
-    const alchemyUrl = `https://${config.blockchain.network}.g.alchemy.com/v2/${config.blockchain.alchemyApiKey}`;
+    const alchemyHost = ALCHEMY_URL_MAP[config.blockchain.network] || 'eth-mainnet.g.alchemy.com';
+    const alchemyUrl = `https://${alchemyHost}/v2/${config.blockchain.alchemyApiKey}`;
 
     return createPublicClient({
         chain,
