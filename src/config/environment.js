@@ -32,6 +32,11 @@ const config = {
         timezone: process.env.TELEGRAM_TIMEZONE || 'Asia/Phnom_Penh',
     },
 
+    // Database configuration
+    database: {
+        mongoUri: process.env.MONGODB_URI || 'mongodb://mongodb:27017/defi-lp-manager',
+    },
+
     // Firebase configuration (for future use)
     firebase: {
         projectId: process.env.FIREBASE_PROJECT_ID,

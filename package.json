@@ -16,6 +16,7 @@
     "dotenv": "^16.4.5",
     "firebase-admin": "^13.4.0",
     "jsbi": "^4.3.2",
+      "mongodb": "^6.3.0",
     "node-telegram-bot-api": "^0.66.0",
     "viem": "^2.31.7"
   }
