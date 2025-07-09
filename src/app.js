@@ -6,6 +6,7 @@ const { environment } = require('./config');
 const { getProvider } = require('./services/blockchain/provider');
 const poolMonitor = require('./services/monitoring/pool-monitor');
 const initTelegramBot = require('./services/telegram/bot');
+const PositionMonitor = require('./services/blockchain/position-monitor');
 
 /**
  * Initialize the application
@@ -15,11 +16,15 @@ async function initializeApp() {
     // Initialize services
     const provider = getProvider();
 
-    // Initialize the Telegram bot with the pool monitor
+    // Initialize position monitor for wallet tracking
+    const positionMonitor = new PositionMonitor(provider);
+
+    // Initialize the Telegram bot with the pool monitor and position monitor
     const bot = initTelegramBot(
         environment.telegram.botToken,
         provider,
         poolMonitor.getMonitoredPools(),
+        positionMonitor,
         environment.telegram.timezone
     );
 
@@ -31,6 +36,7 @@ async function initializeApp() {
         provider,
         bot,
         poolMonitor,
+        positionMonitor,
     };
 }
 
