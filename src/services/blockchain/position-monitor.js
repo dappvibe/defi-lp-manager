@@ -13,9 +13,11 @@ class PositionMonitor {
   /**
    * Create a new position monitor
    * @param {object} provider - Blockchain provider
+   * @param {object} mongoStateManager - MongoDB state manager instance
    */
-  constructor(provider) {
+  constructor(provider, mongoStateManager) {
     this.provider = provider;
+    this.mongoStateManager = mongoStateManager;
     this.monitoredWallets = new Map(); // wallet -> { chatId, lastCheck }
     this.positionManagerAddress = contracts.getContractAddress('pancakeswap', 'arbitrum', 'nonfungiblePositionManager');
     this.positionManagerContract = this.createPositionManagerContract();
@@ -274,7 +276,7 @@ class PositionMonitor {
    * @param {number} chatId - Telegram chat ID
    * @returns {boolean} Success status
    */
-  startMonitoring(walletAddress, chatId) {
+  async startMonitoring(walletAddress, chatId) {
     // Normalize address
     const normalizedAddress = walletAddress.toLowerCase();
 
@@ -286,6 +288,7 @@ class PositionMonitor {
       if (info.chatId !== chatId) {
         info.chatId = chatId;
         this.monitoredWallets.set(normalizedAddress, info);
+        await this.saveState();
       }
 
       return false; // Already monitoring
@@ -297,6 +300,9 @@ class PositionMonitor {
       lastCheck: Date.now()
     });
 
+    // Save to MongoDB
+    await this.saveState();
+
     return true; // Started monitoring
   }
 
@@ -305,9 +311,16 @@ class PositionMonitor {
    * @param {string} walletAddress - Wallet address
    * @returns {boolean} Success status
    */
-  stopMonitoring(walletAddress) {
+  async stopMonitoring(walletAddress) {
     const normalizedAddress = walletAddress.toLowerCase();
-    return this.monitoredWallets.delete(normalizedAddress);
+    const result = this.monitoredWallets.delete(normalizedAddress);
+
+    if (result) {
+      // Save updated state to MongoDB
+      await this.saveState();
+    }
+
+    return result;
   }
 
   /**
@@ -326,6 +339,42 @@ class PositionMonitor {
   isMonitored(walletAddress) {
     const normalizedAddress = walletAddress.toLowerCase();
     return this.monitoredWallets.has(normalizedAddress);
+  }
+
+  /**
+   * Save current state to MongoDB
+   */
+  async saveState() {
+    if (this.mongoStateManager) {
+      await this.mongoStateManager.saveMonitoredWallets(this.monitoredWallets);
+    }
+  }
+
+  /**
+   * Initialize the position monitor by restoring state from MongoDB
+   */
+  async initialize() {
+    if (!this.mongoStateManager) {
+      console.warn('MongoDB state manager not provided, cannot restore wallets');
+      return;
+    }
+
+    try {
+      // Load wallets from MongoDB
+      const wallets = await this.mongoStateManager.loadMonitoredWallets();
+
+      // Restore each wallet to the monitored map
+      wallets.forEach(wallet => {
+        this.monitoredWallets.set(wallet.walletAddress, {
+          chatId: wallet.chatId,
+          lastCheck: wallet.lastCheck || Date.now()
+        });
+      });
+
+      console.log(`Restored ${wallets.length} monitored wallets from database`);
+    } catch (error) {
+      console.error('Error initializing position monitor:', error);
+    }
   }
 }
 

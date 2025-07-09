@@ -8,7 +8,8 @@ class MongoStateManager {
   constructor() {
     this.client = null;
     this.db = null;
-    this.collection = null;
+    this.poolsCollection = null;
+    this.walletsCollection = null;
     this.isConnected = false;
   }
 
@@ -22,7 +23,8 @@ class MongoStateManager {
 
       await this.client.connect();
       this.db = this.client.db();
-      this.collection = this.db.collection('monitored_pools');
+      this.poolsCollection = this.db.collection('monitored_pools');
+      this.walletsCollection = this.db.collection('monitored_wallets');
       this.isConnected = true;
 
       console.log('Connected to MongoDB');
@@ -56,7 +58,7 @@ class MongoStateManager {
         updatedAt: new Date()
       };
 
-      await this.collection.replaceOne(
+      await this.poolsCollection.replaceOne(
         { poolAddress },
         stateData,
         { upsert: true }
@@ -97,7 +99,7 @@ class MongoStateManager {
     }
 
     try {
-      const pools = await this.collection.find({}).toArray();
+      const pools = await this.poolsCollection.find({}).toArray();
       const result = {};
 
       pools.forEach(pool => {
@@ -124,10 +126,63 @@ class MongoStateManager {
     }
 
     try {
-      await this.collection.deleteOne({ poolAddress });
+      await this.poolsCollection.deleteOne({ poolAddress });
       console.log(`Removed pool ${poolAddress} from database`);
     } catch (error) {
       console.error(`Error removing pool ${poolAddress}:`, error.message);
+    }
+  }
+
+  /**
+   * Save monitored wallets to database
+   * @param {Map} monitoredWallets - Map of wallet addresses to monitoring data
+   */
+  async saveMonitoredWallets(monitoredWallets) {
+    if (!this.isConnected) {
+      console.warn('Cannot save monitored wallets: Not connected to MongoDB');
+      return;
+    }
+
+    try {
+      // Clear previous wallets
+      await this.walletsCollection.deleteMany({});
+
+      // Convert Map to array for storage
+      const walletsArray = Array.from(monitoredWallets.entries()).map(([address, data]) => ({
+        walletAddress: address,
+        chatId: data.chatId,
+        lastCheck: data.lastCheck,
+        updatedAt: new Date()
+      }));
+
+      // Insert all wallets if there are any
+      if (walletsArray.length > 0) {
+        await this.walletsCollection.insertMany(walletsArray);
+      }
+
+      console.log(`Saved ${walletsArray.length} monitored wallets to database`);
+    } catch (error) {
+      console.error('Error saving monitored wallets:', error.message);
+    }
+  }
+
+  /**
+   * Load monitored wallets from database
+   * @returns {Array} Array of wallet data objects
+   */
+  async loadMonitoredWallets() {
+    if (!this.isConnected) {
+      console.warn('Cannot load monitored wallets: Not connected to MongoDB');
+      return [];
+    }
+
+    try {
+      const wallets = await this.walletsCollection.find({}).toArray();
+      console.log(`Loaded ${wallets.length} monitored wallets from database`);
+      return wallets;
+    } catch (error) {
+      console.error('Error loading monitored wallets:', error.message);
+      return [];
     }
   }
 

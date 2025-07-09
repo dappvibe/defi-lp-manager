@@ -7,6 +7,7 @@ const { getProvider } = require('./services/blockchain/provider');
 const poolMonitor = require('./services/monitoring/pool-monitor');
 const initTelegramBot = require('./services/telegram/bot');
 const PositionMonitor = require('./services/blockchain/position-monitor');
+const MongoStateManager = require('./services/monitoring/mongo-state-manager');
 
 /**
  * Initialize the application
@@ -16,8 +17,15 @@ async function initializeApp() {
     // Initialize services
     const provider = getProvider();
 
-    // Initialize position monitor for wallet tracking
-    const positionMonitor = new PositionMonitor(provider);
+    // Initialize MongoDB state manager
+    const mongoStateManager = new MongoStateManager();
+    await mongoStateManager.connect();
+
+    // Initialize position monitor for wallet tracking with state manager
+    const positionMonitor = new PositionMonitor(provider, mongoStateManager);
+
+    // Restore position monitor state from MongoDB
+    await positionMonitor.initialize();
 
     // Initialize the Telegram bot with the pool monitor and position monitor
     const bot = initTelegramBot(
@@ -37,6 +45,7 @@ async function initializeApp() {
         bot,
         poolMonitor,
         positionMonitor,
+        mongoStateManager,
     };
 }
 
@@ -45,10 +54,15 @@ async function initializeApp() {
  * @param {Object} appContext - The application context with services to clean up
  */
 async function cleanupApp(appContext) {
-    const { bot, poolMonitor } = appContext;
+    const { bot, poolMonitor, mongoStateManager } = appContext;
 
-    // Stop monitoring all pools (this will also close MongoDB connection)
+    // Stop monitoring all pools
     await poolMonitor.stopAllMonitoring();
+
+    // Close MongoDB connection if available
+    if (mongoStateManager) {
+        await mongoStateManager.close();
+    }
 
     // Stop the Telegram bot
     if (bot && typeof bot.stopPolling === 'function') {
