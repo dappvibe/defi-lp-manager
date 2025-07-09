@@ -34,6 +34,8 @@ defi-lp-manager/
 - `ALCHEMY_API_KEY`: Your Alchemy API key for blockchain access
 - `TELEGRAM_BOT_TOKEN`: Your Telegram bot token
 - `TELEGRAM_TIMEZONE`: Timezone for displaying times (default: 'Asia/Phnom_Penh')
+- `TELEGRAM_MAX_REQUESTS_PER_SECOND`: Maximum API requests per second (default: 30)
+- `TELEGRAM_MESSAGE_EDIT_DELAY`: Minimum milliseconds between message edits (default: 3000)
 
 ## Features
 

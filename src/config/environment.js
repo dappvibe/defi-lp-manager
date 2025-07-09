@@ -30,6 +30,10 @@ const config = {
     telegram: {
         botToken: process.env.TELEGRAM_BOT_TOKEN,
         timezone: process.env.TELEGRAM_TIMEZONE || 'Asia/Phnom_Penh',
+        rateLimit: {
+            maxRequestsPerSecond: parseInt(process.env.TELEGRAM_MAX_REQUESTS_PER_SECOND || '30', 10),
+            messageEditDelay: parseInt(process.env.TELEGRAM_MESSAGE_EDIT_DELAY || '3000', 10), // 3 seconds between edits
+        },
     },
 
     // Database configuration

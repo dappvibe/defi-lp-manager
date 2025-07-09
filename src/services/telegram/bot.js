@@ -6,6 +6,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const { environment } = require('../../config');
 const handlers = require('./handlers');
 const { isValidEthereumAddress } = require('../blockchain/price-calculator');
+const Throttler = require('../../utils/throttler');
 
 /**
  * Initialize the Telegram bot with all handlers
@@ -16,7 +17,53 @@ const { isValidEthereumAddress } = require('../blockchain/price-calculator');
  * @returns {TelegramBot} - Initialized bot instance
  */
 function initTelegramBot(token, provider, monitoredPools, timezone) {
+  // Create the bot with standard options
   const bot = new TelegramBot(token, { polling: true });
+
+  // Add throttling capabilities
+  const rateLimit = environment.telegram.rateLimit;
+  const throttler = new Throttler({
+    maxRequests: rateLimit.maxRequestsPerSecond,
+    timeWindowMs: 1000
+  });
+
+  // Track last edit time for messages
+  const lastEditTimes = {};
+
+  // Override bot methods with throttled versions
+  const originalSendMessage = bot.sendMessage;
+  bot.sendMessage = async function(chatId, text, options = {}) {
+    return throttler.throttle(() => originalSendMessage.call(bot, chatId, text, options));
+  };
+
+  const originalEditMessageText = bot.editMessageText;
+  bot.editMessageText = async function(text, options = {}) {
+    const messageKey = `${options.chat_id || ''}_${options.message_id || ''}`;
+    const now = Date.now();
+    const lastEdit = lastEditTimes[messageKey] || 0;
+
+    // Calculate delay needed to respect minimum time between edits
+    const timeSinceLastEdit = now - lastEdit;
+    const delayNeeded = Math.max(0, rateLimit.messageEditDelay - timeSinceLastEdit);
+
+    if (delayNeeded > 0) {
+      await new Promise(resolve => setTimeout(resolve, delayNeeded));
+    }
+
+    // Update last edit time and throttle the API call
+    lastEditTimes[messageKey] = Date.now();
+    return throttler.throttle(() => originalEditMessageText.call(bot, text, options));
+  };
+
+  const originalAnswerCallbackQuery = bot.answerCallbackQuery;
+  bot.answerCallbackQuery = async function(callbackQueryId, options = {}) {
+    return throttler.throttle(() => originalAnswerCallbackQuery.call(bot, callbackQueryId, options));
+  };
+
+  const originalSendPhoto = bot.sendPhoto;
+  bot.sendPhoto = async function(chatId, photo, options = {}) {
+    return throttler.throttle(() => originalSendPhoto.call(bot, chatId, photo, options));
+  };
 
   // Log events
   bot.on('polling_start', () => console.log('Telegram Bot started polling'));
