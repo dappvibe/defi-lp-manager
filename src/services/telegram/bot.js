@@ -6,7 +6,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const { environment } = require('../../config');
 const handlers = require('./handlers');
 const walletHandlers = require('./handlers/wallet-handler');
-const { isValidEthereumAddress } = require('../blockchain/price-calculator');
+const { isValidEthereumAddress } = require('../uniswap/utils');
 const Throttler = require('../../utils/throttler');
 
 /**
@@ -91,7 +91,7 @@ function initTelegramBot(token, provider, monitoredPools, positionMonitor, timez
     handlers.handleNotify(bot, msg, match, monitoredPools, timezone);
   });
 
-  // Wallet position monitoring commands
+  // Wallet position database commands
   bot.onText(/\/wallet(?:\s+(.+))?/, (msg, match) => {
     walletHandlers.handleWalletCommand(bot, msg, match, positionMonitor, timezone);
   });
@@ -117,7 +117,7 @@ function initTelegramBot(token, provider, monitoredPools, positionMonitor, timez
       if (msg.reply_to_message && msg.reply_to_message.text === "Send a wallet address to monitor PancakeSwap V3 positions:") {
         await walletHandlers.processWalletAddress(bot, msg.chat.id, messageText, positionMonitor, timezone);
       } else {
-        // Default to pool monitoring
+        // Default to pool database
         await handlers.handleMonitorAddress(bot, msg, provider, monitoredPools, timezone);
       }
     } else {

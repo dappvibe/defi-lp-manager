@@ -1,15 +1,15 @@
 /**
- * Pool monitoring service
- * Handles monitoring of Uniswap pools and price alerts
+ * Pool database service
+ * Handles database of Uniswap pools and price alerts
  */
 const { formatUnits, parseEventLogs } = require('viem');
 const { getTimeInTimezone } = require('../../utils/time');
-const { calculatePrice } = require('../blockchain/price-calculator');
-const { uniswapV3Pool: poolAbi } = require('../../../data/abis');
-const MongoStateManager = require('./mongo-state-manager');
+const { calculatePrice } = require('./utils');
+const { uniswapV3Pool: poolAbi } = require('./abis');
+const MongoStateManager = require('../database/mongo');
 
 /**
- * Class for monitoring Uniswap V3 pools
+ * Class for database Uniswap V3 pools
  */
 class PoolMonitor {
   constructor() {
@@ -21,7 +21,7 @@ class PoolMonitor {
 
   /**
    * Initialize the pool monitor
-   * Connects to database and restores monitoring state
+   * Connects to database and restores database state
    * @param {Object} botInstance - Telegram bot instance
    * @param {Object} providerInstance - Viem client instance
    * @param {string} timezone - Timezone for time display
@@ -38,7 +38,7 @@ class PoolMonitor {
     // Load saved state
     const savedState = await this.stateManager.loadAllPools();
 
-    // Restore monitoring for each saved pool
+    // Restore database for each saved pool
     for (const [poolAddress, poolData] of Object.entries(savedState)) {
       try {
         await this.startMonitoring(
@@ -56,7 +56,7 @@ class PoolMonitor {
   }
 
   /**
-   * Start monitoring a pool
+   * Start database a pool
    * @param {Object} botInstance - Telegram bot instance
    * @param {string} poolAddress - Pool contract address
    * @param {Object} poolData - Pool data including tokens info
@@ -79,8 +79,8 @@ class PoolMonitor {
   }
 
   /**
-   * Stop monitoring a specific pool
-   * @param {string} poolAddress - Pool address to stop monitoring
+   * Stop database a specific pool
+   * @param {string} poolAddress - Pool address to stop database
    */
   async stopMonitoring(poolAddress) {
     if (this.watchUnsubscribers[poolAddress]) {
@@ -98,7 +98,7 @@ class PoolMonitor {
   }
 
   /**
-   * Stop monitoring all pools
+   * Stop database all pools
    */
   async stopAllMonitoring() {
     for (const poolAddress in this.watchUnsubscribers) {

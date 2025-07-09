@@ -28,8 +28,8 @@ const constants = {
     // Paths to ABI files
     abis: {
         erc20: '../../data/abis/erc20.json',
-        uniswapV3Pool: '../../data/abis/uniswap-v3-pool.json',
-        nonfungiblePositionManager: '../../data/abis/nonfungible-position-manager.json',
+        uniswapV3Pool: '../../data/abis/v3-pool.json',
+        nonfungiblePositionManager: '../../data/abis/v3-position-manager.json',
     },
 };
 

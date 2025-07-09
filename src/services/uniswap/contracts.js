@@ -3,8 +3,8 @@
  * Handles creation and interaction with Ethereum contracts
  */
 const { getContract } = require('viem');
-const { getProvider } = require('./provider');
-const { erc20: erc20Abi, uniswapV3Pool: poolAbi } = require('../../../data/abis');
+const { getProvider } = require('../blockchain/provider');
+const { erc20: erc20Abi, uniswapV3Pool: poolAbi } = require('./abis');
 
 /**
  * Create an ERC20 token contract instance

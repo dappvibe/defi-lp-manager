@@ -1,6 +1,6 @@
 /**
- * Handler for pool address monitoring
- * Processes an Ethereum address and sets up pool monitoring
+ * Handler for pool address database
+ * Processes an Ethereum address and sets up pool database
  * @param {TelegramBot} bot - The bot instance
  * @param {Object} msg - Message object from Telegram
  * @param {Object} provider - Viem client instance
@@ -8,17 +8,17 @@
  * @param {string} timezone - Timezone for time display
  */
 const { getContract } = require('viem');
-const { getTokenInfo, createPoolContract } = require('../../blockchain/contracts');
-const poolMonitor = require('../../monitoring/pool-monitor');
+const { getTokenInfo, createPoolContract } = require('../../uniswap/contracts');
+const poolMonitor = require('../../uniswap/pool-monitor');
 const { getTimeInTimezone } = require('../../../utils/time');
-const { calculatePrice } = require('../../blockchain/price-calculator');
-const { uniswapV3Pool: poolAbi } = require('../../../../data/abis');
+const { calculatePrice } = require('../../uniswap/utils');
+const { uniswapV3Pool: poolAbi } = require('../../uniswap/abis');
 
 async function handleMonitorAddress(bot, msg, provider, monitoredPools, timezone) {
   const chatId = msg.chat.id;
   const poolAddress = msg.text.trim();
 
-  // Check if already monitoring this pool in this chat
+  // Check if already database this pool in this chat
   if (monitoredPools[poolAddress] && monitoredPools[poolAddress].chatId === chatId) {
     bot.sendMessage(chatId, `Already monitoring this pool in this chat.`);
     return;
@@ -68,7 +68,7 @@ async function handleMonitorAddress(bot, msg, provider, monitoredPools, timezone
       notifications: []
     };
 
-    // Start monitoring the pool
+    // Start database the pool
     await poolMonitor.startMonitoring(bot, poolAddress, poolData, provider, timezone);
 
     console.log(`Monitoring pool ${poolAddress} in chat ${chatId}`);

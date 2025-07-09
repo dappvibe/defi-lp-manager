@@ -1,10 +1,10 @@
 /**
  * MongoDB State Manager
- * Handles persistence of monitoring state to MongoDB
+ * Handles persistence of database state to MongoDB
  */
 const { MongoClient } = require('mongodb');
 
-class MongoStateManager {
+class Mongo {
   constructor() {
     this.client = null;
     this.db = null;
@@ -135,7 +135,7 @@ class MongoStateManager {
 
   /**
    * Save monitored wallets to database
-   * @param {Map} monitoredWallets - Map of wallet addresses to monitoring data
+   * @param {Map} monitoredWallets - Map of wallet addresses to database data
    */
   async saveMonitoredWallets(monitoredWallets) {
     if (!this.isConnected) {
@@ -198,4 +198,4 @@ class MongoStateManager {
   }
 }
 
-module.exports = MongoStateManager;
+module.exports = Mongo;

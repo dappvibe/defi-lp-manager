@@ -21,7 +21,7 @@ class PositionMonitor {
     this.monitoredWallets = new Map(); // wallet -> { chatId, lastCheck }
     this.positionManagerAddress = contracts.getContractAddress('pancakeswap', 'arbitrum', 'nonfungiblePositionManager');
     this.positionManagerContract = this.createPositionManagerContract();
-    this.erc20Abi = require('../../../data/abis/erc20.json');
+    this.erc20Abi = require('./abis/erc20.json');
   }
 
   /**
@@ -29,7 +29,7 @@ class PositionMonitor {
    * @returns {object} Contract instance
    */
   createPositionManagerContract() {
-    const positionManagerAbi = require('../../../data/abis/nonfungible-position-manager.json');
+    const positionManagerAbi = require('./abis/v3-position-manager.json');
     return getContract({
       address: this.positionManagerAddress,
       abi: positionManagerAbi,
@@ -130,7 +130,7 @@ class PositionMonitor {
       ]);
 
       // Get the pool address
-      const poolAbi = require('../../../data/abis/uniswap-v3-pool.json');
+      const poolAbi = require('./abis/v3-pool.json');
       const factoryAddress = await this.positionManagerContract.read.factory();
       const factoryAbi = [
         {
@@ -271,7 +271,7 @@ class PositionMonitor {
   }
 
   /**
-   * Start monitoring a wallet for position changes
+   * Start database a wallet for position changes
    * @param {string} walletAddress - Wallet address to monitor
    * @param {number} chatId - Telegram chat ID
    * @returns {boolean} Success status
@@ -280,7 +280,7 @@ class PositionMonitor {
     // Normalize address
     const normalizedAddress = walletAddress.toLowerCase();
 
-    // Check if already monitoring
+    // Check if already database
     if (this.monitoredWallets.has(normalizedAddress)) {
       const info = this.monitoredWallets.get(normalizedAddress);
 
@@ -291,10 +291,10 @@ class PositionMonitor {
         await this.saveState();
       }
 
-      return false; // Already monitoring
+      return false; // Already database
     }
 
-    // Start monitoring
+    // Start database
     this.monitoredWallets.set(normalizedAddress, {
       chatId,
       lastCheck: Date.now()
@@ -303,11 +303,11 @@ class PositionMonitor {
     // Save to MongoDB
     await this.saveState();
 
-    return true; // Started monitoring
+    return true; // Started database
   }
 
   /**
-   * Stop monitoring a wallet
+   * Stop database a wallet
    * @param {string} walletAddress - Wallet address
    * @returns {boolean} Success status
    */

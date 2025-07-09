@@ -4,10 +4,10 @@
  */
 const { environment } = require('./config');
 const { getProvider } = require('./services/blockchain/provider');
-const poolMonitor = require('./services/monitoring/pool-monitor');
+const poolMonitor = require('./services/uniswap/pool-monitor');
 const initTelegramBot = require('./services/telegram/bot');
-const PositionMonitor = require('./services/blockchain/position-monitor');
-const MongoStateManager = require('./services/monitoring/mongo-state-manager');
+const PositionMonitor = require('./services/uniswap/position-monitor');
+const MongoStateManager = require('./services/database/mongo');
 
 /**
  * Initialize the application
@@ -56,7 +56,7 @@ async function initializeApp() {
 async function cleanupApp(appContext) {
     const { bot, poolMonitor, mongoStateManager } = appContext;
 
-    // Stop monitoring all pools
+    // Stop database all pools
     await poolMonitor.stopAllMonitoring();
 
     // Close MongoDB connection if available

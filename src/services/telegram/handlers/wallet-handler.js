@@ -1,12 +1,12 @@
 /**
  * Wallet command handler for Telegram bot
- * Handles monitoring wallet positions
+ * Handles database wallet positions
  */
 
-const { isValidEthereumAddress } = require('../../blockchain/price-calculator');
+const { isValidEthereumAddress } = require('../../uniswap/utils');
 
 /**
- * Handle wallet command to start monitoring positions
+ * Handle wallet command to start database positions
  * @param {object} bot - Telegram bot instance
  * @param {object} msg - Message object
  * @param {Array} match - Regex match result
@@ -38,7 +38,7 @@ async function handleWalletCommand(bot, msg, match, positionMonitor, timezone) {
 }
 
 /**
- * Process wallet address for monitoring
+ * Process wallet address for database
  * @param {object} bot - Telegram bot
  * @param {number} chatId - Chat ID
  * @param {string} walletAddress - Wallet address
@@ -56,19 +56,19 @@ async function processWalletAddress(bot, chatId, walletAddress, positionMonitor,
   const statusMsg = await bot.sendMessage(chatId, "⏳ Processing wallet address... Fetching positions...");
 
   try {
-    // Check if already monitoring
+    // Check if already database
     const isAlreadyMonitored = positionMonitor.monitoredWallets.has(walletAddress.toLowerCase());
 
-    // Start monitoring the wallet
+    // Start database the wallet
     positionMonitor.startMonitoring(walletAddress, chatId);
 
     // Fetch positions
     const positions = await positionMonitor.getPositions(walletAddress);
 
-    // Format message based on monitoring status
+    // Format message based on database status
     const monitoringStatus = isAlreadyMonitored
-      ? "✅ Already monitoring this wallet"
-      : "✅ Started monitoring this wallet for position changes";
+      ? "✅ Already database this wallet"
+      : "✅ Started database this wallet for position changes";
 
     // Create full message
     const message = `${monitoringStatus}\n\n${positionMonitor.formatPositionsMessage(positions, timezone)}`;
@@ -88,7 +88,7 @@ async function processWalletAddress(bot, chatId, walletAddress, positionMonitor,
 }
 
 /**
- * Handle stop monitoring command
+ * Handle stop database command
  * @param {object} bot - Telegram bot
  * @param {object} msg - Message object
  * @param {Array} match - Regex match result
@@ -124,7 +124,7 @@ async function handleStopWalletCommand(bot, msg, match, positionMonitor) {
 }
 
 /**
- * Process stop monitoring request
+ * Process stop database request
  * @param {object} bot - Telegram bot
  * @param {number} chatId - Chat ID
  * @param {string} walletAddress - Wallet address
@@ -137,7 +137,7 @@ async function processStopMonitoring(bot, chatId, walletAddress, positionMonitor
     return;
   }
 
-  // Stop monitoring
+  // Stop database
   const success = positionMonitor.stopMonitoring(walletAddress);
 
   if (success) {
