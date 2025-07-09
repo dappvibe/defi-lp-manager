@@ -46,6 +46,17 @@ function initTelegramBot(token, provider, monitoredPools, timezone) {
     const timeSinceLastEdit = now - lastEdit;
     const delayNeeded = Math.max(0, rateLimit.messageEditDelay - timeSinceLastEdit);
 
+    // Check if this is a price update message by looking for specific patterns
+    // Price updates contain "Tick:" and "Last Swap:" which are unique identifiers
+    const isPriceUpdate = text.includes('Tick:') && text.includes('Last Swap:');
+
+    // If this is a price update that would be throttled, discard it
+    if (isPriceUpdate && delayNeeded > 0) {
+      // Return a resolved promise to maintain interface consistency
+      return Promise.resolve({ message_id: options.message_id });
+    }
+
+    // For non-price updates, wait for the required delay
     if (delayNeeded > 0) {
       await new Promise(resolve => setTimeout(resolve, delayNeeded));
     }
