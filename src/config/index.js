@@ -5,8 +5,10 @@
 
 const environment = require('./environment');
 const constants = require('./constants');
+const contracts = require('./contracts');
 
 module.exports = {
     environment,
     constants,
+    contracts,
 };

@@ -22,13 +22,14 @@ const constants = {
     messages: {
         welcome: "Send a Uniswap v3 pool contract address to monitor its price. Use /notify <price> to set a price alert for monitored pools in this chat.",
         invalidAddress: "Send a valid Ethereum pool contract address to monitor, or use /notify <pool_address> <price> for alerts.",
-        priceAlertTemplate: "🔔 Price Alert! 🔔\nPool: {symbol1}/{symbol0}\nPrice {direction} {targetPrice}.\nCurrent Price: {currentPrice}",
+        priceAlertTemplate: "🔔 Price Alert! 🔔\\nPool: {symbol1}/{symbol0}\\nPrice {direction} {targetPrice}.\\nCurrent Price: {currentPrice}",
     },
 
     // Paths to ABI files
     abis: {
         erc20: '../../data/abis/erc20.json',
         uniswapV3Pool: '../../data/abis/uniswap-v3-pool.json',
+        nonfungiblePositionManager: '../../data/abis/nonfungible-position-manager.json',
     },
 };
 
