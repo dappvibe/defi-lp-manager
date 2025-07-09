@@ -6,6 +6,7 @@ const { formatUnits, parseEventLogs } = require('viem');
 const { getTimeInTimezone } = require('../../utils/time');
 const { calculatePrice } = require('../blockchain/price-calculator');
 const { uniswapV3Pool: poolAbi } = require('../../../data/abis');
+const MongoStateManager = require('./mongo-state-manager');
 
 /**
  * Class for monitoring Uniswap V3 pools
@@ -14,6 +15,44 @@ class PoolMonitor {
   constructor() {
     this.monitoredPools = {};
     this.watchUnsubscribers = {};
+    this.stateManager = new MongoStateManager();
+    this.autoSaveInterval = null;
+  }
+
+  /**
+   * Initialize the pool monitor
+   * Connects to database and restores monitoring state
+   * @param {Object} botInstance - Telegram bot instance
+   * @param {Object} providerInstance - Viem client instance
+   * @param {string} timezone - Timezone for time display
+   */
+  async initialize(botInstance, providerInstance, timezone) {
+    console.log('Initializing PoolMonitor...');
+
+    // Connect to MongoDB
+    await this.stateManager.connect();
+
+    // Start auto-save interval (every 30 seconds)
+    this.startAutoSave();
+
+    // Load saved state
+    const savedState = await this.stateManager.loadAllPools();
+
+    // Restore monitoring for each saved pool
+    for (const [poolAddress, poolData] of Object.entries(savedState)) {
+      try {
+        await this.startMonitoring(
+          botInstance,
+          poolAddress,
+          poolData,
+          providerInstance,
+          timezone
+        );
+        console.log(`Restored monitoring for pool: ${poolAddress}`);
+      } catch (error) {
+        console.error(`Failed to restore monitoring for pool ${poolAddress}:`, error);
+      }
+    }
   }
 
   /**
@@ -34,18 +73,72 @@ class PoolMonitor {
 
     await this._attachSwapListener(botInstance, poolAddress, timezone);
     console.log(`Successfully attached Swap listener for ${poolAddress}`);
+
+    // Save pool state to database
+    await this.stateManager.savePoolState(poolAddress, this.monitoredPools[poolAddress]);
+  }
+
+  /**
+   * Stop monitoring a specific pool
+   * @param {string} poolAddress - Pool address to stop monitoring
+   */
+  async stopMonitoring(poolAddress) {
+    if (this.watchUnsubscribers[poolAddress]) {
+      this.watchUnsubscribers[poolAddress]();
+      delete this.watchUnsubscribers[poolAddress];
+
+      // Remove from memory
+      delete this.monitoredPools[poolAddress];
+
+      // Remove from database
+      await this.stateManager.removePool(poolAddress);
+
+      console.log(`Stopped monitoring for ${poolAddress}`);
+    }
   }
 
   /**
    * Stop monitoring all pools
    */
-  stopAllMonitoring() {
+  async stopAllMonitoring() {
     for (const poolAddress in this.watchUnsubscribers) {
       if (this.watchUnsubscribers[poolAddress]) {
         this.watchUnsubscribers[poolAddress]();
         delete this.watchUnsubscribers[poolAddress];
         console.log(`Removed listeners for ${poolAddress}`);
       }
+    }
+
+    // Clear memory state
+    this.monitoredPools = {};
+
+    // Stop auto-save
+    this.stopAutoSave();
+  }
+
+  /**
+   * Start auto-save interval
+   */
+  startAutoSave() {
+    if (this.autoSaveInterval) {
+      clearInterval(this.autoSaveInterval);
+    }
+
+    this.autoSaveInterval = setInterval(async () => {
+      await this.stateManager.saveAllPools(this.monitoredPools);
+    }, 30000); // Save every 30 seconds
+
+    console.log('Started auto-save interval');
+  }
+
+  /**
+   * Stop auto-save interval
+   */
+  stopAutoSave() {
+    if (this.autoSaveInterval) {
+      clearInterval(this.autoSaveInterval);
+      this.autoSaveInterval = null;
+      console.log('Stopped auto-save interval');
     }
   }
 
@@ -120,6 +213,7 @@ class PoolMonitor {
    */
   _checkPriceAlerts(botInstance, poolInfo, newPriceT1T0) {
     const lastPrice = poolInfo.lastPriceT1T0;
+    let notificationsChanged = false;
 
     poolInfo.notifications = (poolInfo.notifications || []).filter(notification => {
       if (!notification.triggered) {
@@ -133,11 +227,26 @@ class PoolMonitor {
           botInstance.sendMessage(notification.originalChatId, alertMessage);
           console.log(`Notification triggered for chat ${notification.originalChatId}: ${poolInfo.token1.symbol}/${poolInfo.token0.symbol} at ${newPriceT1T0}, target ${notification.targetPrice}`);
           notification.triggered = true;
+          notificationsChanged = true;
           return false;
         }
       }
       return !notification.triggered;
     });
+
+    // Save state if notifications changed
+    if (notificationsChanged) {
+      // Find pool address from poolInfo
+      const poolAddress = Object.keys(this.monitoredPools).find(addr =>
+        this.monitoredPools[addr] === poolInfo
+      );
+
+      if (poolAddress) {
+        this.stateManager.savePoolState(poolAddress, poolInfo).catch(err => {
+          console.error(`Error saving state after alert trigger for ${poolAddress}:`, err.message);
+        });
+      }
+    }
   }
 }
 

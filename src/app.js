@@ -23,6 +23,10 @@ async function initializeApp() {
         environment.telegram.timezone
     );
 
+    // Initialize pool monitor with MongoDB state restoration
+    // This must be done after the bot is initialized since it needs the bot instance
+    await poolMonitor.initialize(bot, provider, environment.telegram.timezone);
+
     return {
         provider,
         bot,
@@ -37,8 +41,8 @@ async function initializeApp() {
 async function cleanupApp(appContext) {
     const { bot, poolMonitor } = appContext;
 
-    // Stop monitoring all pools
-    poolMonitor.stopAllMonitoring();
+    // Stop monitoring all pools (this will also close MongoDB connection)
+    await poolMonitor.stopAllMonitoring();
 
     // Stop the Telegram bot
     if (bot && typeof bot.stopPolling === 'function') {
