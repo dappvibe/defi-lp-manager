@@ -158,7 +158,7 @@ class PoolMonitor {
     const poolsCollection = this.monitoredPools;
     const client = poolsCollection[poolAddress].client;
 
-    const unsubscribe = await client.watchContractEvent({
+    this.watchUnsubscribers[poolAddress] = await client.watchContractEvent({
       address: poolAddress,
       abi: poolAbi,
       eventName: 'Swap',
@@ -170,8 +170,8 @@ class PoolMonitor {
             return;
           }
 
-          const { args } = log;
-          const { sqrtPriceX96, amount0, amount1, tick } = args;
+          const {args} = log;
+          const {sqrtPriceX96, amount0, amount1, tick} = args;
 
           const newPriceT1T0 = parseFloat(calculatePrice(sqrtPriceX96, poolInfo.token0.decimals, poolInfo.token1.decimals));
           let volume;
@@ -203,8 +203,6 @@ class PoolMonitor {
         });
       }
     });
-
-    this.watchUnsubscribers[poolAddress] = unsubscribe;
   }
 
   /**
