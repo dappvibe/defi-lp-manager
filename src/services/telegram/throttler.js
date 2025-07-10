@@ -1,10 +1,10 @@
 /**
  * Throttler utility
  * Provides configurable rate limiting for API calls
- * 
+ *
  * Used to prevent hitting Telegram API rate limits by spreading
  * API calls over time according to configured thresholds.
- * 
+ *
  * For Telegram, typical limits are around 30 messages per second
  * with stricter limits for message edits (recommended 3 seconds between edits).
  */

@@ -6,7 +6,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const { environment } = require('../../config');
 const { StartHandler, HelpHandler, NotifyHandler, PoolHandler, WalletHandler, LpHandler } = require('./commands');
 
-const Throttler = require('../../utils/throttler');
+const Throttler = require('./throttler');
 
 /**
  * Initialize the Telegram bot with all commands
