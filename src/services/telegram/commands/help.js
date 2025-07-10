@@ -2,6 +2,7 @@ const StartHandler = require('./start');
 const PoolHandler = require('./pool');
 const WalletHandler = require('./wallet');
 const NotifyHandler = require('./notify');
+const LpHandler = require('./lp');
 
 class HelpHandler {
     static command = '/help';
@@ -53,6 +54,7 @@ class HelpHandler {
             PoolHandler,
             WalletHandler,
             NotifyHandler,
+            LpHandler,
             HelpHandler  // Include self for completeness
         ];
 

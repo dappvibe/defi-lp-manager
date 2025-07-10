@@ -4,7 +4,7 @@
  */
 const TelegramBot = require('node-telegram-bot-api');
 const { environment } = require('../../config');
-const { StartHandler, HelpHandler, NotifyHandler, PoolHandler, WalletHandler } = require('./commands');
+const { StartHandler, HelpHandler, NotifyHandler, PoolHandler, WalletHandler, LpHandler } = require('./commands');
 
 const Throttler = require('../../utils/throttler');
 
@@ -87,6 +87,7 @@ function initTelegramBot(token, provider, monitoredPools, positionMonitor, timez
   NotifyHandler.onText(bot, monitoredPools, timezone);
   PoolHandler.onText(bot, provider, monitoredPools, timezone);
   WalletHandler.onText(bot, positionMonitor, timezone);
+  LpHandler.onText(bot, positionMonitor, timezone);
 
   return bot;
 }
