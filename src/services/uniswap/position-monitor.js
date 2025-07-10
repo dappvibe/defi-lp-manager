@@ -1,13 +1,11 @@
-/**
- * Position Monitor Service
- * Monitors and manages V3 positions for wallet addresses
- */
-
 const { getContract } = require('viem');
 const { contracts } = require('../../config');
+const { Pool, Position } = require('@uniswap/v3-sdk');
+const { Token } = require('@uniswap/sdk-core');
 
 const { getTimeInTimezone } = require('../../utils/time');
-const { tickToHumanReadablePrice, calculateAmountsFromLiquidity, isPositionInRange } = require('../../utils/uniswap-helpers');
+const { tickToHumanPrice, isPositionInRange } = require('./helpers');
+const TokenService = require('./token');
 
 class PositionMonitor {
   /**
@@ -18,6 +16,7 @@ class PositionMonitor {
   constructor(provider, mongoStateManager) {
     this.provider = provider;
     this.mongoStateManager = mongoStateManager;
+    this.tokenService = new TokenService(provider);
     this.monitoredWallets = new Map(); // wallet -> { chatId, lastCheck }
     this.positionManagerAddress = contracts.getContractAddress('pancakeswap', 'arbitrum', 'nonfungiblePositionManager');
     this.positionManagerContract = this.createPositionManagerContract();
@@ -95,7 +94,13 @@ class PositionMonitor {
 
         // Skip positions with 0 liquidity
         if (position.liquidity && position.liquidity > 0n) {
-          positions.push(position);
+          // Calculate combined value in terms of token1 (stablecoin)
+          const combinedToken1Value = await this.calculateCombinedToken1Value(position);
+
+          // Only include positions with combined value >= 0.1 token1
+          if (combinedToken1Value >= 0.1) {
+            positions.push(position);
+          }
         }
       }
 
@@ -107,30 +112,150 @@ class PositionMonitor {
   }
 
   /**
-   * Get detailed information for a position
-   * @param {bigint} tokenId - Position token ID
-   * @returns {Promise<object>} Position details
+   * Calculate the combined value of a position in terms of token1 (stablecoin)
+   * @param {Object} position - Position object
+   * @returns {Promise<number>} Combined value in token1 units
    */
+  async calculateCombinedToken1Value(position) {
+    try {
+      // Get token1 amount (already in stablecoin)
+      const token1Amount = parseFloat(position.token1Amount);
+
+      // Convert token0 amount to token1 equivalent using current price
+      const token0AmountInToken1 = parseFloat(position.token0Amount) * parseFloat(position.currentPrice);
+
+      // Return combined value
+      return token1Amount + token0AmountInToken1;
+    } catch (error) {
+      console.error('Error calculating combined token1 value:', error);
+      return 0; // Return 0 to filter out positions with errors
+    }
+  }
+
+  /**
+   * Get token using Uniswap SDK Token class
+   * @param {string} tokenAddress - Token address
+   * @returns {Promise<Token>} Uniswap SDK Token instance
+   */
+  async getToken(tokenAddress) {
+    return await this.tokenService.getToken(tokenAddress);
+  }
+
+  /**
+   * Calculate token amounts using Uniswap SDK
+   * @param {bigint} liquidity - Position liquidity
+   * @param {number} tickLower - Lower tick
+   * @param {number} tickUpper - Upper tick
+   * @param {number} tickCurrent - Current tick
+   * @param {Token} token0 - Token0 instance
+   * @param {Token} token1 - Token1 instance
+   * @param {number} feeTier - Pool fee tier
+   * @param sqrtPriceX96
+   * @returns {Object} Calculated amounts
+   */
+  async calculateTokenAmounts(liquidity, tickLower, tickUpper, tickCurrent, token0, token1, feeTier, sqrtPriceX96) {
+    try {
+      const pool = new Pool(
+        token0,
+        token1,
+        feeTier,
+        sqrtPriceX96.toString(),
+        liquidity.toString(),
+        tickCurrent
+      );
+
+      const position = new Position({
+        pool,
+        liquidity: liquidity.toString(),
+        tickLower,
+        tickUpper
+      });
+
+      return {
+        amount0: position.amount0.toFixed(token0.decimals),
+        amount1: position.amount1.toFixed(token1.decimals),
+      };
+    } catch (error) {
+      console.error('Error calculating token amounts with SDK:', error);
+      return { amount0: '0', amount1: '0', amount0Raw: '0', amount1Raw: '0' };
+    }
+  }
+
   async getPositionDetails(tokenId) {
     try {
       const positionData = await this.positionManagerContract.read.positions([tokenId]);
 
-      // Extract position data
-      const token0 = positionData[2];
-      const token1 = positionData[3];
+      const token0Address = positionData[2];
+      const token1Address = positionData[3];
       const fee = positionData[4];
       const tickLower = positionData[5];
       const tickUpper = positionData[6];
       const liquidity = positionData[7];
 
-      // Get token information
-      const [token0Info, token1Info] = await Promise.all([
-        this.getTokenInfo(token0),
-        this.getTokenInfo(token1)
+      // Get Uniswap SDK Token instances
+      const [token0, token1] = await Promise.all([
+        this.getToken(token0Address),
+        this.getToken(token1Address)
       ]);
 
-      // Get the pool address
-      const poolAbi = require('./abis/v3-pool.json');
+      // Get pool data
+      const poolData = await this.getPoolData(token0Address, token1Address, fee);
+
+      let tokenAmounts = { amount0: '0', amount1: '0' };
+      let currentTick = 0;
+
+      if (poolData.address && poolData.sqrtPriceX96) {
+        currentTick = poolData.tick;
+
+        // Use SDK for precise calculations
+        tokenAmounts = await this.calculateTokenAmounts(
+          liquidity,
+          Number(tickLower),
+          Number(tickUpper),
+          currentTick,
+          token0,
+          token1,
+          Number(fee),
+          poolData.sqrtPriceX96
+        );
+      }
+
+      const lowerPrice = tickToHumanPrice(Number(tickLower), token0, token1);
+      const upperPrice = tickToHumanPrice(Number(tickUpper), token0, token1);
+      const currentPrice = tickToHumanPrice(currentTick, token0, token1);
+      const inRange = isPositionInRange(Number(tickLower), Number(tickUpper), currentTick);
+
+      return {
+        tokenId,
+        token0: token0Address,
+        token1: token1Address,
+        token0Symbol: token0.symbol,
+        token1Symbol: token1.symbol,
+        token0Decimals: token0.decimals,
+        token1Decimals: token1.decimals,
+        fee,
+        tickLower,
+        tickUpper,
+        currentTick,
+        liquidity,
+        token0Amount: tokenAmounts.amount0,
+        token1Amount: tokenAmounts.amount1,
+        lowerPrice,
+        upperPrice,
+        currentPrice,
+        inRange,
+        // Add SDK token instances for advanced operations
+        token0Instance: token0,
+        token1Instance: token1
+      };
+    } catch (error) {
+      console.error(`Error getting position details for token ID ${tokenId}:`, error);
+      return { tokenId, error: 'Failed to fetch position details' };
+    }
+  }
+
+  async getPoolData(token0Address, token1Address, fee) {
+    try {
       const factoryAddress = await this.positionManagerContract.read.factory();
       const factoryAbi = [
         {
@@ -152,71 +277,30 @@ class PositionMonitor {
         client: this.provider
       });
 
-      // Get pool address and current tick
-      const poolAddress = await factoryContract.read.getPool([token0, token1, fee]);
-
-      let currentTick = 0;
-      let tokenAmounts = { amount0: '0', amount1: '0' };
+      const poolAddress = await factoryContract.read.getPool([token0Address, token1Address, fee]);
 
       if (poolAddress && poolAddress !== '0x0000000000000000000000000000000000000000') {
+        const poolAbi = require('./abis/v3-pool.json');
         const poolContract = getContract({
           address: poolAddress,
           abi: poolAbi,
           client: this.provider
         });
 
-        // Get current tick from pool
         const slot0 = await poolContract.read.slot0();
-        currentTick = Number(slot0[1]);
 
-        // Calculate token amounts from liquidity
-        if (liquidity > 0n) {
-          tokenAmounts = calculateAmountsFromLiquidity(
-            liquidity,
-            Number(tickLower),
-            Number(tickUpper),
-            currentTick,
-            token0Info.decimals,
-            token1Info.decimals,
-            Number(fee)
-          );
-        }
+        return {
+          address: poolAddress,
+          sqrtPriceX96: slot0[0],
+          tick: Number(slot0[1]),
+          contract: poolContract
+        };
       }
 
-      // Calculate price ranges from ticks
-      const lowerPrice = tickToHumanReadablePrice(Number(tickLower), token0Info.decimals, token1Info.decimals);
-      const upperPrice = tickToHumanReadablePrice(Number(tickUpper), token0Info.decimals, token1Info.decimals);
-      const currentPrice = tickToHumanReadablePrice(currentTick, token0Info.decimals, token1Info.decimals);
-
-      // Check if position is in range
-      const inRange = isPositionInRange(Number(tickLower), Number(tickUpper), currentTick);
-
-      return {
-        tokenId,
-        token0,
-        token1,
-        token0Symbol: token0Info.symbol,
-        token1Symbol: token1Info.symbol,
-        token0Decimals: token0Info.decimals,
-        token1Decimals: token1Info.decimals,
-        fee,
-        tickLower,
-        tickUpper,
-        currentTick,
-        liquidity,
-        token0Amount: tokenAmounts.amount0,
-        token1Amount: tokenAmounts.amount1,
-        lowerPrice,
-        upperPrice,
-        currentPrice,
-        inRange
-      };
+      return { address: null, sqrtPriceX96: null, tick: 0 };
     } catch (error) {
-      console.error(`Error getting position details for token ID ${tokenId}:`, error);
-      return {
-        tokenId,
-        error: 'Failed to fetch position details'
-      };
+      console.error('Error getting pool data:', error);
+      return { address: null, sqrtPriceX96: null, tick: 0 };
     }
   }
 
