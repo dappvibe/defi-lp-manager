@@ -4,9 +4,8 @@
  */
 const TelegramBot = require('node-telegram-bot-api');
 const { environment } = require('../../config');
-const handlers = require('./handlers');
-const walletHandlers = require('./handlers/wallet-handler');
-const { isValidEthereumAddress } = require('../uniswap/utils');
+const { handleStart, NotifyHandler, PoolHandler, WalletHandler } = require('./handlers');
+
 const Throttler = require('../../utils/throttler');
 
 /**
@@ -82,51 +81,44 @@ function initTelegramBot(token, provider, monitoredPools, positionMonitor, timez
   bot.on('polling_start', () => console.log('Telegram Bot started polling'));
   bot.on('polling_error', (error) => console.error('Telegram Bot polling error:', error));
 
+  // Create handler instances with their dependencies
+  const notifyHandler = new NotifyHandler();
+  const poolHandler = new PoolHandler(provider, monitoredPools, timezone);
+  const walletHandler = new WalletHandler(positionMonitor, timezone);
+
   // Command handlers
   bot.onText(/\/start/, (msg) => {
-    handlers.handleStart(bot, msg);
+    handleStart(bot, msg);
   });
 
   bot.onText(/\/notify (.+)/, (msg, match) => {
-    handlers.handleNotify(bot, msg, match, monitoredPools, timezone);
+    notifyHandler.handle(bot, msg, match, monitoredPools, timezone);
   });
 
-  // Wallet position database commands
+  // Pool monitoring commands
+  bot.onText(/\/pool(?:\s+(.+))?/, (msg, match) => {
+    poolHandler.handle(bot, msg, match);
+  });
+
+  bot.onText(/\/stop_pool(?:\s+(.+))?/, (msg, match) => {
+    poolHandler.handleStopPool(bot, msg, match);
+  });
+
+  bot.onText(/\/list_pools/, (msg) => {
+    poolHandler.handleListPools(bot, msg);
+  });
+
+  // Wallet position monitoring commands
   bot.onText(/\/wallet(?:\s+(.+))?/, (msg, match) => {
-    walletHandlers.handleWalletCommand(bot, msg, match, positionMonitor, timezone);
+    walletHandler.handle(bot, msg, match);
   });
 
   bot.onText(/\/stop_wallet(?:\s+(.+))?/, (msg, match) => {
-    walletHandlers.handleStopWalletCommand(bot, msg, match, positionMonitor);
+    walletHandler.handleStopWallet(bot, msg, match);
   });
 
   bot.onText(/\/list_wallets/, (msg) => {
-    walletHandlers.handleListWalletsCommand(bot, msg, positionMonitor);
-  });
-
-  // Handle address messages
-  bot.on('message', async (msg) => {
-    const messageText = msg.text;
-    if (!messageText) return; // Handle cases where messageText might be null or undefined
-
-    // Ignore commands that are already handled by onText or other specific handlers
-    if (messageText.startsWith('/')) return;
-
-    if (isValidEthereumAddress(messageText)) {
-      // Check if this is a reply to the wallet prompt
-      if (msg.reply_to_message && msg.reply_to_message.text === "Send a wallet address to monitor PancakeSwap V3 positions:") {
-        await walletHandlers.processWalletAddress(bot, msg.chat.id, messageText, positionMonitor, timezone);
-      } else {
-        // Default to pool database
-        await handlers.handleMonitorAddress(bot, msg, provider, monitoredPools, timezone);
-      }
-    } else {
-      // Check if it's a reply to a specific message, or some other non-address text
-      // For now, keep the generic message if it's not an address and not a command
-      if (!msg.reply_to_message) {
-        bot.sendMessage(msg.chat.id, "Send a valid Ethereum pool contract address to monitor, or use /notify <price> for alerts. Use /wallet to monitor wallet positions.");
-      }
-    }
+    walletHandler.handleListWallets(bot, msg);
   });
 
   return bot;

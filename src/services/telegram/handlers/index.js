@@ -1,13 +1,15 @@
 /**
  * Telegram command handlers
- * Exports all handlers for bot commands and messages
+ * Exports handler classes for bot to instantiate and bind
  */
 const handleStart = require('./start');
-const handleNotify = require('./notify');
-const handleMonitorAddress = require('./monitor-address');
+const NotifyHandler = require('./notify');
+const PoolHandler = require('./pool');
+const WalletHandler = require('./wallet');
 
 module.exports = {
   handleStart,
-  handleNotify,
-  handleMonitorAddress
+  NotifyHandler,
+  PoolHandler,
+  WalletHandler
 };
