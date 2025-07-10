@@ -110,12 +110,11 @@ class PoolHandler {
       // Get current price
       const slot0 = await poolContract.read.slot0();
       const sqrtPriceX96 = slot0[0];
-      const tick = slot0[1];
       const priceT1T0 = parseFloat(calculatePrice(sqrtPriceX96, token1Info.decimals, token0Info.decimals));
 
       // Update the loading message with the initial price info
       const time = getTimeInTimezone(timezone);
-      const initialText = `${priceT1T0.toFixed(8)} ${token1Info.symbol}/${token0Info.symbol} ${time}\nTick: ${tick}\nLast Swap: N/A`;
+      const initialText = `${priceT1T0.toFixed(5)} ${token0Info.symbol}/${token1Info.symbol} ${time}\nLast: N/A`;
 
       const updatedMessage = await bot.editMessageText(initialText, {
         chat_id: chatId,
@@ -180,7 +179,7 @@ class PoolHandler {
     }
 
     // List pools to stop
-    const poolList = poolsInChat.map(([addr, poolData], idx) => 
+    const poolList = poolsInChat.map(([addr, poolData], idx) =>
       `${idx + 1}. ${poolData.token1?.symbol || ''}/${poolData.token0?.symbol || ''} (\`${addr}\`)`
     ).join('\n');
 
@@ -223,7 +222,7 @@ class PoolHandler {
    */
   static async handleListPools(bot, msg, monitoredPools) {
     const chatId = msg.chat.id;
-    
+
     // Get pools monitored in this chat
     const poolsInChat = Object.entries(monitoredPools).filter(
       ([_, poolData]) => poolData.chatId === chatId
@@ -239,7 +238,7 @@ class PoolHandler {
       const pair = `${data.token1?.symbol || '???'}/${data.token0?.symbol || '???'}`;
       const price = data.lastPriceT1T0 ? `Price: ${data.lastPriceT1T0.toFixed(8)}` : 'Price: N/A';
       const alerts = (data.notifications || []).filter(n => !n.triggered).length;
-      
+
       return `${idx + 1}. ${pair} - ${price}
 Pool: \`${address}\`
 Alerts: ${alerts}`;

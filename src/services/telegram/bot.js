@@ -48,8 +48,8 @@ function initTelegramBot(token, provider, monitoredPools, positionMonitor, timez
     const delayNeeded = Math.max(0, rateLimit.messageEditDelay - timeSinceLastEdit);
 
     // Check if this is a price update message by looking for specific patterns
-    // Price updates contain "Tick:" and "Last Swap:" which are unique identifiers
-    const isPriceUpdate = text.includes('Tick:') && text.includes('Last Swap:');
+    // FIXME certainty for price message
+    const isPriceUpdate = text.includes('Last:');
 
     // If this is a price update that would be throttled, discard it
     if (isPriceUpdate && delayNeeded > 0) {

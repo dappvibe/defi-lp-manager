@@ -189,7 +189,7 @@ class PoolMonitor {
           }
 
           const eventTime = getTimeInTimezone(timezone);
-          const updatedText = `${newPriceT1T0.toFixed(8)} ${poolInfo.token1.symbol}/${poolInfo.token0.symbol} ${eventTime}\nTick: ${tick}\nLast Swap: ${volume} ${volumeTokenSymbol}`;
+          const updatedText = `${newPriceT1T0.toFixed(5)} ${poolInfo.token0.symbol}/${poolInfo.token1.symbol} ${eventTime}\nLast: ${volume} ${volumeTokenSymbol}`;
 
           botInstance.editMessageText(updatedText, {
             chat_id: poolInfo.chatId,
