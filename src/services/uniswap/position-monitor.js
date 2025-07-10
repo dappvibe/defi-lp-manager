@@ -155,9 +155,6 @@ class PositionMonitor {
    */
   async calculateTokenAmounts(liquidity, tickLower, tickUpper, tickCurrent, token0, token1, feeTier, sqrtPriceX96) {
     try {
-      const liquidityBigInt = BigInt(liquidity.toString());
-      const sqrtRatioX96BigInt = BigInt(sqrtPriceX96.toString());
-
       const pool = new Pool(
         token0,
         token1,
