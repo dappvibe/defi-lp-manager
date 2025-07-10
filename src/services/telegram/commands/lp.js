@@ -66,19 +66,15 @@ class LpHandler {
               continue;
             }
 
-            // Format individual position message
-            let positionMessage = `🔹 **Position #${positionIndex + 1}**\n`;
-            positionMessage += `ID: ${position.tokenId}\n`;
-            positionMessage += `Pair: ${position.token1Symbol}/${position.token0Symbol}\n`;
-            positionMessage += `Fee: ${Number(position.fee) / 10000}%\n`;
+            let positionMessage = `🔹 **Position #${position.tokenId} - ${position.token0Symbol}/${position.token1Symbol} (${Number(position.fee) / 10000}%)**\n`;
 
             // Token amounts
-            positionMessage += `\n💰 **Token Amounts:**\n`;
-            positionMessage += `• ${parseFloat(position.token0Amount).toFixed(6)} ${position.token0Symbol}\n`;
-            positionMessage += `• ${parseFloat(position.token1Amount).toFixed(6)} ${position.token1Symbol}\n`;
+            positionMessage += `\n💰 **Amounts:**\n`;
+            positionMessage += `• ${position.token0Symbol} ${parseFloat(position.token0Amount).toFixed(position.token0Decimals)}\n`;
+            positionMessage += `• ${position.token1Symbol} ${parseFloat(position.token1Amount).toFixed(position.token1Decimals)}\n`;
 
             // Price ranges (token1 relative to token0)
-            positionMessage += `\n📈 **Price Range (${position.token1Symbol} per ${position.token0Symbol}):**\n`;
+            positionMessage += `\n📈 **Price (${position.token0Symbol} per ${position.token1Symbol}):**\n`;
             positionMessage += `• Min: ${position.lowerPrice}\n`;
             positionMessage += `• Max: ${position.upperPrice}\n`;
             positionMessage += `• Current: ${position.currentPrice}\n`;
