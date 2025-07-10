@@ -1,4 +1,7 @@
-const handlers = require('./index');
+const StartHandler = require('./start');
+const PoolHandler = require('./pool');
+const WalletHandler = require('./wallet');
+const NotifyHandler = require('./notify');
 
 class HelpHandler {
     static command = '/help';
@@ -44,10 +47,16 @@ class HelpHandler {
         let commandsList = '';
         let detailedHelp = '';
 
-        // Get all exported handlers from the index
-        const exportedHandlers = Object.values(handlers);
+        // List of all handlers - update this list when adding new handlers
+        const allHandlers = [
+            StartHandler,
+            PoolHandler,
+            WalletHandler,
+            NotifyHandler,
+            HelpHandler  // Include self for completeness
+        ];
 
-        exportedHandlers.forEach(handler => {
+        allHandlers.forEach(handler => {
             if (handler && typeof handler.help === 'function') {
                 // Add to commands list
                 commandsList += `• ${handler.help()}\n`;
@@ -74,7 +83,7 @@ class HelpHandler {
     }
 
     /**
-     * Returns a brief help description with command signature
+     * Returns a brief help description with command signatusre
      * @returns {string} One-line help text
      */
     static help() {
