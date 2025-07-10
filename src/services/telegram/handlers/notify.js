@@ -5,9 +5,8 @@
  * @param {Object} msg - Message object from Telegram
  * @param {Array} match - Regex match array containing the command params
  * @param {Object} monitoredPools - Object containing monitored pools
- * @param {string} timezone - Timezone for time display
  */
-function handleNotify(bot, msg, match, monitoredPools, timezone) {
+function handleNotify(bot, msg, match, monitoredPools) {
   const chatId = msg.chat.id;
   const params = match[1].trim().split(/\s+/);
 
@@ -36,7 +35,7 @@ function handleNotify(bot, msg, match, monitoredPools, timezone) {
     // Apply to all pools in this chat
     let notificationsSet = 0;
 
-    for (const [address, poolData] of poolsInChat) {
+    for (const [, poolData] of poolsInChat) {
       if (poolData.lastPriceT1T0) {
         if (!poolData.notifications) {
           poolData.notifications = [];
@@ -54,7 +53,7 @@ function handleNotify(bot, msg, match, monitoredPools, timezone) {
 
     if (notificationsSet > 0) {
       bot.sendMessage(
-        chatId, 
+        chatId,
         `Price alert set at ${targetPrice} for ${notificationsSet} pool(s) in this chat.`
       );
     } else {

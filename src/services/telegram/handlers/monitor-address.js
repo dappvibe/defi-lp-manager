@@ -1,18 +1,9 @@
-/**
- * Handler for pool address database
- * Processes an Ethereum address and sets up pool database
- * @param {TelegramBot} bot - The bot instance
- * @param {Object} msg - Message object from Telegram
- * @param {Object} provider - Viem client instance
- * @param {Object} monitoredPools - Object containing monitored pools
- * @param {string} timezone - Timezone for time display
- */
-const { getContract } = require('viem');
+
 const { getTokenInfo, createPoolContract } = require('../../uniswap/contracts');
 const poolMonitor = require('../../uniswap/pool-monitor');
 const { getTimeInTimezone } = require('../../../utils/time');
 const { calculatePrice } = require('../../uniswap/utils');
-const { uniswapV3Pool: poolAbi } = require('../../uniswap/abis');
+
 
 async function handleMonitorAddress(bot, msg, provider, monitoredPools, timezone) {
   const chatId = msg.chat.id;

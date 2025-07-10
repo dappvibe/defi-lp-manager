@@ -2,7 +2,7 @@
  * Pool database service
  * Handles database of Uniswap pools and price alerts
  */
-const { formatUnits, parseEventLogs } = require('viem');
+const { formatUnits } = require('viem');
 const { getTimeInTimezone } = require('../../utils/time');
 const { calculatePrice } = require('./utils');
 const { uniswapV3Pool: poolAbi } = require('./abis');

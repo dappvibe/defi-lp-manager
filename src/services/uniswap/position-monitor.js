@@ -4,8 +4,8 @@
  */
 
 const { getContract } = require('viem');
-const { constants, contracts } = require('../../config');
-const { formatUnits } = require('viem');
+const { contracts } = require('../../config');
+
 const { getTimeInTimezone } = require('../../utils/time');
 const { tickToHumanReadablePrice, calculateAmountsFromLiquidity, isPositionInRange } = require('../../utils/uniswap-helpers');
 

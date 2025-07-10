@@ -4,7 +4,7 @@
  */
 
 const JSBI = require('jsbi');
-const { Pool, Position, tickToPrice } = require('@uniswap/v3-sdk');
+const { Pool, Position } = require('@uniswap/v3-sdk');
 const { Token } = require('@uniswap/sdk-core');
 const { formatUnits } = require('viem');
 
