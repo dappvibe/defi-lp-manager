@@ -34,7 +34,7 @@ class NotifyHandler {
     );
 
     if (poolsInChat.length === 0) {
-      await bot.sendMessage(chatId, "No pools are currently being monitored in this chat. Send a pool address first.");
+      await bot.sendMessage(chatId, "No pools are currently being monitored in this chat. Use /pool <address> to start monitoring a pool first.");
       return;
     }
 
@@ -84,7 +84,7 @@ class NotifyHandler {
 • Alerts are one-time notifications and will be removed after triggering
 
 **Related Commands:**
-• Send a pool address to start monitoring
+• \`/pool <address>\` - Start monitoring a pool
 • \`/wallet\` - Monitor wallet positions instead`;
   }
 

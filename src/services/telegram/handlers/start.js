@@ -27,7 +27,7 @@ class StartHandler {
 
     // Welcome message
     let message = "🤖 **DeFi LP Manager Bot**\n\n";
-    message += "Send a Uniswap v3 pool contract address to monitor its price. Use /notify <price> to set a price alert for monitored pools in this chat.\n\n";
+    message += "Use /notify <price> to set a price alert for monitored pools in this chat.\n\n";
 
     // Show current monitoring status
     message += "📊 **Current Monitoring Status:**\n\n";

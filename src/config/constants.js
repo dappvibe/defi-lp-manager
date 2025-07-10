@@ -20,8 +20,8 @@ const constants = {
 
     // Messages
     messages: {
-        welcome: "Send a Uniswap v3 pool contract address to monitor its price. Use /notify <price> to set a price alert for monitored pools in this chat.",
-        invalidAddress: "Send a valid Ethereum pool contract address to monitor, or use /notify <pool_address> <price> for alerts.",
+        welcome: "Use /notify <price> to set a price alert for monitored pools in this chat.",
+        invalidAddress: "Use /pool <address> to monitor a valid Ethereum pool contract address, or use /notify <pool_address> <price> for alerts.",
         priceAlertTemplate: "🔔 Price Alert! 🔔\\nPool: {symbol1}/{symbol0}\\nPrice {direction} {targetPrice}.\\nCurrent Price: {currentPrice}",
     },
 
