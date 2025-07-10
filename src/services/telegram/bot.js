@@ -82,7 +82,7 @@ function initTelegramBot(token, provider, monitoredPools, positionMonitor, timez
   bot.on('polling_error', (error) => console.error('Telegram Bot polling error:', error));
 
   // Register command handlers
-  StartHandler.onText(bot);
+  StartHandler.onText(bot, monitoredPools, positionMonitor);
   HelpHandler.onText(bot);
   NotifyHandler.onText(bot, monitoredPools, timezone);
   PoolHandler.onText(bot, provider, monitoredPools, timezone);
