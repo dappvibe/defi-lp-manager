@@ -4,7 +4,7 @@
  */
 const TelegramBot = require('node-telegram-bot-api');
 const { environment } = require('../../config');
-const { handleStart, NotifyHandler, PoolHandler, WalletHandler } = require('./handlers');
+const { StartHandler, HelpHandler, NotifyHandler, PoolHandler, WalletHandler } = require('./handlers');
 
 const Throttler = require('../../utils/throttler');
 
@@ -81,45 +81,12 @@ function initTelegramBot(token, provider, monitoredPools, positionMonitor, timez
   bot.on('polling_start', () => console.log('Telegram Bot started polling'));
   bot.on('polling_error', (error) => console.error('Telegram Bot polling error:', error));
 
-  // Create handler instances with their dependencies
-  const notifyHandler = new NotifyHandler();
-  const poolHandler = new PoolHandler(provider, monitoredPools, timezone);
-  const walletHandler = new WalletHandler(positionMonitor, timezone);
-
-  // Command handlers
-  bot.onText(/\/start/, (msg) => {
-    handleStart(bot, msg);
-  });
-
-  bot.onText(/\/notify (.+)/, (msg, match) => {
-    notifyHandler.handle(bot, msg, match, monitoredPools, timezone);
-  });
-
-  // Pool monitoring commands
-  bot.onText(/\/pool(?:\s+(.+))?/, (msg, match) => {
-    poolHandler.handle(bot, msg, match);
-  });
-
-  bot.onText(/\/stop_pool(?:\s+(.+))?/, (msg, match) => {
-    poolHandler.handleStopPool(bot, msg, match);
-  });
-
-  bot.onText(/\/list_pools/, (msg) => {
-    poolHandler.handleListPools(bot, msg);
-  });
-
-  // Wallet position monitoring commands
-  bot.onText(/\/wallet(?:\s+(.+))?/, (msg, match) => {
-    walletHandler.handle(bot, msg, match);
-  });
-
-  bot.onText(/\/stop_wallet(?:\s+(.+))?/, (msg, match) => {
-    walletHandler.handleStopWallet(bot, msg, match);
-  });
-
-  bot.onText(/\/list_wallets/, (msg) => {
-    walletHandler.handleListWallets(bot, msg);
-  });
+  // Register command handlers
+  StartHandler.onText(bot);
+  HelpHandler.onText(bot);
+  NotifyHandler.onText(bot, monitoredPools, timezone);
+  PoolHandler.onText(bot, provider, monitoredPools, timezone);
+  WalletHandler.onText(bot, positionMonitor, timezone);
 
   return bot;
 }

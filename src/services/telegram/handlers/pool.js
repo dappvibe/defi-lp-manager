@@ -12,6 +12,28 @@ const { isValidEthereumAddress } = require('../../uniswap/utils');
 
 class PoolHandler {
   /**
+   * Register command handlers with the bot
+   * @param {TelegramBot} bot - The bot instance
+   * @param {Object} provider - Ethereum provider instance
+   * @param {Object} monitoredPools - Object containing monitored pools
+   * @param {String} timezone - User timezone
+   */
+  static onText(bot, provider, monitoredPools, timezone) {
+    // Pool monitoring commands
+    bot.onText(/\/pool(?:\s+(.+))?/, (msg, match) => {
+      this.handle(bot, msg, match, provider, monitoredPools, timezone);
+    });
+
+    bot.onText(/\/stop_pool(?:\s+(.+))?/, (msg, match) => {
+      this.handleStopPool(bot, msg, match, monitoredPools);
+    });
+
+    bot.onText(/\/list_pools/, (msg) => {
+      this.handleListPools(bot, msg, monitoredPools);
+    });
+  }
+
+  /**
    * Handle pool command to monitor a pool
    * @param {TelegramBot} bot - The bot instance
    * @param {Object} msg - Message object from Telegram

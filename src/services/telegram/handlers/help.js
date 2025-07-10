@@ -5,6 +5,16 @@ class HelpHandler {
     static description = 'Show help information for all commands';
 
     /**
+     * Register command handlers with the bot
+     * @param {TelegramBot} bot - The bot instance
+     */
+    static onText(bot) {
+        bot.onText(/\/help/, (msg) => {
+            this.handle(bot, msg);
+        });
+    }
+
+    /**
      * Handle the help command
      * @param {TelegramBot} bot - The bot instance
      * @param {Object} msg - Message object
@@ -58,9 +68,7 @@ class HelpHandler {
 
         // Add footer
         finalMessage += `\n**Tips:**\n`;
-        finalMessage += `• Send a pool address to start monitoring\n`;
         finalMessage += `• Use /help to see this message again\n`;
-        finalMessage += `• Commands are case-sensitive\n`;
 
         return finalMessage;
     }

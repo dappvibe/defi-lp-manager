@@ -8,6 +8,27 @@ const { isValidEthereumAddress } = require('../../uniswap/utils');
 
 class WalletHandler {
   /**
+   * Register command handlers with the bot
+   * @param {TelegramBot} bot - The bot instance
+   * @param {object} positionMonitor - Position monitor service
+   * @param {string} timezone - User timezone
+   */
+  static onText(bot, positionMonitor, timezone) {
+    // Wallet position monitoring commands
+    bot.onText(/\/wallet(?:\s+(.+))?/, (msg, match) => {
+      this.handle(bot, msg, match, positionMonitor, timezone);
+    });
+
+    bot.onText(/\/stop_wallet(?:\s+(.+))?/, (msg, match) => {
+      this.handleStopWallet(bot, msg, match, positionMonitor);
+    });
+
+    bot.onText(/\/list_wallets/, (msg) => {
+      this.handleListWallets(bot, msg, positionMonitor);
+    });
+  }
+
+  /**
    * Handle wallet command to start monitoring positions
    * @param {object} bot - Telegram bot instance
    * @param {object} msg - Message object

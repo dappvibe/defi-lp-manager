@@ -5,13 +5,26 @@
  */
 class NotifyHandler {
   /**
+   * Register command handlers with the bot
+   * @param {TelegramBot} bot - The bot instance
+   * @param {Object} monitoredPools - Object containing monitored pools
+   * @param {String} timezone - User timezone for display
+   */
+  static onText(bot, monitoredPools, timezone) {
+    bot.onText(/\/notify (.+)/, (msg, match) => {
+      this.handle(bot, msg, match, monitoredPools, timezone);
+    });
+  }
+
+  /**
    * Handle notify command to set price alerts
    * @param {TelegramBot} bot - The bot instance
    * @param {Object} msg - Message object from Telegram
    * @param {Array} match - Regex match array containing the command params
    * @param {Object} monitoredPools - Object containing monitored pools
+   * @param {String} timezone - User timezone for display
    */
-  static async handle(bot, msg, match, monitoredPools) {
+  static async handle(bot, msg, match, monitoredPools, timezone) {
     const chatId = msg.chat.id;
     const params = match[1].trim().split(/\s+/);
 
