@@ -3,7 +3,7 @@
  * Exports all Telegram-related functionality
  */
 const bot = require('./bot');
-const handlers = require('./handlers');
+const handlers = require('./commands');
 
 module.exports = {
   initTelegramBot: bot,

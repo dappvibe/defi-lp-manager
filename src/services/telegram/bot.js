@@ -4,12 +4,12 @@
  */
 const TelegramBot = require('node-telegram-bot-api');
 const { environment } = require('../../config');
-const { StartHandler, HelpHandler, NotifyHandler, PoolHandler, WalletHandler } = require('./handlers');
+const { StartHandler, HelpHandler, NotifyHandler, PoolHandler, WalletHandler } = require('./commands');
 
 const Throttler = require('../../utils/throttler');
 
 /**
- * Initialize the Telegram bot with all handlers
+ * Initialize the Telegram bot with all commands
  * @param {string} token - Telegram bot token
  * @param {object} provider - Ethereum provider instance
  * @param {object} monitoredPools - Object to store monitored pools

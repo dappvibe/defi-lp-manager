@@ -8,7 +8,7 @@ class HelpHandler {
     static description = 'Show help information for all commands';
 
     /**
-     * Register command handlers with the bot
+     * Register command commands with the bot
      * @param {TelegramBot} bot - The bot instance
      */
     static onText(bot) {
