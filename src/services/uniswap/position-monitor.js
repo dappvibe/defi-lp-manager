@@ -94,7 +94,13 @@ class PositionMonitor {
 
         // Skip positions with 0 liquidity
         if (position.liquidity && position.liquidity > 0n) {
-          positions.push(position);
+          // Calculate combined value in terms of token1 (stablecoin)
+          const combinedToken1Value = await this.calculateCombinedToken1Value(position);
+
+          // Only include positions with combined value >= 0.1 token1
+          if (combinedToken1Value >= 0.1) {
+            positions.push(position);
+          }
         }
       }
 
@@ -102,6 +108,27 @@ class PositionMonitor {
     } catch (error) {
       console.error('Error fetching positions:', error);
       return [];
+    }
+  }
+
+  /**
+   * Calculate the combined value of a position in terms of token1 (stablecoin)
+   * @param {Object} position - Position object
+   * @returns {Promise<number>} Combined value in token1 units
+   */
+  async calculateCombinedToken1Value(position) {
+    try {
+      // Get token1 amount (already in stablecoin)
+      const token1Amount = parseFloat(position.token1Amount);
+
+      // Convert token0 amount to token1 equivalent using current price
+      const token0AmountInToken1 = parseFloat(position.token0Amount) * parseFloat(position.currentPrice);
+
+      // Return combined value
+      return token1Amount + token0AmountInToken1;
+    } catch (error) {
+      console.error('Error calculating combined token1 value:', error);
+      return 0; // Return 0 to filter out positions with errors
     }
   }
 
