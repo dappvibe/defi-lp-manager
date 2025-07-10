@@ -79,36 +79,9 @@ function formatTokenAmount(token, amount) {
  * @param {Object} token1 - Token1 configuration
  * @returns {string} Human-readable price
  */
-function tickToHumanReadablePriceSDK(tick, token0, token1) {
-  const price = tickToPrice(
-    new Token(token0.chainId, token0.address, token0.decimals, token0.symbol),
-    new Token(token1.chainId, token1.address, token1.decimals, token1.symbol),
-    tick
-  );
-  return price.toFixed(6);
-}
-
-/**
- * Convert tick to human-readable price (backward compatibility version)
- * @param {number} tick - The tick value
- * @param {number} token0Decimals - Token0 decimals
- * @param {number} token1Decimals - Token1 decimals
- * @returns {string} Human-readable price
- */
-function tickToHumanReadablePrice(tick, token0Decimals, token1Decimals) {
-  const price = Math.pow(1.0001, tick);
-  const adjustedPrice = price * Math.pow(10, token1Decimals - token0Decimals);
-  const invertedPrice = 1 / adjustedPrice;
-
-  if (invertedPrice < 0.001) {
-    return invertedPrice.toExponential(4);
-  } else if (invertedPrice < 1) {
-    return invertedPrice.toFixed(6);
-  } else if (invertedPrice < 1000) {
-    return invertedPrice.toFixed(4);
-  } else {
-    return invertedPrice.toLocaleString(undefined, { maximumFractionDigits: 2 });
-  }
+function tickToHumanPrice(tick, token0, token1) {
+  const price = tickToPrice(token0, token1, tick);
+  return price.toFixed(5);
 }
 
 /**
@@ -168,8 +141,7 @@ module.exports = {
   formatTokenAmount,
 
   // Price calculation functions
-  tickToHumanReadablePriceSDK,
-  tickToHumanReadablePrice,
+  tickToHumanPrice,
 
   // Position and liquidity functions
   calculateAmountsFromLiquidity,

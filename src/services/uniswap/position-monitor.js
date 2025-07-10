@@ -4,7 +4,7 @@ const { Pool, Position } = require('@uniswap/v3-sdk');
 const { Token } = require('@uniswap/sdk-core');
 
 const { getTimeInTimezone } = require('../../utils/time');
-const { tickToHumanReadablePrice, isPositionInRange } = require('./helpers');
+const { tickToHumanPrice, isPositionInRange } = require('./helpers');
 const TokenService = require('./token');
 
 class PositionMonitor {
@@ -196,9 +196,9 @@ class PositionMonitor {
         );
       }
 
-      const lowerPrice = tickToHumanReadablePrice(Number(tickLower), token0.decimals, token1.decimals);
-      const upperPrice = tickToHumanReadablePrice(Number(tickUpper), token0.decimals, token1.decimals);
-      const currentPrice = tickToHumanReadablePrice(currentTick, token0.decimals, token1.decimals);
+      const lowerPrice = tickToHumanPrice(Number(tickLower), token0, token1);
+      const upperPrice = tickToHumanPrice(Number(tickUpper), token0, token1);
+      const currentPrice = tickToHumanPrice(currentTick, token0, token1);
       const inRange = isPositionInRange(Number(tickLower), Number(tickUpper), currentTick);
 
       return {
