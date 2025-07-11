@@ -518,12 +518,9 @@ class PoolService {
         // Cache the pool information with metadata
         await this._cachePoolInfo(poolConfig.address, {
           platform: poolConfig.platform,
-          blockchain: poolConfig.blockchain,
-          configName: poolConfig.name,
-          configDescription: poolConfig.description,
-          fee: poolConfig.fee
+          blockchain: poolConfig.blockchain
         });
-        console.log(`Cached pre-configured pool: ${poolConfig.name} (${poolConfig.platform}/${poolConfig.blockchain}) - ${poolConfig.address}`);
+        console.log(`Cached pre-configured pool: ${poolConfig.platform}/${poolConfig.blockchain} - ${poolConfig.address}`);
       } catch (error) {
         console.error(`Failed to cache pre-configured pool ${poolConfig.address} (${poolConfig.platform}/${poolConfig.blockchain}):`, error.message);
       }

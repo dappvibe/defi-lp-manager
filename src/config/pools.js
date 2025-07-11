@@ -1,68 +1,27 @@
 /**
  * Pre-configured pools configuration
- * Structure: platform -> blockchain -> pools
- * Contains pools organized by platform (PancakeSwap, Uniswap, etc.) and blockchain (Arbitrum, Ethereum, etc.)
+ * Pool addresses as a list with details as comments
  */
 
 const poolsConfig = {
-  uniswap: {
-    arbitrum: [
-      {
-        address: '0xC31E54c7a869B9FcBEcc14363CF510d1c41fa443',
-        name: 'ETH/USDC',
-        description: 'Ethereum / USD Coin (0.05% fee)',
-        fee: '0.05%',
-        enabled: true,
-        priceMonitoringEnabled: false, // Price monitoring disabled by default
-      },
-      {
-        address: '0x17c14D2c404D167802b16C450d3c99F88F2c4F4d',
-        name: 'ETH/USDC',
-        description: 'Ethereum / USD Coin (0.3% fee)',
-        fee: '0.3%',
-        enabled: true,
-        priceMonitoringEnabled: false,
-      },
-      {
-        address: '0x641C00A822e8b671738d32a431a4Fb6074E5c79d',
-        name: 'ETH/USDT',
-        description: 'Ethereum / Tether USD (0.3% fee)',
-        fee: '0.3%',
-        enabled: true,
-        priceMonitoringEnabled: false,
-      }
-    ],
-    ethereum: [
-      {
-        address: '0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640',
-        name: 'ETH/USDC',
-        description: 'Ethereum / USD Coin (0.05% fee)',
-        fee: '0.05%',
-        enabled: true,
-        priceMonitoringEnabled: false,
-      }
-    ]
-  },
   pancakeswap: {
     arbitrum: [
-      {
-        address: '0x6a9146bc52c2d54a2e8a5c0e8b7d6b8b6c8e8f8a', // Example - replace with actual PancakeSwap pool
-        name: 'ARB/ETH',
-        description: 'Arbitrum / Ethereum (0.3% fee)',
-        fee: '0.3%',
-        enabled: false, // Disabled until valid address is provided
-        priceMonitoringEnabled: false,
-      }
-    ],
-    bsc: [
-      {
-        address: '0x7a9146bc52c2d54a2e8a5c0e8b7d6b8b6c8e8f8b', // Example - replace with actual BSC pool
-        name: 'BNB/USDT',
-        description: 'Binance Coin / Tether USD (0.25% fee)',
-        fee: '0.25%',
-        enabled: false, // Disabled until valid address is provided
-        priceMonitoringEnabled: false,
-      }
+      // USDC/WETH (0.01% fee)
+      '0x7fCDC35463E3770c2fB992716Cd070B63540b947',
+      // USDC/WETH (0.05% fee)
+      '0xd9e2a1a61B6E61b275cEc326465d417e52C1b95c',
+      // USDT/WETH (0.01% fee)
+      '0x389938CF14Be379217570D8e4619E51fBDafaa21',
+      // USDC/WBTC (0.05% fee)
+      '0x843aC8dc6D34AEB07a56812b8b36429eE46BDd07',
+      // USDT/WETH (0.05% fee)
+      '0x0BaCc7a9717e70EA0DA5Ac075889Bd87d4C81197',
+      // USDC/WBTC (0.01% fee)
+      '0x5A17cbf5F866BDe11C28861a2742764Fac0Eba4B',
+      // USDC/ARB (0.05% fee)
+      '0x9fFCA51D23Ac7F7df82da414865Ef1055E5aFCc3',
+      // USDT/LINK (0.05% fee)
+      '0x2d0Bb2f6D514118642f8588B1c22043e865EaA88'
     ]
   }
 };
@@ -95,7 +54,7 @@ module.exports = {
    * Get pools for a specific platform and blockchain
    * @param {string} platform - Platform name
    * @param {string} blockchain - Blockchain name
-   * @returns {Array} Array of pool configurations
+   * @returns {Array} Array of pool addresses
    */
   getPools(platform, blockchain) {
     const platformPools = poolsConfig[platform];
@@ -113,21 +72,19 @@ module.exports = {
 
   /**
    * Get all enabled pre-configured pools (flattened from all platforms/blockchains)
-   * @returns {Array} Array of enabled pool configurations with platform/blockchain info
+   * @returns {Array} Array of pool addresses with platform/blockchain info
    */
   getEnabledPools() {
     const enabledPools = [];
 
     for (const [platform, blockchains] of Object.entries(poolsConfig)) {
       for (const [blockchain, pools] of Object.entries(blockchains)) {
-        for (const pool of pools) {
-          if (pool.enabled) {
-            enabledPools.push({
-              ...pool,
-              platform,
-              blockchain
-            });
-          }
+        for (const address of pools) {
+          enabledPools.push({
+            address,
+            platform,
+            blockchain
+          });
         }
       }
     }
@@ -143,12 +100,12 @@ module.exports = {
   getPoolByAddress(address) {
     for (const [platform, blockchains] of Object.entries(poolsConfig)) {
       for (const [blockchain, pools] of Object.entries(blockchains)) {
-        const pool = pools.find(p =>
-          p.address.toLowerCase() === address.toLowerCase()
+        const poolAddress = pools.find(p =>
+          p.toLowerCase() === address.toLowerCase()
         );
-        if (pool) {
+        if (poolAddress) {
           return {
-            ...pool,
+            address: poolAddress,
             platform,
             blockchain
           };
@@ -170,7 +127,7 @@ module.exports = {
   /**
    * Get enabled pools for a specific platform
    * @param {string} platform - Platform name
-   * @returns {Array} Array of enabled pool configurations for the platform
+   * @returns {Array} Array of pool addresses with platform/blockchain info
    */
   getEnabledPoolsByPlatform(platform) {
     const platformPools = poolsConfig[platform];
@@ -180,14 +137,12 @@ module.exports = {
 
     const enabledPools = [];
     for (const [blockchain, pools] of Object.entries(platformPools)) {
-      for (const pool of pools) {
-        if (pool.enabled) {
-          enabledPools.push({
-            ...pool,
-            platform,
-            blockchain
-          });
-        }
+      for (const address of pools) {
+        enabledPools.push({
+          address,
+          platform,
+          blockchain
+        });
       }
     }
 
@@ -198,13 +153,13 @@ module.exports = {
    * Get enabled pools for a specific platform and blockchain
    * @param {string} platform - Platform name
    * @param {string} blockchain - Blockchain name
-   * @returns {Array} Array of enabled pool configurations
+   * @returns {Array} Array of pool addresses with platform/blockchain info
    */
   getEnabledPoolsByPlatformAndBlockchain(platform, blockchain) {
     try {
       const pools = this.getPools(platform, blockchain);
-      return pools.filter(pool => pool.enabled).map(pool => ({
-        ...pool,
+      return pools.map(address => ({
+        address,
         platform,
         blockchain
       }));
