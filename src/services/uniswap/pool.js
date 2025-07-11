@@ -224,21 +224,16 @@ class PoolService {
    * @param {string} timezone - Timezone for time display
    */
   async startMonitoring(botInstance, poolAddress, poolData, providerInstance, timezone) {
-    console.log(`Attempting to monitor pool: ${poolAddress}`);
+    console.log(`Starting monitoring for pool: ${poolAddress}`);
 
     this.monitoredPools[poolAddress] = {
       ...poolData,
       client: providerInstance,
-      priceMonitoringEnabled: poolData.priceMonitoringEnabled || false,
     };
 
-    // Only attach swap listener if price monitoring is enabled
-    if (this.monitoredPools[poolAddress].priceMonitoringEnabled) {
-      await this._attachSwapListener(botInstance, poolAddress, timezone);
-      console.log(`Successfully attached Swap listener for ${poolAddress}`);
-    } else {
-      console.log(`Pool ${poolAddress} added but price monitoring is disabled`);
-    }
+    // Attach swap listener for price monitoring
+    await this._attachSwapListener(botInstance, poolAddress, timezone);
+    console.log(`Successfully started monitoring for ${poolAddress}`);
 
     // Save pool state to database
     await this.stateManager.savePoolState(poolAddress, this.monitoredPools[poolAddress]);
@@ -291,64 +286,12 @@ class PoolService {
   }
 
   /**
-   * Enable price monitoring for a specific pool
-   * @param {Object} botInstance - Telegram bot instance
+   * Check if a pool is being monitored
    * @param {string} poolAddress - Pool address
-   * @param {string} timezone - Timezone for time display
+   * @returns {boolean} True if pool is being monitored
    */
-  async enablePriceMonitoring(botInstance, poolAddress, timezone) {
-    if (!this.monitoredPools[poolAddress]) {
-      throw new Error(`Pool ${poolAddress} is not being monitored`);
-    }
-
-    if (this.monitoredPools[poolAddress].priceMonitoringEnabled) {
-      return; // Already enabled
-    }
-
-    this.monitoredPools[poolAddress].priceMonitoringEnabled = true;
-
-    // Attach swap listener
-    await this._attachSwapListener(botInstance, poolAddress, timezone);
-    console.log(`Enabled price monitoring for pool ${poolAddress}`);
-
-    // Save updated state to database
-    await this.stateManager.savePoolState(poolAddress, this.monitoredPools[poolAddress]);
-  }
-
-  /**
-   * Disable price monitoring for a specific pool
-   * @param {string} poolAddress - Pool address
-   */
-  async disablePriceMonitoring(poolAddress) {
-    if (!this.monitoredPools[poolAddress]) {
-      throw new Error(`Pool ${poolAddress} is not being monitored`);
-    }
-
-    if (!this.monitoredPools[poolAddress].priceMonitoringEnabled) {
-      return; // Already disabled
-    }
-
-    this.monitoredPools[poolAddress].priceMonitoringEnabled = false;
-
-    // Remove swap listener
-    if (this.watchUnsubscribers[poolAddress]) {
-      this.watchUnsubscribers[poolAddress]();
-      delete this.watchUnsubscribers[poolAddress];
-    }
-
-    console.log(`Disabled price monitoring for pool ${poolAddress}`);
-
-    // Save updated state to database
-    await this.stateManager.savePoolState(poolAddress, this.monitoredPools[poolAddress]);
-  }
-
-  /**
-   * Check if price monitoring is enabled for a pool
-   * @param {string} poolAddress - Pool address
-   * @returns {boolean} True if price monitoring is enabled
-   */
-  isPriceMonitoringEnabled(poolAddress) {
-    return this.monitoredPools[poolAddress]?.priceMonitoringEnabled || false;
+  isMonitoring(poolAddress) {
+    return Boolean(this.monitoredPools[poolAddress]);
   }
 
   /**
