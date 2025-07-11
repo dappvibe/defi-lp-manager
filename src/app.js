@@ -4,7 +4,7 @@
  */
 const { environment } = require('./config');
 const { getProvider } = require('./services/blockchain/provider');
-const poolMonitor = require('./services/uniswap/pool-monitor');
+const poolService = require('./services/uniswap/pool');
 const initTelegramBot = require('./services/telegram/bot');
 const PositionMonitor = require('./services/uniswap/position-monitor');
 const MongoStateManager = require('./services/database/mongo');
@@ -21,29 +21,32 @@ async function initializeApp() {
     const mongoStateManager = new MongoStateManager();
     await mongoStateManager.connect();
 
+    // Initialize pool service
+    await poolService.initialize();
+
     // Initialize position monitor for wallet tracking with state manager
     const positionMonitor = new PositionMonitor(provider, mongoStateManager);
 
     // Restore position monitor state from MongoDB
     await positionMonitor.initialize();
 
-    // Initialize the Telegram bot with the pool monitor and position monitor
+    // Initialize the Telegram bot with the pool service and position monitor
     const bot = initTelegramBot(
         environment.telegram.botToken,
         provider,
-        poolMonitor.getMonitoredPools(),
+        poolService.getMonitoredPools(),
         positionMonitor,
         environment.telegram.timezone
     );
 
-    // Initialize pool monitor with MongoDB state restoration
+    // Initialize pool service with monitoring functionality
     // This must be done after the bot is initialized since it needs the bot instance
-    await poolMonitor.initialize(bot, provider, environment.telegram.timezone);
+    await poolService.initialize(bot, provider, environment.telegram.timezone);
 
     return {
         provider,
         bot,
-        poolMonitor,
+        poolService,
         positionMonitor,
         mongoStateManager,
     };
@@ -54,10 +57,12 @@ async function initializeApp() {
  * @param {Object} appContext - The application context with services to clean up
  */
 async function cleanupApp(appContext) {
-    const { bot, poolMonitor, mongoStateManager } = appContext;
+    const { bot, poolService, mongoStateManager } = appContext;
 
-    // Stop database all pools
-    await poolMonitor.stopAllMonitoring();
+    // Close pool service (includes stopping all monitoring)
+    if (poolService) {
+        await poolService.close();
+    }
 
     // Close MongoDB connection if available
     if (mongoStateManager) {
