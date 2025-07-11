@@ -4,11 +4,10 @@
  * Provides a clean interface hiding MongoDB implementation details
  * Handles caching, retrieval, and real-time monitoring of pool information
  */
-const { formatUnits } = require('viem');
 const { getTokenInfo, createPoolContract } = require('./contracts');
 const { isValidEthereumAddress, calculatePrice } = require('./utils');
-const { getTimeInTimezone } = require('../../utils/time');
 const { uniswapV3Pool: poolAbi } = require('./abis');
+const { getTimeInTimezone } = require('../../utils/time');
 const MongoStateManager = require('../database/mongo');
 const poolsConfig = require('../../config/pools');
 
@@ -363,35 +362,69 @@ class PoolService {
           const {sqrtPriceX96, amount0, amount1, tick} = args;
 
           const newPriceT1T0 = parseFloat(calculatePrice(sqrtPriceX96, poolInfo.token0.decimals, poolInfo.token1.decimals));
-          let volume;
-          let volumeTokenSymbol;
 
-          const amount1Abs = amount1 < 0n ? -amount1 : amount1;
-          const amount0Abs = amount0 < 0n ? -amount0 : amount0;
-
-          if (amount1Abs > 0n) {
-            volume = formatUnits(amount1Abs, poolInfo.token1.decimals);
-            volumeTokenSymbol = poolInfo.token1.symbol;
-          } else {
-            volume = formatUnits(amount0Abs, poolInfo.token0.decimals);
-            volumeTokenSymbol = poolInfo.token0.symbol;
-          }
-
-          const eventTime = getTimeInTimezone(timezone);
-          const updatedText = `${newPriceT1T0.toFixed(5)} ${poolInfo.token0.symbol}/${poolInfo.token1.symbol} ${eventTime}\nLast: ${volume} ${volumeTokenSymbol}`;
-
-          botInstance.editMessageText(updatedText, {
-            chat_id: poolInfo.chatId,
-            message_id: poolInfo.messageId
-          }).catch(error => {
-            console.error(`Error editing message for pool ${poolAddress} in chat ${poolInfo.chatId}: ${error.message}`);
-          });
+          // Update the pool message with the same formatting but new price
+          this._updatePoolMessageWithPrice(botInstance, poolAddress, poolInfo, newPriceT1T0, timezone);
 
           this._checkPriceAlerts(botInstance, poolInfo, newPriceT1T0);
           poolInfo.lastPriceT1T0 = newPriceT1T0;
         });
       }
     });
+  }
+
+  /**
+   * Update pool message with new price while keeping the same formatting
+   * @private
+   * @param {Object} botInstance - Telegram bot instance
+   * @param {string} poolAddress - Pool address
+   * @param {Object} poolInfo - Pool information
+   * @param {number} newPrice - New price
+   * @param {string} timezone - Timezone for time display
+   */
+  async _updatePoolMessageWithPrice(botInstance, poolAddress, poolInfo, newPrice, timezone) {
+    try {
+      // Find pool config to get platform/blockchain info
+      const poolConfig = poolsConfig.getPoolByAddress(poolAddress);
+      if (!poolConfig) {
+        console.error(`Pool config not found for ${poolAddress}`);
+        return;
+      }
+
+      // Create message text with the same format as pool command handler
+      const pair = `[${poolInfo.token0.symbol}/${poolInfo.token1.symbol}](https://pancakeswap.finance/info/v3/arb/pairs/${poolAddress})`;
+      const feePercent = poolInfo.fee ? (poolInfo.fee / 10000).toFixed(2) + '%' : 'Unknown';
+      const pairWithFee = `${pair} (${feePercent})`;
+      const updateTime = getTimeInTimezone(timezone);
+
+      const messageText = `💰 **${pairWithFee}**
+📊 Price: ${newPrice.toFixed(5)}
+⏰ Updated: ${updateTime}`;
+
+      // Check if pool is currently being monitored
+      const isMonitored = this.isMonitoring(poolAddress);
+
+      // Create inline keyboard
+      const keyboard = {
+        inline_keyboard: [[
+          {
+            text: isMonitored ? '🔴 Stop Monitoring' : '🟢 Start Monitoring',
+            callback_data: `pool_${isMonitored ? 'stop' : 'start'}_${poolAddress}`
+          }
+        ]]
+      };
+
+      await botInstance.editMessageText(messageText, {
+        chat_id: poolInfo.chatId,
+        message_id: poolInfo.messageId,
+        parse_mode: 'Markdown',
+        reply_markup: keyboard,
+        disable_web_page_preview: true
+      });
+
+    } catch (error) {
+      console.error(`Error updating pool message for ${poolAddress} in chat ${poolInfo.chatId}: ${error.message}`);
+    }
   }
 
   /**
