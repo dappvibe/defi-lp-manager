@@ -17,6 +17,8 @@ class Mongo {
    * Connect to MongoDB
    */
   async connect() {
+    if (this.isConnected && this.client) return;
+
     try {
       const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/defi-lp-manager';
       this.client = new MongoClient(uri);
