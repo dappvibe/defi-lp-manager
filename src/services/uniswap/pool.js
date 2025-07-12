@@ -55,12 +55,11 @@ class PoolService {
     // Load saved monitored pools state
     const savedState = await this.stateManager.loadAllPools();
 
-    // Restore monitoring only for pools that were actually being monitored
-    // (pools with chatId and messageId indicate they were being monitored)
+    // Restore monitoring only for pools that have monitoring enabled
     for (const [poolAddress, poolData] of Object.entries(savedState)) {
       try {
-        // Only restore monitoring for pools that have monitoring-specific data
-        if (poolData.chatId && poolData.messageId) {
+        // Only restore monitoring for pools that have the monitoring flag enabled
+        if (poolData.priceMonitoringEnabled === true) {
           await this.startMonitoring(
             botInstance,
             poolAddress,
@@ -69,6 +68,8 @@ class PoolService {
             timezone
           );
           console.log(`Restored monitoring for pool: ${poolAddress}`);
+        } else {
+          console.log(`Skipping pool ${poolAddress} - monitoring disabled (priceMonitoringEnabled: ${poolData.priceMonitoringEnabled})`);
         }
       } catch (error) {
         console.error(`Failed to restore monitoring for pool ${poolAddress}:`, error);
@@ -232,6 +233,7 @@ class PoolService {
     this.monitoredPools[poolAddress] = {
       ...poolData,
       client: providerInstance,
+      priceMonitoringEnabled: true, // Always set to true when starting monitoring
     };
 
     // Attach swap listener for price monitoring
@@ -254,8 +256,16 @@ class PoolService {
       // Remove from memory
       delete this.monitoredPools[poolAddress];
 
-      // Remove from database
-      await this.stateManager.removePool(poolAddress);
+      // Set monitoring flag to false in database using MongoDB directly
+      await this.stateManager.poolsCollection.updateOne(
+        { poolAddress },
+        {
+          $set: {
+            priceMonitoringEnabled: false,
+            updatedAt: new Date()
+          }
+        }
+      );
 
       console.log(`Stopped monitoring for ${poolAddress}`);
     }
