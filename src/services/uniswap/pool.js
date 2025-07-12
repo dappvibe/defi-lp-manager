@@ -55,17 +55,21 @@ class PoolService {
     // Load saved monitored pools state
     const savedState = await this.stateManager.loadAllPools();
 
-    // Restore monitoring for each saved pool
+    // Restore monitoring only for pools that were actually being monitored
+    // (pools with chatId and messageId indicate they were being monitored)
     for (const [poolAddress, poolData] of Object.entries(savedState)) {
       try {
-        await this.startMonitoring(
-          botInstance,
-          poolAddress,
-          poolData,
-          providerInstance,
-          timezone
-        );
-        console.log(`Restored monitoring for pool: ${poolAddress}`);
+        // Only restore monitoring for pools that have monitoring-specific data
+        if (poolData.chatId && poolData.messageId) {
+          await this.startMonitoring(
+            botInstance,
+            poolAddress,
+            poolData,
+            providerInstance,
+            timezone
+          );
+          console.log(`Restored monitoring for pool: ${poolAddress}`);
+        }
       } catch (error) {
         console.error(`Failed to restore monitoring for pool ${poolAddress}:`, error);
       }
