@@ -76,7 +76,7 @@ class WalletHandler {
     }
 
     // Send processing message
-    const statusMsg = await bot.sendMessage(chatId, "⏳ Processing wallet address... Fetching positions...");
+    const statusMsg = await bot.sendMessage(chatId, "⏳ Processing wallet address...");
 
     try {
       // Check if already monitoring
@@ -85,16 +85,12 @@ class WalletHandler {
       // Start monitoring the wallet
       positionMonitor.startMonitoring(walletAddress, chatId);
 
-      // Fetch positions
-      const positions = await positionMonitor.getPositions(walletAddress);
-
       // Format message based on monitoring status
       const monitoringStatus = isAlreadyMonitored
           ? "✅ Already monitoring this wallet"
           : "✅ Started monitoring this wallet for position changes";
 
-      // Create full message
-      const message = `${monitoringStatus}\n\n${positionMonitor.formatPositionsMessage(positions, timezone)}`;
+      const message = `${monitoringStatus}\n\n💡 Use /lp to view current positions for monitored wallets.`;
 
       // Update status message
       await bot.editMessageText(message, {
@@ -102,17 +98,6 @@ class WalletHandler {
         message_id: statusMsg.message_id
       });
 
-      // Save positions to MongoDB with message ID
-      for (const position of positions) {
-        if (!position.error) {
-          const positionData = {
-            ...position,
-            walletAddress: walletAddress,
-            poolAddress: await positionMonitor.getPoolAddressForPosition(position)
-          };
-          await positionMonitor.mongoStateManager.savePosition(positionData, chatId, statusMsg.message_id);
-        }
-      }
     } catch (error) {
       console.error('Error processing wallet:', error);
       await bot.editMessageText(
@@ -207,6 +192,7 @@ class WalletHandler {
         { parse_mode: 'Markdown' }
     );
   }
+
 
   /**
    * Returns a brief help description with command signature
