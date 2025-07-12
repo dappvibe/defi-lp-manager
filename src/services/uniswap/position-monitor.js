@@ -442,7 +442,7 @@ class PositionMonitor {
     const amountsLine = `💰 ${parseFloat(position.token0Amount).toFixed(4)} ${position.token0Symbol} + ${parseFloat(position.token1Amount).toFixed(2)} ${position.token1Symbol}`;
 
     // Format price and range
-    const priceRangeLine = `📊 $${parseFloat(position.currentPrice).toFixed(2)} \[$${parseFloat(position.lowerPrice).toFixed(2)} - $${parseFloat(position.upperPrice).toFixed(2)}\]`;
+    const priceRangeLine = `📊 **$${parseFloat(position.currentPrice).toFixed(2)}** - $${parseFloat(position.lowerPrice).toFixed(2)} - $${parseFloat(position.upperPrice).toFixed(2)}`;
 
     // Format status
     const stakingStatus = position.isStaked ? '🥩 STAKED' : '💼 UNSTAKED';
