@@ -17,7 +17,7 @@ class PositionMonitor {
     this.provider = provider;
     this.mongoStateManager = mongoStateManager;
     this.tokenService = new TokenService(provider);
-    this.monitoredWallets = new Map(); // wallet -> { chatId, lastCheck }
+    this.monitoredWallets = new Map(); // wallet -> { chatId, lastCheck, lastPositions }
     this.positionManagerAddress = contracts.getContractAddress('pancakeswap', 'arbitrum', 'nonfungiblePositionManager');
     this.positionManagerContract = this.createPositionManagerContract();
 
@@ -26,6 +26,9 @@ class PositionMonitor {
     this.stakingContract = this.createStakingContract();
 
     this.erc20Abi = require('./abis/erc20.json');
+
+    // Load monitored wallets from MongoDB on initialization
+    this.loadMonitoredWalletsFromDB();
   }
 
   /**
@@ -452,6 +455,36 @@ class PositionMonitor {
   }
 
   /**
+   * Load monitored wallets from MongoDB
+   */
+  async loadMonitoredWalletsFromDB() {
+    try {
+      const wallets = await this.mongoStateManager.loadMonitoredWallets();
+      for (const wallet of wallets) {
+        this.monitoredWallets.set(wallet.walletAddress, {
+          chatId: wallet.chatId,
+          lastCheck: wallet.lastCheck || new Date(),
+          lastPositions: [] // Reset positions on startup - they'll be fetched fresh
+        });
+      }
+      console.log(`Loaded ${wallets.length} monitored wallets from database`);
+    } catch (error) {
+      console.error('Error loading monitored wallets from database:', error);
+    }
+  }
+
+  /**
+   * Save monitored wallets to MongoDB
+   */
+  async saveMonitoredWalletsToDB() {
+    try {
+      await this.mongoStateManager.saveMonitoredWallets(this.monitoredWallets);
+    } catch (error) {
+      console.error('Error saving monitored wallets to database:', error);
+    }
+  }
+
+  /**
    * Start monitoring a wallet
    * @param {string} walletAddress - Wallet address to monitor
    * @param {number} chatId - Telegram chat ID
@@ -463,6 +496,9 @@ class PositionMonitor {
       lastCheck: new Date(),
       lastPositions: []
     });
+
+    // Save to database
+    this.saveMonitoredWalletsToDB();
   }
 
   /**
@@ -472,7 +508,14 @@ class PositionMonitor {
    */
   stopMonitoring(walletAddress) {
     const key = walletAddress.toLowerCase();
-    return this.monitoredWallets.delete(key);
+    const wasMonitored = this.monitoredWallets.delete(key);
+
+    if (wasMonitored) {
+      // Save to database
+      this.saveMonitoredWalletsToDB();
+    }
+
+    return wasMonitored;
   }
 
   /**
