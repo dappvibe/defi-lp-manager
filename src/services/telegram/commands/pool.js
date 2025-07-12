@@ -126,19 +126,58 @@ class PoolHandler {
         disable_web_page_preview: true
       };
 
+      let resultMessage;
       // Send or edit message based on action
       if (action === 'edit' && messageId) {
-        await bot.editMessageText(messageText, {
+        resultMessage = await bot.editMessageText(messageText, {
           chat_id: chatId,
           message_id: messageId,
           ...messageOptions
         });
       } else {
-        await bot.sendMessage(chatId, messageText, messageOptions);
+        resultMessage = await bot.sendMessage(chatId, messageText, messageOptions);
+
+        // Update message ID in MongoDB for this pool
+        if (resultMessage && resultMessage.message_id) {
+          await this.updatePoolMessageId(poolAddress, chatId, resultMessage.message_id);
+        }
       }
 
     } catch (error) {
       console.error(`Error ${action === 'edit' ? 'updating' : 'sending'} pool message for ${poolAddress}:`, error.message);
+    }
+  }
+
+  /**
+   * Update the message ID for a pool in MongoDB
+   * @param {string} poolAddress - Pool address
+   * @param {number} chatId - Chat ID
+   * @param {number} messageId - New message ID
+   */
+  static async updatePoolMessageId(poolAddress, chatId, messageId) {
+    try {
+      // Get the pool service instance to access the state manager
+      const poolService = require('../../uniswap/pool');
+
+      // Get existing pool data
+      const existingPoolData = await poolService.stateManager.getCachedPoolInfo(poolAddress);
+
+      if (existingPoolData) {
+        // Update the pool data with new message ID and chat ID
+        const updatedPoolData = {
+          ...existingPoolData,
+          chatId: chatId,
+          messageId: messageId
+        };
+
+        // Save the updated pool data
+        await poolService.stateManager.savePoolState(poolAddress, updatedPoolData);
+        console.log(`Updated message ID for pool ${poolAddress}: chatId=${chatId}, messageId=${messageId}`);
+      } else {
+        console.warn(`No existing pool data found for ${poolAddress} when trying to update message ID`);
+      }
+    } catch (error) {
+      console.error(`Error updating message ID for pool ${poolAddress}:`, error.message);
     }
   }
 
