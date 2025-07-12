@@ -500,24 +500,15 @@ class PoolService {
             continue;
           }
 
-          // Format updated position message
-          const stakingStatus = updatedPosition.isStaked ? '🥩 **STAKED**' : '💼 **UNSTAKED**';
-          const rangeStatus = updatedPosition.inRange ? '🟢 **IN RANGE**' : '🔴 **OUT OF RANGE**';
-
-          const updatedMessage = `📊 **Position Update**\n\n` +
-            `**${updatedPosition.token0Symbol}/${updatedPosition.token1Symbol}** (${updatedPosition.fee/10000}%)\n` +
-            `${stakingStatus} | ${rangeStatus}\n` +
-            `💰 ${updatedPosition.token0Amount} ${updatedPosition.token0Symbol} + ${updatedPosition.token1Amount} ${updatedPosition.token1Symbol}\n` +
-            `📈 Range: $${updatedPosition.lowerPrice} - $${updatedPosition.upperPrice}\n` +
-            `📊 Current: $${updatedPosition.currentPrice}\n` +
-            `🔢 Token ID: ${updatedPosition.tokenId}\n\n` +
-            `🕐 *Updated: ${require('../../utils/time').getTimeInTimezone(timezone)}*`;
+          // Use the unified position formatting method for updates
+          const updatedMessage = tempMonitor.formatSinglePositionMessage(updatedPosition, timezone, true);
 
           // Update the message in Telegram
           await botInstance.editMessageText(updatedMessage, {
             chat_id: storedPosition.chatId,
             message_id: storedPosition.messageId,
-            parse_mode: 'Markdown'
+            parse_mode: 'Markdown',
+            disable_web_page_preview: true
           });
 
           // Update position data in MongoDB

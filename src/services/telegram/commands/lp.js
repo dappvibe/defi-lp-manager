@@ -66,22 +66,8 @@ class LpHandler {
               continue;
             }
 
-            let positionMessage = `🔹 **Position #${position.tokenId} - ${position.token0Symbol}/${position.token1Symbol} (${Number(position.fee) / 10000}%)**\n`;
-
-            // Token amounts
-            positionMessage += `\n💰 **Amounts:**\n`;
-            positionMessage += `• ${position.token0Symbol} ${parseFloat(position.token0Amount).toFixed(position.token0Decimals)}\n`;
-            positionMessage += `• ${position.token1Symbol} ${parseFloat(position.token1Amount).toFixed(position.token1Decimals)}\n`;
-
-            // Price ranges (token1 relative to token0)
-            positionMessage += `\n📈 **Price (${position.token0Symbol} per ${position.token1Symbol}):**\n`;
-            positionMessage += `• Min: ${position.lowerPrice}\n`;
-            positionMessage += `• Max: ${position.upperPrice}\n`;
-            positionMessage += `• Current: ${position.currentPrice}\n`;
-
-            // Range status
-            const rangeStatus = position.inRange ? '🟢 In Range' : '🔴 Out of Range';
-            positionMessage += `• Status: ${rangeStatus}`;
+            // Use the unified position formatting method
+            const positionMessage = positionMonitor.formatSinglePositionMessage(position, timezone, false);
 
             // Send the position message immediately
             const sentMessage = await bot.sendMessage(chatId, positionMessage, { parse_mode: 'Markdown' });

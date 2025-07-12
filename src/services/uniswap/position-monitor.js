@@ -418,6 +418,49 @@ class PositionMonitor {
   }
 
   /**
+   * Format a single position message according to the unified format
+   * @param {Object} position - Position object
+   * @param {string} timezone - User timezone
+   * @param {boolean} isUpdate - Whether this is an update message (includes "Updated:" timestamp)
+   * @returns {string} Formatted position message
+   */
+  formatSinglePositionMessage(position, timezone = 'UTC', isUpdate = false) {
+    if (!position || position.error) {
+      return `❌ Error loading position: ${position?.error || 'Unknown error'}`;
+    }
+
+    // Format fee percentage
+    const feePercent = (position.fee / 10000).toFixed(2);
+
+    // Create pool link (PancakeSwap format)
+    const poolLink = `https://pancakeswap.finance/liquidity/${position.tokenId}?chain=arb&persistChain=1`;
+
+    // Format token pair with link
+    const tokenPairLine = `**${position.token0Symbol}/${position.token1Symbol}** (${feePercent}%) - [#${position.tokenId}](${poolLink})`;
+
+    // Format token amounts
+    const amountsLine = `💰 ${parseFloat(position.token0Amount).toFixed(4)} ${position.token0Symbol} + ${parseFloat(position.token1Amount).toFixed(2)} ${position.token1Symbol}`;
+
+    // Format price and range
+    const priceRangeLine = `📊 $${parseFloat(position.currentPrice).toFixed(2)} \[$${parseFloat(position.lowerPrice).toFixed(2)} - $${parseFloat(position.upperPrice).toFixed(2)}\]`;
+
+    // Format status
+    const stakingStatus = position.isStaked ? '🥩 STAKED' : '💼 UNSTAKED';
+    const rangeStatus = position.inRange ? '🟢 IN RANGE' : '🔴 OUT OF RANGE';
+    const statusLine = `${stakingStatus} | ${rangeStatus}`;
+
+    // Build the message
+    let message = `${tokenPairLine}\n${amountsLine}\n${priceRangeLine}\n${statusLine}`;
+
+    // Add timestamp if this is an update
+    if (isUpdate) {
+      message += `\n🕐 Updated: ${getTimeInTimezone(timezone)}`;
+    }
+
+    return message;
+  }
+
+  /**
    * Format positions for display in Telegram
    * @param {Array} positions - Array of positions
    * @param {string} timezone - User timezone
@@ -434,15 +477,7 @@ class PositionMonitor {
     let message = `📊 **Wallet Positions (${validPositions.length} active)**\n\n`;
 
     validPositions.forEach((position, index) => {
-      const stakingStatus = position.isStaked ? '🥩 **STAKED**' : '💼 **UNSTAKED**';
-      const rangeStatus = position.inRange ? '🟢 **IN RANGE**' : '🔴 **OUT OF RANGE**';
-
-      message += `**${index + 1}. ${position.token0Symbol}/${position.token1Symbol}** (${position.fee/10000}%)\n`;
-      message += `${stakingStatus} | ${rangeStatus}\n`;
-      message += `💰 ${position.token0Amount} ${position.token0Symbol} + ${position.token1Amount} ${position.token1Symbol}\n`;
-      message += `📈 Range: $${position.lowerPrice} - $${position.upperPrice}\n`;
-      message += `📊 Current: $${position.currentPrice}\n`;
-      message += `🔢 Token ID: ${position.tokenId}\n\n`;
+      message += `**${index + 1}.** ${this.formatSinglePositionMessage(position, timezone, false)}\n\n`;
     });
 
     if (errorPositions.length > 0) {
