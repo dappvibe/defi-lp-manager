@@ -63,42 +63,6 @@ class PositionMonitor {
   }
 
   /**
-   * Check if a position is active in the current price range
-   * @param {number} tickLower - Lower tick boundary
-   * @param {number} tickUpper - Upper tick boundary
-   * @param {number} tickCurrent - Current pool tick
-   * @returns {boolean} True if position is in range
-   */
-  isPositionInRange(tickLower, tickUpper, tickCurrent) {
-    return isPositionInRange(tickLower, tickUpper, tickCurrent);
-  }
-
-  /**
-   * Get token symbol and decimals
-   * @param {string} tokenAddress - Token address
-   * @returns {Promise<{symbol: string, decimals: number}>} Token info
-   */
-  async getTokenInfo(tokenAddress) {
-    try {
-      const tokenContract = getContract({
-        address: tokenAddress,
-        abi: this.erc20Abi,
-        client: this.provider
-      });
-
-      const [symbol, decimals] = await Promise.all([
-        tokenContract.read.symbol(),
-        tokenContract.read.decimals()
-      ]);
-
-      return { symbol, decimals };
-    } catch (error) {
-      console.error(`Error getting token info for ${tokenAddress}:`, error);
-      return { symbol: 'UNKNOWN', decimals: 18 };
-    }
-  }
-
-  /**
    * Fetch all positions for a wallet (including staked positions)
    * @param {string} walletAddress - Wallet address
    * @returns {Promise<Array>} Positions array
@@ -461,35 +425,6 @@ class PositionMonitor {
   }
 
   /**
-   * Format positions for display in Telegram
-   * @param {Array} positions - Array of positions
-   * @param {string} timezone - User timezone
-   * @returns {string} Formatted message
-   */
-  formatPositionsMessage(positions, timezone = 'UTC') {
-    if (!positions || positions.length === 0) {
-      return "📊 No positions found for this wallet.";
-    }
-
-    const validPositions = positions.filter(p => !p.error);
-    const errorPositions = positions.filter(p => p.error);
-
-    let message = `📊 **Wallet Positions (${validPositions.length} active)**\n\n`;
-
-    validPositions.forEach((position, index) => {
-      message += `**${index + 1}.** ${this.formatSinglePositionMessage(position, timezone, false)}\n\n`;
-    });
-
-    if (errorPositions.length > 0) {
-      message += `⚠️ **${errorPositions.length} position(s) had errors loading**\n`;
-    }
-
-    message += `🕐 *Updated: ${getTimeInTimezone(timezone)}*`;
-
-    return message;
-  }
-
-  /**
    * Load monitored wallets from MongoDB
    */
   async loadMonitoredWalletsFromDB() {
@@ -562,102 +497,6 @@ class PositionMonitor {
   }
 
   /**
-   * Check for position changes and notify users
-   * @param {object} bot - Telegram bot instance
-   * @param {string} timezone - User timezone
-   */
-  async checkPositionChanges(bot, timezone = 'UTC') {
-    for (const [walletAddress, walletData] of this.monitoredWallets) {
-      try {
-        const currentPositions = await this.getPositions(walletAddress);
-        const previousPositions = walletData.lastPositions || [];
-
-        // Compare positions and detect changes
-        const changes = this.detectPositionChanges(previousPositions, currentPositions);
-
-        if (changes.length > 0) {
-          const message = this.formatPositionChanges(changes, walletAddress, timezone);
-          const sentMessage = await bot.sendMessage(walletData.chatId, message, { parse_mode: 'Markdown' });
-
-          // Save new positions to MongoDB with message ID
-          for (const change of changes) {
-            if (change.type === 'NEW') {
-              const position = change.position;
-              const positionData = {
-                ...position,
-                walletAddress: walletAddress,
-                poolAddress: await this.getPoolAddressForPosition(position)
-              };
-              await this.mongoStateManager.savePosition(positionData, walletData.chatId, sentMessage.message_id);
-            }
-          }
-        }
-
-        // Update stored positions
-        walletData.lastPositions = currentPositions;
-        walletData.lastCheck = new Date();
-
-      } catch (error) {
-        console.error(`Error checking position changes for ${walletAddress}:`, error);
-      }
-    }
-  }
-
-  /**
-   * Detect changes between position sets
-   * @param {Array} previousPositions - Previous positions
-   * @param {Array} currentPositions - Current positions
-   * @returns {Array} Array of changes
-   */
-  detectPositionChanges(previousPositions, currentPositions) {
-    const changes = [];
-
-    // Check for new positions
-    for (const current of currentPositions) {
-      const previous = previousPositions.find(p => p.tokenId === current.tokenId);
-
-      if (!previous) {
-        changes.push({
-          type: 'NEW',
-          position: current
-        });
-      } else {
-        // Check for range changes
-        if (previous.inRange !== current.inRange) {
-          changes.push({
-            type: 'RANGE_CHANGE',
-            position: current,
-            wasInRange: previous.inRange
-          });
-        }
-
-        // Check for staking status changes
-        if (previous.isStaked !== current.isStaked) {
-          changes.push({
-            type: 'STAKING_CHANGE',
-            position: current,
-            wasStaked: previous.isStaked
-          });
-        }
-      }
-    }
-
-    // Check for removed positions
-    for (const previous of previousPositions) {
-      const current = currentPositions.find(p => p.tokenId === previous.tokenId);
-
-      if (!current) {
-        changes.push({
-          type: 'REMOVED',
-          position: previous
-        });
-      }
-    }
-
-    return changes;
-  }
-
-  /**
    * Get pool address for a position
    * @param {Object} position - Position object
    * @returns {Promise<string>} Pool address
@@ -670,52 +509,6 @@ class PositionMonitor {
       console.error('Error getting pool address for position:', error);
       return '';
     }
-  }
-
-  /**
-   * Format position changes for notification
-   * @param {Array} changes - Array of changes
-   * @param {string} walletAddress - Wallet address
-   * @param {string} timezone - User timezone
-   * @returns {string} Formatted message
-   */
-  formatPositionChanges(changes, walletAddress, timezone) {
-    let message = `🔔 **Position Changes Detected**\n`;
-    message += `👛 Wallet: \`${walletAddress}\`\n\n`;
-
-    changes.forEach(change => {
-      const pos = change.position;
-      const pair = `${pos.token0Symbol}/${pos.token1Symbol}`;
-
-      switch (change.type) {
-        case 'NEW':
-          const stakingStatus = pos.isStaked ? '🥩 STAKED' : '💼 UNSTAKED';
-          message += `✅ **NEW POSITION**: ${pair} (${pos.fee/10000}%)\n`;
-          message += `${stakingStatus} | Token ID: ${pos.tokenId}\n\n`;
-          break;
-
-        case 'REMOVED':
-          message += `❌ **POSITION REMOVED**: ${pair} (${pos.fee/10000}%)\n`;
-          message += `Token ID: ${pos.tokenId}\n\n`;
-          break;
-
-        case 'RANGE_CHANGE':
-          const rangeStatus = pos.inRange ? '🟢 IN RANGE' : '🔴 OUT OF RANGE';
-          message += `📊 **RANGE CHANGE**: ${pair} (${pos.fee/10000}%)\n`;
-          message += `${rangeStatus} | Token ID: ${pos.tokenId}\n\n`;
-          break;
-
-        case 'STAKING_CHANGE':
-          const newStakingStatus = pos.isStaked ? '🥩 STAKED' : '💼 UNSTAKED';
-          message += `🔄 **STAKING CHANGE**: ${pair} (${pos.fee/10000}%)\n`;
-          message += `${newStakingStatus} | Token ID: ${pos.tokenId}\n\n`;
-          break;
-      }
-    });
-
-    message += `🕐 *${getTimeInTimezone(timezone)}*`;
-
-    return message;
   }
 }
 
