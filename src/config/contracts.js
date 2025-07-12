@@ -7,6 +7,7 @@ const contracts = {
     pancakeswap: {
         arbitrum: {
             nonfungiblePositionManager: '0x46A15B0b27311cedF172AB29E4f4766fbE7F4364',
+            masterChefV3: '0x5e09acf80c0296740ec5d6f643005a4ef8daa694',
         },
     },
 };

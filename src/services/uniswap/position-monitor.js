@@ -20,6 +20,11 @@ class PositionMonitor {
     this.monitoredWallets = new Map(); // wallet -> { chatId, lastCheck }
     this.positionManagerAddress = contracts.getContractAddress('pancakeswap', 'arbitrum', 'nonfungiblePositionManager');
     this.positionManagerContract = this.createPositionManagerContract();
+
+    // Add staking contract support
+    this.stakingContractAddress = contracts.getContractAddress('pancakeswap', 'arbitrum', 'masterChefV3');
+    this.stakingContract = this.createStakingContract();
+
     this.erc20Abi = require('./abis/erc20.json');
   }
 
@@ -34,6 +39,24 @@ class PositionMonitor {
       abi: positionManagerAbi,
       client: this.provider
     });
+  }
+
+  /**
+   * Create the staking contract instance
+   * @returns {object} Contract instance
+   */
+  createStakingContract() {
+    try {
+      const stakingAbi = require('./abis/masterchef-v3.json');
+      return getContract({
+        address: this.stakingContractAddress,
+        abi: stakingAbi,
+        client: this.provider
+      });
+    } catch (error) {
+      console.warn('Staking contract not available:', error.message);
+      return null;
+    }
   }
 
   /**
@@ -73,11 +96,32 @@ class PositionMonitor {
   }
 
   /**
-   * Fetch all positions for a wallet
+   * Fetch all positions for a wallet (including staked positions)
    * @param {string} walletAddress - Wallet address
    * @returns {Promise<Array>} Positions array
    */
   async getPositions(walletAddress) {
+    try {
+      // Get both unstaked and staked positions
+      const [unstakedPositions, stakedPositions] = await Promise.all([
+        this.getUnstakedPositions(walletAddress),
+        this.getStakedPositions(walletAddress)
+      ]);
+
+      // Combine and return all positions
+      return [...unstakedPositions, ...stakedPositions];
+    } catch (error) {
+      console.error('Error fetching positions:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Fetch unstaked positions (original implementation)
+   * @param {string} walletAddress - Wallet address
+   * @returns {Promise<Array>} Positions array
+   */
+  async getUnstakedPositions(walletAddress) {
     try {
       // Get balance of position NFTs
       const balance = await this.positionManagerContract.read.balanceOf([walletAddress]);
@@ -90,7 +134,7 @@ class PositionMonitor {
       const positions = [];
       for (let i = 0; i < Number(balance); i++) {
         const tokenId = await this.positionManagerContract.read.tokenOfOwnerByIndex([walletAddress, BigInt(i)]);
-        const position = await this.getPositionDetails(tokenId);
+        const position = await this.getPositionDetails(tokenId, false); // false = not staked
 
         // Skip positions with 0 liquidity
         if (position.liquidity && position.liquidity > 0n) {
@@ -106,7 +150,59 @@ class PositionMonitor {
 
       return positions;
     } catch (error) {
-      console.error('Error fetching positions:', error);
+      console.error('Error fetching unstaked positions:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Fetch staked positions from MasterChef V3
+   * @param {string} walletAddress - Wallet address
+   * @returns {Promise<Array>} Staked positions array
+   */
+  async getStakedPositions(walletAddress) {
+    try {
+      if (!this.stakingContract) {
+        console.warn('Staking contract not available');
+        return [];
+      }
+
+      // Get balance of staked positions using balanceOf from the staking contract
+      const balance = await this.stakingContract.read.balanceOf([walletAddress]);
+
+      if (balance === 0n) {
+        return [];
+      }
+
+      const stakedPositions = [];
+
+      // Iterate through staked positions using tokenOfOwnerByIndex
+      for (let i = 0; i < Number(balance); i++) {
+        try {
+          // Get the token ID from the staking contract
+          const tokenId = await this.stakingContract.read.tokenOfOwnerByIndex([walletAddress, BigInt(i)]);
+
+          // Get position details from the position manager
+          const position = await this.getPositionDetails(tokenId, true); // true = staked
+
+          // Skip positions with 0 liquidity
+          if (position.liquidity && position.liquidity > 0n) {
+            // Calculate combined value in terms of token1 (stablecoin)
+            const combinedToken1Value = await this.calculateCombinedToken1Value(position);
+
+            // Only include positions with combined value >= 0.1 token1
+            if (combinedToken1Value >= 0.1) {
+              stakedPositions.push(position);
+            }
+          }
+        } catch (error) {
+          console.error(`Error processing staked position at index ${i}:`, error);
+        }
+      }
+
+      return stakedPositions;
+    } catch (error) {
+      console.error('Error fetching staked positions:', error);
       return [];
     }
   }
@@ -181,7 +277,13 @@ class PositionMonitor {
     }
   }
 
-  async getPositionDetails(tokenId) {
+  /**
+   * Get position details including staking status
+   * @param {bigint} tokenId - Token ID
+   * @param {boolean} isStaked - Whether position is staked
+   * @returns {Promise<Object>} Position details
+   */
+  async getPositionDetails(tokenId, isStaked = false) {
     try {
       const positionData = await this.positionManagerContract.read.positions([tokenId]);
 
@@ -244,16 +346,24 @@ class PositionMonitor {
         upperPrice,
         currentPrice,
         inRange,
+        isStaked, // Add staking status
         // Add SDK token instances for advanced operations
         token0Instance: token0,
         token1Instance: token1
       };
     } catch (error) {
       console.error(`Error getting position details for token ID ${tokenId}:`, error);
-      return { tokenId, error: 'Failed to fetch position details' };
+      return { tokenId, error: 'Failed to fetch position details', isStaked };
     }
   }
 
+  /**
+   * Get pool data from factory
+   * @param {string} token0Address - Token0 address
+   * @param {string} token1Address - Token1 address
+   * @param {number} fee - Pool fee
+   * @returns {Promise<Object>} Pool data
+   */
   async getPoolData(token0Address, token1Address, fee) {
     try {
       const factoryAddress = await this.positionManagerContract.read.factory();
@@ -306,159 +416,200 @@ class PositionMonitor {
 
   /**
    * Format positions for display in Telegram
-   * @param {Array} positions - Position array
-   * @param {string} timezone - User's timezone
+   * @param {Array} positions - Array of positions
+   * @param {string} timezone - User timezone
    * @returns {string} Formatted message
    */
-  formatPositionsMessage(positions, timezone) {
-    if (positions.length === 0) {
-      return "No active positions found for this wallet address.";
+  formatPositionsMessage(positions, timezone = 'UTC') {
+    if (!positions || positions.length === 0) {
+      return "📊 No positions found for this wallet.";
     }
 
-    let message = ` ${positions.length} active position(s) found:\n\n`;
+    const validPositions = positions.filter(p => !p.error);
+    const errorPositions = positions.filter(p => p.error);
 
-    positions.forEach((position, index) => {
-      if (position.error) {
-        message += `Position #${index + 1}: Error - ${position.error}\n\n`;
-        return;
-      }
+    let message = `📊 **Wallet Positions (${validPositions.length} active)**\n\n`;
 
-      message += ` Position #${index + 1}\n`;
-      message += `ID: ${position.tokenId}\n`;
-      message += `Pair: ${position.token0Symbol}/${position.token1Symbol}\n`;
-      message += `Fee: ${Number(position.fee) / 10000}%\n`;
+    validPositions.forEach((position, index) => {
+      const stakingStatus = position.isStaked ? '🥩 **STAKED**' : '💼 **UNSTAKED**';
+      const rangeStatus = position.inRange ? '🟢 **IN RANGE**' : '🔴 **OUT OF RANGE**';
 
-      // Add token amounts
-      message += `Liquidity in tokens:\n`;
-      message += `- ${position.token0Amount} ${position.token0Symbol}\n`;
-      message += `- ${position.token1Amount} ${position.token1Symbol}\n`;
-
-      // Add human-readable price ranges
-      message += `Price range (${position.token1Symbol} per ${position.token0Symbol}):\n`;
-      message += `- Min: ${position.lowerPrice}\n`;
-      message += `- Max: ${position.upperPrice}\n`;
-      message += `- Current: ${position.currentPrice}\n`;
-
-      // Show if position is in range
-      const rangeStatus = position.inRange ? '🟢 In range' : '🔴 Out of range';
-      message += `Status: ${rangeStatus}\n`;
-
-      // Add raw liquidity and ticks for reference
-      message += `Raw liquidity: ${position.liquidity.toString()}\n`;
-      message += `Ticks: [${position.tickLower} to ${position.tickUpper}]\n\n`;
+      message += `**${index + 1}. ${position.token0Symbol}/${position.token1Symbol}** (${position.fee/10000}%)\n`;
+      message += `${stakingStatus} | ${rangeStatus}\n`;
+      message += `💰 ${position.token0Amount} ${position.token0Symbol} + ${position.token1Amount} ${position.token1Symbol}\n`;
+      message += `📈 Range: $${position.lowerPrice} - $${position.upperPrice}\n`;
+      message += `📊 Current: $${position.currentPrice}\n`;
+      message += `🔢 Token ID: ${position.tokenId}\n\n`;
     });
 
-    // Add timestamp
-    message += `\nLast updated: ${getTimeInTimezone(timezone)}`;
+    if (errorPositions.length > 0) {
+      message += `⚠️ **${errorPositions.length} position(s) had errors loading**\n`;
+    }
+
+    message += `🕐 *Updated: ${getTimeInTimezone(timezone)}*`;
 
     return message;
   }
 
   /**
-   * Start database a wallet for position changes
+   * Start monitoring a wallet
    * @param {string} walletAddress - Wallet address to monitor
    * @param {number} chatId - Telegram chat ID
-   * @returns {boolean} Success status
    */
-  async startMonitoring(walletAddress, chatId) {
-    // Normalize address
-    const normalizedAddress = walletAddress.toLowerCase();
-
-    // Check if already database
-    if (this.monitoredWallets.has(normalizedAddress)) {
-      const info = this.monitoredWallets.get(normalizedAddress);
-
-      // Update the chat ID if it's different
-      if (info.chatId !== chatId) {
-        info.chatId = chatId;
-        this.monitoredWallets.set(normalizedAddress, info);
-        await this.saveState();
-      }
-
-      return false; // Already database
-    }
-
-    // Start database
-    this.monitoredWallets.set(normalizedAddress, {
+  startMonitoring(walletAddress, chatId) {
+    const key = walletAddress.toLowerCase();
+    this.monitoredWallets.set(key, {
       chatId,
-      lastCheck: Date.now()
+      lastCheck: new Date(),
+      lastPositions: []
     });
-
-    // Save to MongoDB
-    await this.saveState();
-
-    return true; // Started database
   }
 
   /**
-   * Stop database a wallet
-   * @param {string} walletAddress - Wallet address
-   * @returns {boolean} Success status
+   * Stop monitoring a wallet
+   * @param {string} walletAddress - Wallet address to stop monitoring
+   * @returns {boolean} True if wallet was being monitored
    */
-  async stopMonitoring(walletAddress) {
-    const normalizedAddress = walletAddress.toLowerCase();
-    const result = this.monitoredWallets.delete(normalizedAddress);
-
-    if (result) {
-      // Save updated state to MongoDB
-      await this.saveState();
-    }
-
-    return result;
+  stopMonitoring(walletAddress) {
+    const key = walletAddress.toLowerCase();
+    return this.monitoredWallets.delete(key);
   }
 
   /**
    * Get list of monitored wallets
-   * @returns {string[]} List of addresses
+   * @returns {Array} Array of monitored wallet addresses
    */
   getMonitoredWallets() {
     return Array.from(this.monitoredWallets.keys());
   }
 
   /**
-   * Check if a wallet is being monitored
-   * @param {string} walletAddress - Wallet address
-   * @returns {boolean} Is monitored
+   * Check for position changes and notify users
+   * @param {object} bot - Telegram bot instance
+   * @param {string} timezone - User timezone
    */
-  isMonitored(walletAddress) {
-    const normalizedAddress = walletAddress.toLowerCase();
-    return this.monitoredWallets.has(normalizedAddress);
-  }
+  async checkPositionChanges(bot, timezone = 'UTC') {
+    for (const [walletAddress, walletData] of this.monitoredWallets) {
+      try {
+        const currentPositions = await this.getPositions(walletAddress);
+        const previousPositions = walletData.lastPositions || [];
 
-  /**
-   * Save current state to MongoDB
-   */
-  async saveState() {
-    if (this.mongoStateManager) {
-      await this.mongoStateManager.saveMonitoredWallets(this.monitoredWallets);
+        // Compare positions and detect changes
+        const changes = this.detectPositionChanges(previousPositions, currentPositions);
+
+        if (changes.length > 0) {
+          const message = this.formatPositionChanges(changes, walletAddress, timezone);
+          await bot.sendMessage(walletData.chatId, message, { parse_mode: 'Markdown' });
+        }
+
+        // Update stored positions
+        walletData.lastPositions = currentPositions;
+        walletData.lastCheck = new Date();
+
+      } catch (error) {
+        console.error(`Error checking position changes for ${walletAddress}:`, error);
+      }
     }
   }
 
   /**
-   * Initialize the position monitor by restoring state from MongoDB
+   * Detect changes between position sets
+   * @param {Array} previousPositions - Previous positions
+   * @param {Array} currentPositions - Current positions
+   * @returns {Array} Array of changes
    */
-  async initialize() {
-    if (!this.mongoStateManager) {
-      console.warn('MongoDB state manager not provided, cannot restore wallets');
-      return;
-    }
+  detectPositionChanges(previousPositions, currentPositions) {
+    const changes = [];
 
-    try {
-      // Load wallets from MongoDB
-      const wallets = await this.mongoStateManager.loadMonitoredWallets();
+    // Check for new positions
+    for (const current of currentPositions) {
+      const previous = previousPositions.find(p => p.tokenId === current.tokenId);
 
-      // Restore each wallet to the monitored map
-      wallets.forEach(wallet => {
-        this.monitoredWallets.set(wallet.walletAddress, {
-          chatId: wallet.chatId,
-          lastCheck: wallet.lastCheck || Date.now()
+      if (!previous) {
+        changes.push({
+          type: 'NEW',
+          position: current
         });
-      });
+      } else {
+        // Check for range changes
+        if (previous.inRange !== current.inRange) {
+          changes.push({
+            type: 'RANGE_CHANGE',
+            position: current,
+            wasInRange: previous.inRange
+          });
+        }
 
-      console.log(`Restored ${wallets.length} monitored wallets from database`);
-    } catch (error) {
-      console.error('Error initializing position monitor:', error);
+        // Check for staking status changes
+        if (previous.isStaked !== current.isStaked) {
+          changes.push({
+            type: 'STAKING_CHANGE',
+            position: current,
+            wasStaked: previous.isStaked
+          });
+        }
+      }
     }
+
+    // Check for removed positions
+    for (const previous of previousPositions) {
+      const current = currentPositions.find(p => p.tokenId === previous.tokenId);
+
+      if (!current) {
+        changes.push({
+          type: 'REMOVED',
+          position: previous
+        });
+      }
+    }
+
+    return changes;
+  }
+
+  /**
+   * Format position changes for notification
+   * @param {Array} changes - Array of changes
+   * @param {string} walletAddress - Wallet address
+   * @param {string} timezone - User timezone
+   * @returns {string} Formatted message
+   */
+  formatPositionChanges(changes, walletAddress, timezone) {
+    let message = `🔔 **Position Changes Detected**\n`;
+    message += `👛 Wallet: \`${walletAddress}\`\n\n`;
+
+    changes.forEach(change => {
+      const pos = change.position;
+      const pair = `${pos.token0Symbol}/${pos.token1Symbol}`;
+
+      switch (change.type) {
+        case 'NEW':
+          const stakingStatus = pos.isStaked ? '🥩 STAKED' : '💼 UNSTAKED';
+          message += `✅ **NEW POSITION**: ${pair} (${pos.fee/10000}%)\n`;
+          message += `${stakingStatus} | Token ID: ${pos.tokenId}\n\n`;
+          break;
+
+        case 'REMOVED':
+          message += `❌ **POSITION REMOVED**: ${pair} (${pos.fee/10000}%)\n`;
+          message += `Token ID: ${pos.tokenId}\n\n`;
+          break;
+
+        case 'RANGE_CHANGE':
+          const rangeStatus = pos.inRange ? '🟢 IN RANGE' : '🔴 OUT OF RANGE';
+          message += `📊 **RANGE CHANGE**: ${pair} (${pos.fee/10000}%)\n`;
+          message += `${rangeStatus} | Token ID: ${pos.tokenId}\n\n`;
+          break;
+
+        case 'STAKING_CHANGE':
+          const newStakingStatus = pos.isStaked ? '🥩 STAKED' : '💼 UNSTAKED';
+          message += `🔄 **STAKING CHANGE**: ${pair} (${pos.fee/10000}%)\n`;
+          message += `${newStakingStatus} | Token ID: ${pos.tokenId}\n\n`;
+          break;
+      }
+    });
+
+    message += `🕐 *${getTimeInTimezone(timezone)}*`;
+
+    return message;
   }
 }
 
