@@ -5,13 +5,13 @@
 const helpers = require('./helpers');
 const utils = require('./utils');
 const contracts = require('./contracts');
-const poolMonitor = require('./pool-monitor');
+const poolService = require('./pool');
 const positionMonitor = require('./position-monitor');
 
 module.exports = {
   helpers,
   utils,
   contracts,
-  poolMonitor,
+  poolService,
   positionMonitor
 };

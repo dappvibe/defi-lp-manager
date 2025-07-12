@@ -1,14 +1,13 @@
-
 /**
  * Handler for /pool command
- * Monitors Uniswap V3 pools for price changes
- * Usage: /pool <address>
+ * Lists all configured pools with toggle buttons for monitoring
+ * Usage: /pool
  */
 const { getTokenInfo, createPoolContract } = require('../../uniswap/contracts');
-const poolMonitor = require('../../uniswap/pool-monitor');
-const { getTimeInTimezone } = require('../../../utils/time');
+const poolService = require('../../uniswap/pool');
 const { calculatePrice } = require('../../uniswap/utils');
 const { isValidEthereumAddress } = require('../../uniswap/utils');
+const poolsConfig = require('../../../config/pools');
 
 class PoolHandler {
   /**
@@ -19,244 +18,288 @@ class PoolHandler {
    * @param {String} timezone - User timezone
    */
   static onText(bot, provider, monitoredPools, timezone) {
-    // Pool monitoring commands
-    bot.onText(/\/pool(?:\s+(.+))?/, (msg, match) => {
-      this.handle(bot, msg, match, provider, monitoredPools, timezone);
+    // Pool listing command
+    bot.onText(/\/pool/, (msg) => {
+      this.handle(bot, msg, provider, monitoredPools, timezone);
     });
 
-    bot.onText(/\/stop_pool(?:\s+(.+))?/, (msg, match) => {
-      this.handleStopPool(bot, msg, match, monitoredPools);
-    });
-
-    bot.onText(/\/list_pools/, (msg) => {
-      this.handleListPools(bot, msg, monitoredPools);
+    // Callback query handlers for pool toggle buttons
+    bot.on('callback_query', (callbackQuery) => {
+      this.handleCallback(bot, callbackQuery, provider, timezone);
     });
   }
 
   /**
-   * Handle pool command to monitor a pool
+   * Handle pool command to list all configured pools
    * @param {TelegramBot} bot - The bot instance
    * @param {Object} msg - Message object from Telegram
-   * @param {Array} match - Regex match array containing the command params
    * @param {Object} provider - Ethereum provider instance
    * @param {Object} monitoredPools - Object containing monitored pools
    * @param {String} timezone - User timezone
    */
-  static async handle(bot, msg, match, provider, monitoredPools, timezone) {
+  static async handle(bot, msg, provider, monitoredPools, timezone) {
     const chatId = msg.chat.id;
 
-    // If pool address is provided with command
-    if (match && match[1] && match[1].trim()) {
-      const poolAddress = match[1].trim();
-      await this.processPoolAddress(bot, chatId, poolAddress, provider, monitoredPools, timezone);
-      return;
+    try {
+      // Get all configured pools
+      const configuredPools = poolsConfig.getEnabledPools();
+
+      if (configuredPools.length === 0) {
+        await bot.sendMessage(chatId, "No pools are configured.");
+        return;
+      }
+
+      // Send a message for each configured pool
+      for (const poolConfig of configuredPools) {
+        await this.sendOrUpdatePoolMessage(bot, chatId, null, poolConfig.address, provider, timezone, 'send');
+      }
+
+    } catch (error) {
+      console.error('Error listing pools:', error);
+      await bot.sendMessage(chatId, 'Error loading pools. Please try again.');
     }
-
-    // Prompt for address if not provided
-    const promptMsg = await bot.sendMessage(
-      chatId,
-      "Send a Uniswap V3 pool contract address to monitor:",
-      { reply_markup: { force_reply: true } }
-    );
-
-    // Listen for reply
-    bot.onReplyToMessage(chatId, promptMsg.message_id, async (replyMsg) => {
-      const poolAddress = replyMsg.text.trim();
-      await this.processPoolAddress(bot, chatId, poolAddress, provider, monitoredPools, timezone);
-    });
   }
 
   /**
-   * Process a pool address for monitoring
+   * Send or update a pool message with current price and toggle button
    * @param {TelegramBot} bot - The bot instance
    * @param {number} chatId - Chat ID
-   * @param {string} poolAddress - Pool address to monitor
+   * @param {number|null} messageId - Message ID to update (null for new message)
+   * @param {string} poolAddress - Pool address
    * @param {Object} provider - Ethereum provider
-   * @param {Object} monitoredPools - Object containing monitored pools
+   * @param {String} timezone - User timezone
+   * @param {'send'|'edit'} action - Whether to send new message or edit existing
+   * @param {Object} options - Additional options
+   * @param {number} [options.preCalculatedPrice] - Pre-calculated price to use instead of fetching
+   * @param {boolean} [options.includeTimestamp] - Whether to include timestamp in message
+   */
+  static async sendOrUpdatePoolMessage(bot, chatId, messageId, poolAddress, provider, timezone, action = 'send', options = {}) {
+    try {
+      // Find pool config
+      const poolConfig = poolsConfig.getPoolByAddress(poolAddress);
+      if (!poolConfig) {
+        console.error(`Pool config not found for ${poolAddress}`);
+        return;
+      }
+
+      // Get pool information from cache/database
+      const poolInfo = await poolService.getPool(poolAddress, provider);
+
+      if (!poolInfo || !poolInfo.token0 || !poolInfo.token1) {
+        console.error(`Pool info not available for ${poolAddress}`);
+        return;
+      }
+
+      // Get current price (use pre-calculated if provided)
+      let currentPrice = 'N/A';
+      if (options.preCalculatedPrice !== undefined) {
+        currentPrice = options.preCalculatedPrice.toFixed(5);
+      } else {
+        try {
+          const poolContract = createPoolContract(poolAddress);
+          const slot0 = await poolContract.read.slot0();
+          const sqrtPriceX96 = slot0[0];
+          const price = parseFloat(calculatePrice(sqrtPriceX96, poolInfo.token0.decimals, poolInfo.token1.decimals));
+          currentPrice = price.toFixed(5);
+        } catch (error) {
+          console.error(`Error getting price for pool ${poolAddress}:`, error.message);
+        }
+      }
+
+      // Check if pool is currently being monitored
+      const isMonitored = poolService.isMonitoring(poolAddress);
+
+      // Create message text
+      const pair = `[${poolInfo.token0.symbol}/${poolInfo.token1.symbol}](https://pancakeswap.finance/info/v3/arb/pairs/${poolAddress})`;
+      const feePercent = poolInfo.fee ? (poolInfo.fee / 10000).toFixed(2) + '%' : 'Unknown';
+      const pairWithFee = `${pair} (${feePercent})`;
+
+      let messageText = `📊 ${currentPrice}
+💰 **${pairWithFee}**`;
+
+      // Add timestamp if requested
+      if (options.includeTimestamp) {
+        const { getTimeInTimezone } = require('../../../utils/time');
+        const updateTime = getTimeInTimezone(timezone);
+        messageText += `
+⏰ ${updateTime}`;
+      }
+
+      // Create inline keyboard
+      const keyboard = {
+        inline_keyboard: [[
+          {
+            text: isMonitored ? '🔴 Stop Monitoring' : '🟢 Start Monitoring',
+            callback_data: `pool_${isMonitored ? 'stop' : 'start'}_${poolAddress}`
+          }
+        ]]
+      };
+
+      const messageOptions = {
+        parse_mode: 'Markdown',
+        reply_markup: keyboard,
+        disable_web_page_preview: true
+      };
+
+      let resultMessage;
+      // Send or edit message based on action
+      if (action === 'edit' && messageId) {
+        resultMessage = await bot.editMessageText(messageText, {
+          chat_id: chatId,
+          message_id: messageId,
+          ...messageOptions
+        });
+      } else {
+        resultMessage = await bot.sendMessage(chatId, messageText, messageOptions);
+
+        // Update message ID in MongoDB for this pool
+        if (resultMessage && resultMessage.message_id) {
+          await this.updatePoolMessageId(poolAddress, chatId, resultMessage.message_id);
+        }
+      }
+
+    } catch (error) {
+      console.error(`Error ${action === 'edit' ? 'updating' : 'sending'} pool message for ${poolAddress}:`, error.message);
+    }
+  }
+
+  /**
+   * Update the message ID for a pool in MongoDB
+   * @param {string} poolAddress - Pool address
+   * @param {number} chatId - Chat ID
+   * @param {number} messageId - New message ID
+   */
+  static async updatePoolMessageId(poolAddress, chatId, messageId) {
+    try {
+      // Get the pool service instance to access the state manager
+      const poolService = require('../../uniswap/pool');
+
+      // Get existing pool data
+      const existingPoolData = await poolService.stateManager.getCachedPoolInfo(poolAddress);
+
+      if (existingPoolData) {
+        // Update the pool data with new message ID and chat ID
+        const updatedPoolData = {
+          ...existingPoolData,
+          chatId: chatId,
+          messageId: messageId
+        };
+
+        // Save the updated pool data
+        await poolService.stateManager.savePoolState(poolAddress, updatedPoolData);
+        console.log(`Updated message ID for pool ${poolAddress}: chatId=${chatId}, messageId=${messageId}`);
+      } else {
+        console.warn(`No existing pool data found for ${poolAddress} when trying to update message ID`);
+      }
+    } catch (error) {
+      console.error(`Error updating message ID for pool ${poolAddress}:`, error.message);
+    }
+  }
+
+  /**
+   * Handle callback queries from pool toggle buttons
+   * @param {TelegramBot} bot - The bot instance
+   * @param {Object} callbackQuery - Callback query object
+   * @param {Object} provider - Ethereum provider
    * @param {String} timezone - User timezone
    */
-  static async processPoolAddress(bot, chatId, poolAddress, provider, monitoredPools, timezone) {
-    // Validate address
-    if (!isValidEthereumAddress(poolAddress)) {
-      await bot.sendMessage(chatId, "❌ Invalid Ethereum address. Please send a valid pool contract address.");
+  static async handleCallback(bot, callbackQuery, provider, timezone) {
+    const chatId = callbackQuery.message.chat.id;
+    const messageId = callbackQuery.message.message_id;
+    const data = callbackQuery.data;
+
+    // Parse callback data: pool_action_address
+    if (!data.startsWith('pool_')) {
+      return; // Not our callback
+    }
+
+    const parts = data.split('_');
+    if (parts.length !== 3) {
+      await bot.answerCallbackQuery(callbackQuery.id, { text: 'Invalid callback data' });
       return;
     }
 
-    // Check if already monitoring this pool in this chat
-    if (monitoredPools[poolAddress] && monitoredPools[poolAddress].chatId === chatId) {
-      await bot.sendMessage(chatId, `Already monitoring this pool in this chat.`);
-      return;
-    }
-
-    // Send a loading message
-    const loadingMessage = await bot.sendMessage(chatId, "⏳ Loading pool data...");
+    const action = parts[1]; // start, stop
+    const poolAddress = parts[2];
 
     try {
-      // Create pool contract
-      const poolContract = createPoolContract(poolAddress);
+      switch (action) {
+        case 'start':
+          await this.startPoolMonitoring(bot, chatId, messageId, poolAddress, provider, timezone);
+          await bot.answerCallbackQuery(callbackQuery.id, { text: 'Monitoring started!' });
+          break;
+        case 'stop':
+          await poolService.stopMonitoring(poolAddress);
+          await this.sendOrUpdatePoolMessage(bot, chatId, messageId, poolAddress, provider, timezone, 'edit');
+          await bot.answerCallbackQuery(callbackQuery.id, { text: 'Monitoring stopped!' });
+          break;
+        default:
+          await bot.answerCallbackQuery(callbackQuery.id, { text: 'Unknown action' });
+      }
+    } catch (error) {
+      console.error(`Error handling callback for pool ${poolAddress}:`, error.message);
+      await bot.answerCallbackQuery(callbackQuery.id, { text: 'Error processing request' });
+    }
+  }
 
-      // Get token0 and token1 addresses
-      const [token0Address, token1Address] = await Promise.all([
-        poolContract.read.token0(),
-        poolContract.read.token1()
-      ]);
+  /**
+   * Start monitoring a pool from callback
+   * @param {TelegramBot} bot - The bot instance
+   * @param {number} chatId - Chat ID
+   * @param {number} messageId - Message ID to update
+   * @param {string} poolAddress - Pool address
+   * @param {Object} provider - Ethereum provider
+   * @param {String} timezone - User timezone
+   */
+  static async startPoolMonitoring(bot, chatId, messageId, poolAddress, provider, timezone) {
+    try {
+      // Get pool information
+      const poolInfo = await poolService.getPool(poolAddress, provider);
 
-      // Get token info
-      const [token0Info, token1Info] = await Promise.all([
-        getTokenInfo(token0Address),
-        getTokenInfo(token1Address)
-      ]);
+      if (!poolInfo || !poolInfo.token0 || !poolInfo.token1) {
+        throw new Error('Pool information not available');
+      }
 
       // Get current price
+      const poolContract = createPoolContract(poolAddress);
       const slot0 = await poolContract.read.slot0();
       const sqrtPriceX96 = slot0[0];
-      const priceT1T0 = parseFloat(calculatePrice(sqrtPriceX96, token1Info.decimals, token0Info.decimals));
-
-      // Update the loading message with the initial price info
-      const time = getTimeInTimezone(timezone);
-      const initialText = `${priceT1T0.toFixed(5)} ${token0Info.symbol}/${token1Info.symbol} ${time}\nLast: N/A`;
-
-      const updatedMessage = await bot.editMessageText(initialText, {
-        chat_id: chatId,
-        message_id: loadingMessage.message_id
-      });
+      const priceT1T0 = parseFloat(calculatePrice(sqrtPriceX96, poolInfo.token0.decimals, poolInfo.token1.decimals));
 
       // Prepare pool data
       const poolData = {
         chatId,
-        messageId: updatedMessage.message_id,
-        token0: token0Info,
-        token1: token1Info,
+        messageId,
+        token0: poolInfo.token0,
+        token1: poolInfo.token1,
         lastPriceT1T0: priceT1T0,
-        notifications: []
+        notifications: [],
+        fee: poolInfo.fee
       };
 
       // Start monitoring the pool
-      await poolMonitor.startMonitoring(bot, poolAddress, poolData, provider, timezone);
+      await poolService.startMonitoring(bot, poolAddress, poolData, provider, timezone);
 
-      console.log(`Monitoring pool ${poolAddress} in chat ${chatId}`);
-    } catch (error) {
-      console.error(`Error monitoring pool ${poolAddress}:`, error);
-      await bot.editMessageText(`Error monitoring pool: ${error.message}`, {
-        chat_id: chatId,
-        message_id: loadingMessage.message_id
+      // Immediately update the pool message with current price and timestamp
+      await this.sendOrUpdatePoolMessage(bot, chatId, messageId, poolAddress, provider, timezone, 'edit', {
+        preCalculatedPrice: priceT1T0,
+        includeTimestamp: true
       });
-    }
-  }
 
-  /**
-   * Handle command to stop monitoring a pool
-   * @param {TelegramBot} bot - The bot instance
-   * @param {Object} msg - Message object from Telegram
-   * @param {Array} match - Regex match array containing the command params
-   * @param {Object} monitoredPools - Object containing monitored pools
-   */
-  static async handleStopPool(bot, msg, match, monitoredPools) {
-    const chatId = msg.chat.id;
-
-    // If pool address is provided with command
-    if (match && match[1] && match[1].trim()) {
-      const poolAddress = match[1].trim();
-      await this.processStopMonitoring(bot, chatId, poolAddress, monitoredPools);
-      return;
-    }
-
-    // If user has monitored pools in this chat, list them
-    const poolsInChat = Object.entries(monitoredPools).filter(
-      ([_, poolData]) => poolData.chatId === chatId
-    );
-
-    if (poolsInChat.length === 0) {
-      await bot.sendMessage(chatId, "No pools are currently being monitored in this chat.");
-      return;
-    }
-
-    // If only one pool is monitored, stop that one
-    if (poolsInChat.length === 1) {
-      const [poolAddress] = poolsInChat[0];
-      await this.processStopMonitoring(bot, chatId, poolAddress, monitoredPools);
-      return;
-    }
-
-    // List pools to stop
-    const poolList = poolsInChat.map(([addr, poolData], idx) =>
-      `${idx + 1}. ${poolData.token1?.symbol || ''}/${poolData.token0?.symbol || ''} (\`${addr}\`)`
-    ).join('\n');
-
-    await bot.sendMessage(
-      chatId,
-      `Use /stop_pool <address> to stop monitoring a specific pool.\n\nCurrently monitoring:\n${poolList}`,
-      { parse_mode: 'Markdown' }
-    );
-  }
-
-  /**
-   * Process stop monitoring request
-   * @param {TelegramBot} bot - The bot instance
-   * @param {number} chatId - Chat ID
-   * @param {string} poolAddress - Pool address to stop monitoring
-   * @param {Object} monitoredPools - Object containing monitored pools
-   */
-  static async processStopMonitoring(bot, chatId, poolAddress, monitoredPools) {
-    // Check if pool exists and belongs to this chat
-    if (!monitoredPools[poolAddress] || monitoredPools[poolAddress].chatId !== chatId) {
-      await bot.sendMessage(chatId, `Pool ${poolAddress} is not monitored in this chat.`);
-      return;
-    }
-
-    try {
-      // Stop monitoring the pool
-      await poolMonitor.stopMonitoring(poolAddress);
-      await bot.sendMessage(chatId, `✅ Stopped monitoring pool: ${poolAddress}`);
+      console.log(`Started monitoring pool ${poolAddress} in chat ${chatId} with immediate price update`);
     } catch (error) {
-      console.error(`Error stopping pool monitoring: ${error.message}`);
-      await bot.sendMessage(chatId, `Error stopping pool monitoring: ${error.message}`);
+      console.error(`Error starting pool monitoring for ${poolAddress}:`, error.message);
+      throw error;
     }
   }
 
-  /**
-   * List all pools being monitored in this chat
-   * @param {TelegramBot} bot - The bot instance
-   * @param {Object} msg - Message object from Telegram
-   * @param {Object} monitoredPools - Object containing monitored pools
-   */
-  static async handleListPools(bot, msg, monitoredPools) {
-    const chatId = msg.chat.id;
-
-    // Get pools monitored in this chat
-    const poolsInChat = Object.entries(monitoredPools).filter(
-      ([_, poolData]) => poolData.chatId === chatId
-    );
-
-    if (poolsInChat.length === 0) {
-      await bot.sendMessage(chatId, "No pools are currently being monitored in this chat.");
-      return;
-    }
-
-    // Format the pools list
-    const poolsList = poolsInChat.map(([address, data], idx) => {
-      const pair = `${data.token1?.symbol || '???'}/${data.token0?.symbol || '???'}`;
-      const price = data.lastPriceT1T0 ? `Price: ${data.lastPriceT1T0.toFixed(8)}` : 'Price: N/A';
-      const alerts = (data.notifications || []).filter(n => !n.triggered).length;
-
-      return `${idx + 1}. ${pair} - ${price}
-Pool: \`${address}\`
-Alerts: ${alerts}`;
-    }).join('\n\n');
-
-    await bot.sendMessage(
-      chatId,
-      `📊 *Monitored Pools (${poolsInChat.length})*\n\n${poolsList}`,
-      { parse_mode: 'Markdown' }
-    );
-  }
 
   /**
    * Returns a brief help description with command signature
    * @returns {string} One-line help text
    */
   static help() {
-    return "/pool <address> - Monitor a Uniswap V3 pool for price changes";
+    return "/pool - List all configured pools with toggle buttons for monitoring";
   }
 
   /**
@@ -267,20 +310,27 @@ Alerts: ${alerts}`;
     return `🏊 **Pool Command Help**
 
 **Usage:**
-\`/pool <address>\` - Start monitoring a Uniswap V3 pool
-\`/stop_pool <address>\` - Stop monitoring a specific pool
-\`/list_pools\` - List all pools monitored in this chat
+\`/pool\` - List all configured pools with current prices and toggle buttons
 
-**Examples:**
-\`/pool 0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640\` - Monitor ETH/USDC pool
+**Description:**
+Shows all pre-configured pools as individual messages, each displaying:
+• Current price
+• Token pair information
+• Platform and blockchain
+• Toggle button to start/stop monitoring
+
+**Button Actions:**
+🟢 **Start Monitoring** - Begin price monitoring for the pool
+🔴 **Stop Monitoring** - Stop price monitoring for the pool
 
 **Notes:**
-• The bot will track price changes in real-time
-• Use /notify to set price alerts for monitored pools
-• You can monitor multiple pools in one chat
+• Pool monitoring includes real-time price updates
+• Price alerts can be set for monitored pools
+• Current prices are displayed for all pools
+• Use toggle buttons to control monitoring state
 
 **Related Commands:**
-• \`/notify <price> [pool]\` - Set price alerts
+• \`/notify <price> [pool]\` - Set price alerts for monitored pools
 • \`/wallet\` - Monitor wallet positions instead`;
   }
 }

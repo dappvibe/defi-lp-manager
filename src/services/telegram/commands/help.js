@@ -77,10 +77,6 @@ class HelpHandler {
             finalMessage += `\n**Detailed Information:**\n${detailedHelp}`;
         }
 
-        // Add footer
-        finalMessage += `\n**Tips:**\n`;
-        finalMessage += `• Use /help to see this message again\n`;
-
         return finalMessage;
     }
 

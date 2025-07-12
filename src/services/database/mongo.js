@@ -17,15 +17,20 @@ class Mongo {
    * Connect to MongoDB
    */
   async connect() {
+    if (this.isConnected && this.client) return;
+
     try {
       const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/defi-lp-manager';
       this.client = new MongoClient(uri);
 
       await this.client.connect();
       this.db = this.client.db();
-      this.poolsCollection = this.db.collection('monitored_pools');
+      this.poolsCollection = this.db.collection('pools');
       this.walletsCollection = this.db.collection('monitored_wallets');
       this.isConnected = true;
+
+      // Create indexes for efficient token-based filtering
+      await this.createTokenIndexes();
 
       console.log('Connected to MongoDB');
     } catch (error) {
@@ -35,7 +40,45 @@ class Mongo {
   }
 
   /**
-   * Save state for a specific pool
+   * Create database indexes for efficient token-based filtering
+   */
+  async createTokenIndexes() {
+    try {
+      // Indexes for unified pools collection to support token filtering
+      await this.poolsCollection.createIndex({ 'token0.address': 1 });
+      await this.poolsCollection.createIndex({ 'token1.address': 1 });
+      await this.poolsCollection.createIndex({ 'token0.symbol': 1 });
+      await this.poolsCollection.createIndex({ 'token1.symbol': 1 });
+
+      // Compound indexes for efficient multi-token queries
+      await this.poolsCollection.createIndex({
+        'token0.address': 1,
+        'token1.address': 1
+      });
+      await this.poolsCollection.createIndex({
+        'token0.symbol': 1,
+        'token1.symbol': 1
+      });
+
+      // Indexes for platform and blockchain filtering
+      await this.poolsCollection.createIndex({ 'platform': 1 });
+      await this.poolsCollection.createIndex({ 'blockchain': 1 });
+      await this.poolsCollection.createIndex({
+        'platform': 1,
+        'blockchain': 1
+      });
+
+      // Index for pool address (primary key)
+      await this.poolsCollection.createIndex({ 'poolAddress': 1 });
+
+      console.log('Created database indexes for unified pools collection');
+    } catch (error) {
+      console.warn('Warning: Could not create token indexes:', error.message);
+    }
+  }
+
+  /**
+   * Save pool information (both static and monitoring state)
    * @param {string} poolAddress - Address of the pool
    * @param {Object} poolData - Data to save
    */
@@ -46,25 +89,47 @@ class Mongo {
     }
 
     try {
-      // Clean non-serializable data
-      const stateData = {
+      // Get existing pool data to preserve static information
+      const existingPool = await this.poolsCollection.findOne({ poolAddress });
+
+      // Prepare unified data combining static info and monitoring state
+      const unifiedData = {
         poolAddress,
-        token0: poolData.token0,
-        token1: poolData.token1,
+        // Static pool information (immutable)
+        token0: poolData.token0 || existingPool?.token0,
+        token1: poolData.token1 || existingPool?.token1,
+        fee: poolData.fee || existingPool?.fee,
+        tickSpacing: poolData.tickSpacing || existingPool?.tickSpacing,
+        sqrtPriceX96: poolData.sqrtPriceX96 || existingPool?.sqrtPriceX96,
+        tick: poolData.tick || existingPool?.tick,
+        observationIndex: poolData.observationIndex || existingPool?.observationIndex,
+        observationCardinality: poolData.observationCardinality || existingPool?.observationCardinality,
+        observationCardinalityNext: poolData.observationCardinalityNext || existingPool?.observationCardinalityNext,
+        feeProtocol: poolData.feeProtocol || existingPool?.feeProtocol,
+        unlocked: poolData.unlocked || existingPool?.unlocked,
+        // Metadata
+        platform: poolData.platform || existingPool?.platform,
+        blockchain: poolData.blockchain || existingPool?.blockchain,
+        configName: poolData.configName || existingPool?.configName,
+        configDescription: poolData.configDescription || existingPool?.configDescription,
+        // Monitoring state (optional, only present for monitored pools)
         chatId: poolData.chatId,
         messageId: poolData.messageId,
         lastPriceT1T0: poolData.lastPriceT1T0,
         notifications: poolData.notifications || [],
+        priceMonitoringEnabled: poolData.priceMonitoringEnabled || false,
+        // Timestamps
+        cachedAt: existingPool?.cachedAt || new Date(),
         updatedAt: new Date()
       };
 
       await this.poolsCollection.replaceOne(
         { poolAddress },
-        stateData,
+        unifiedData,
         { upsert: true }
       );
     } catch (error) {
-      console.error(`Error saving state for pool ${poolAddress}:`, error.message);
+      console.error(`Error saving pool data for ${poolAddress}:`, error.message);
     }
   }
 
@@ -130,6 +195,241 @@ class Mongo {
       console.log(`Removed pool ${poolAddress} from database`);
     } catch (error) {
       console.error(`Error removing pool ${poolAddress}:`, error.message);
+    }
+  }
+
+  /**
+   * Cache pool static information (tokens, fee, etc.)
+   * @param {string} poolAddress - Address of the pool
+   * @param {Object} poolInfo - Static pool information
+   */
+  async cachePoolInfo(poolAddress, poolInfo) {
+    // Use the unified savePoolState method
+    await this.savePoolState(poolAddress, poolInfo);
+    console.log(`Cached static info for pool ${poolAddress}`);
+  }
+
+  /**
+   * Get cached pool static information
+   * @param {string} poolAddress - Address of the pool
+   * @returns {Object|null} Cached pool information or null if not found
+   */
+  async getCachedPoolInfo(poolAddress) {
+    if (!this.isConnected) {
+      console.warn('Cannot get cached pool info: Not connected to MongoDB');
+      return null;
+    }
+
+    try {
+      const poolInfo = await this.poolsCollection.findOne({ poolAddress });
+      if (poolInfo) {
+        console.log(`Retrieved pool info for ${poolAddress}`);
+        return poolInfo;
+      }
+      return null;
+    } catch (error) {
+      console.error(`Error retrieving pool info for ${poolAddress}:`, error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Get all cached pool information
+   * @returns {Array} Array of cached pool information
+   */
+  async getAllCachedPools() {
+    if (!this.isConnected) {
+      console.warn('Cannot get all cached pools: Not connected to MongoDB');
+      return [];
+    }
+
+    try {
+      const pools = await this.poolsCollection.find({}).toArray();
+      console.log(`Retrieved ${pools.length} pools`);
+      return pools;
+    } catch (error) {
+      console.error('Error retrieving all pools:', error.message);
+      return [];
+    }
+  }
+
+  /**
+   * Remove cached pool information
+   * @param {string} poolAddress - Address of the pool
+   */
+  async removeCachedPoolInfo(poolAddress) {
+    // Use the unified removePool method
+    await this.removePool(poolAddress);
+  }
+
+  /**
+   * Find pools by token address (either token0 or token1)
+   * @param {string} tokenAddress - Token contract address
+   * @returns {Array} Array of pools containing the specified token
+   */
+  async findPoolsByTokenAddress(tokenAddress) {
+    if (!this.isConnected) {
+      console.warn('Cannot find pools by token: Not connected to MongoDB');
+      return [];
+    }
+
+    try {
+      const query = {
+        $or: [
+          { 'token0.address': tokenAddress.toLowerCase() },
+          { 'token1.address': tokenAddress.toLowerCase() }
+        ]
+      };
+
+      const pools = await this.poolsCollection.find(query).toArray();
+      console.log(`Found ${pools.length} pools containing token ${tokenAddress}`);
+      return pools;
+    } catch (error) {
+      console.error(`Error finding pools by token address ${tokenAddress}:`, error.message);
+      return [];
+    }
+  }
+
+  /**
+   * Find pools by token symbol (either token0 or token1)
+   * @param {string} tokenSymbol - Token symbol (e.g., 'ETH', 'USDC')
+   * @returns {Array} Array of pools containing the specified token symbol
+   */
+  async findPoolsByTokenSymbol(tokenSymbol) {
+    if (!this.isConnected) {
+      console.warn('Cannot find pools by token symbol: Not connected to MongoDB');
+      return [];
+    }
+
+    try {
+      const query = {
+        $or: [
+          { 'token0.symbol': { $regex: new RegExp(`^${tokenSymbol}$`, 'i') } },
+          { 'token1.symbol': { $regex: new RegExp(`^${tokenSymbol}$`, 'i') } }
+        ]
+      };
+
+      const pools = await this.poolsCollection.find(query).toArray();
+      console.log(`Found ${pools.length} pools containing token symbol ${tokenSymbol}`);
+      return pools;
+    } catch (error) {
+      console.error(`Error finding pools by token symbol ${tokenSymbol}:`, error.message);
+      return [];
+    }
+  }
+
+  /**
+   * Find pools by token pair (both token addresses)
+   * @param {string} token0Address - First token address
+   * @param {string} token1Address - Second token address
+   * @returns {Array} Array of pools containing the specified token pair
+   */
+  async findPoolsByTokenPair(token0Address, token1Address) {
+    if (!this.isConnected) {
+      console.warn('Cannot find pools by token pair: Not connected to MongoDB');
+      return [];
+    }
+
+    try {
+      const query = {
+        $or: [
+          {
+            'token0.address': token0Address.toLowerCase(),
+            'token1.address': token1Address.toLowerCase()
+          },
+          {
+            'token0.address': token1Address.toLowerCase(),
+            'token1.address': token0Address.toLowerCase()
+          }
+        ]
+      };
+
+      const pools = await this.poolsCollection.find(query).toArray();
+      console.log(`Found ${pools.length} pools for token pair ${token0Address}/${token1Address}`);
+      return pools;
+    } catch (error) {
+      console.error(`Error finding pools by token pair ${token0Address}/${token1Address}:`, error.message);
+      return [];
+    }
+  }
+
+  /**
+   * Find pools by token symbol pair
+   * @param {string} symbol0 - First token symbol
+   * @param {string} symbol1 - Second token symbol
+   * @returns {Array} Array of pools containing the specified token symbol pair
+   */
+  async findPoolsByTokenSymbolPair(symbol0, symbol1) {
+    if (!this.isConnected) {
+      console.warn('Cannot find pools by token symbol pair: Not connected to MongoDB');
+      return [];
+    }
+
+    try {
+      const query = {
+        $or: [
+          {
+            'token0.symbol': { $regex: new RegExp(`^${symbol0}$`, 'i') },
+            'token1.symbol': { $regex: new RegExp(`^${symbol1}$`, 'i') }
+          },
+          {
+            'token0.symbol': { $regex: new RegExp(`^${symbol1}$`, 'i') },
+            'token1.symbol': { $regex: new RegExp(`^${symbol0}$`, 'i') }
+          }
+        ]
+      };
+
+      const pools = await this.poolsCollection.find(query).toArray();
+      console.log(`Found ${pools.length} pools for token symbol pair ${symbol0}/${symbol1}`);
+      return pools;
+    } catch (error) {
+      console.error(`Error finding pools by token symbol pair ${symbol0}/${symbol1}:`, error.message);
+      return [];
+    }
+  }
+
+  /**
+   * Get all unique tokens from cached pools
+   * @returns {Array} Array of unique token objects with address and symbol
+   */
+  async getAllUniqueTokens() {
+    if (!this.isConnected) {
+      console.warn('Cannot get unique tokens: Not connected to MongoDB');
+      return [];
+    }
+
+    try {
+      const pipeline = [
+        {
+          $project: {
+            tokens: [
+              { address: '$token0.address', symbol: '$token0.symbol', decimals: '$token0.decimals' },
+              { address: '$token1.address', symbol: '$token1.symbol', decimals: '$token1.decimals' }
+            ]
+          }
+        },
+        { $unwind: '$tokens' },
+        {
+          $group: {
+            _id: '$tokens.address',
+            address: { $first: '$tokens.address' },
+            symbol: { $first: '$tokens.symbol' },
+            decimals: { $first: '$tokens.decimals' }
+          }
+        },
+        { $sort: { symbol: 1 } }
+      ];
+
+      const tokens = await this.poolsCollection.aggregate(pipeline).toArray();
+      console.log(`Found ${tokens.length} unique tokens`);
+      return tokens.map(token => ({
+        address: token.address,
+        symbol: token.symbol,
+        decimals: token.decimals
+      }));
+    } catch (error) {
+      console.error('Error getting unique tokens:', error.message);
+      return [];
     }
   }
 
