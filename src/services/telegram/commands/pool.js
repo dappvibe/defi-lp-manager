@@ -114,15 +114,15 @@ class PoolHandler {
       const feePercent = poolInfo.fee ? (poolInfo.fee / 10000).toFixed(2) + '%' : 'Unknown';
       const pairWithFee = `${pair} (${feePercent})`;
 
-      let messageText = `💰 **${pairWithFee}**
-📊 Price: ${currentPrice}`;
+      let messageText = `📊 ${currentPrice}
+💰 **${pairWithFee}**`;
 
       // Add timestamp if requested
       if (options.includeTimestamp) {
         const { getTimeInTimezone } = require('../../../utils/time');
         const updateTime = getTimeInTimezone(timezone);
         messageText += `
-⏰ Updated: ${updateTime}`;
+⏰ ${updateTime}`;
       }
 
       // Create inline keyboard
