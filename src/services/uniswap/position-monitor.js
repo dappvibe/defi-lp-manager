@@ -25,8 +25,6 @@ class PositionMonitor {
     this.stakingContractAddress = contracts.getContractAddress('pancakeswap', 'arbitrum', 'masterChefV3');
     this.stakingContract = this.createStakingContract();
 
-    this.erc20Abi = require('./abis/erc20.json');
-
     // Load monitored wallets from MongoDB on initialization
     this.loadMonitoredWalletsFromDB();
   }
