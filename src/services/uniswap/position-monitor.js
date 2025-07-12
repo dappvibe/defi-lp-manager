@@ -542,7 +542,20 @@ class PositionMonitor {
 
         if (changes.length > 0) {
           const message = this.formatPositionChanges(changes, walletAddress, timezone);
-          await bot.sendMessage(walletData.chatId, message, { parse_mode: 'Markdown' });
+          const sentMessage = await bot.sendMessage(walletData.chatId, message, { parse_mode: 'Markdown' });
+
+          // Save new positions to MongoDB with message ID
+          for (const change of changes) {
+            if (change.type === 'NEW') {
+              const position = change.position;
+              const positionData = {
+                ...position,
+                walletAddress: walletAddress,
+                poolAddress: await this.getPoolAddressForPosition(position)
+              };
+              await this.mongoStateManager.savePosition(positionData, walletData.chatId, sentMessage.message_id);
+            }
+          }
         }
 
         // Update stored positions
@@ -607,6 +620,21 @@ class PositionMonitor {
     }
 
     return changes;
+  }
+
+  /**
+   * Get pool address for a position
+   * @param {Object} position - Position object
+   * @returns {Promise<string>} Pool address
+   */
+  async getPoolAddressForPosition(position) {
+    try {
+      const poolData = await this.getPoolData(position.token0, position.token1, position.fee);
+      return poolData.address || '';
+    } catch (error) {
+      console.error('Error getting pool address for position:', error);
+      return '';
+    }
   }
 
   /**

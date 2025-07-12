@@ -10,6 +10,7 @@ class Mongo {
     this.db = null;
     this.poolsCollection = null;
     this.walletsCollection = null;
+    this.positionsCollection = null;
     this.isConnected = false;
   }
 
@@ -27,6 +28,7 @@ class Mongo {
       this.db = this.client.db();
       this.poolsCollection = this.db.collection('pools');
       this.walletsCollection = this.db.collection('monitored_wallets');
+      this.positionsCollection = this.db.collection('positions');
       this.isConnected = true;
 
       // Create indexes for efficient token-based filtering
@@ -71,7 +73,18 @@ class Mongo {
       // Index for pool address (primary key)
       await this.poolsCollection.createIndex({ 'poolAddress': 1 });
 
-      console.log('Created database indexes for unified pools collection');
+      // Indexes for positions collection
+      await this.positionsCollection.createIndex({ 'tokenId': 1 });
+      await this.positionsCollection.createIndex({ 'walletAddress': 1 });
+      await this.positionsCollection.createIndex({ 'poolAddress': 1 });
+      await this.positionsCollection.createIndex({ 'chatId': 1 });
+      await this.positionsCollection.createIndex({ 'messageId': 1 });
+      await this.positionsCollection.createIndex({
+        'walletAddress': 1,
+        'tokenId': 1
+      });
+
+      console.log('Created database indexes for unified pools collection and positions');
     } catch (error) {
       console.warn('Warning: Could not create token indexes:', error.message);
     }
@@ -483,6 +496,191 @@ class Mongo {
     } catch (error) {
       console.error('Error loading monitored wallets:', error.message);
       return [];
+    }
+  }
+
+  /**
+   * Save position with message ID
+   * @param {Object} positionData - Position data including tokenId, walletAddress, etc.
+   * @param {number} chatId - Telegram chat ID
+   * @param {number} messageId - Telegram message ID
+   */
+  async savePosition(positionData, chatId, messageId) {
+    if (!this.isConnected) {
+      console.warn('Cannot save position: Not connected to MongoDB');
+      return;
+    }
+
+    try {
+      const positionDoc = {
+        tokenId: positionData.tokenId.toString(),
+        walletAddress: positionData.walletAddress?.toLowerCase(),
+        poolAddress: positionData.poolAddress?.toLowerCase(),
+        token0: positionData.token0?.toLowerCase(),
+        token1: positionData.token1?.toLowerCase(),
+        token0Symbol: positionData.token0Symbol,
+        token1Symbol: positionData.token1Symbol,
+        fee: positionData.fee,
+        tickLower: positionData.tickLower,
+        tickUpper: positionData.tickUpper,
+        liquidity: positionData.liquidity?.toString(),
+        inRange: positionData.inRange,
+        isStaked: positionData.isStaked,
+        chatId,
+        messageId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      await this.positionsCollection.replaceOne(
+        {
+          tokenId: positionDoc.tokenId,
+          walletAddress: positionDoc.walletAddress,
+          chatId: chatId
+        },
+        positionDoc,
+        { upsert: true }
+      );
+
+      console.log(`Saved position ${positionData.tokenId} with message ID ${messageId}`);
+    } catch (error) {
+      console.error(`Error saving position ${positionData.tokenId}:`, error.message);
+    }
+  }
+
+  /**
+   * Update position message
+   * @param {string} tokenId - Position token ID
+   * @param {string} walletAddress - Wallet address
+   * @param {number} chatId - Chat ID
+   * @param {Object} updateData - Data to update (token amounts, prices, etc.)
+   */
+  async updatePosition(tokenId, walletAddress, chatId, updateData) {
+    if (!this.isConnected) {
+      console.warn('Cannot update position: Not connected to MongoDB');
+      return;
+    }
+
+    try {
+      const updateDoc = {
+        ...updateData,
+        updatedAt: new Date()
+      };
+
+      await this.positionsCollection.updateOne(
+        {
+          tokenId: tokenId.toString(),
+          walletAddress: walletAddress.toLowerCase(),
+          chatId: chatId
+        },
+        { $set: updateDoc }
+      );
+
+      console.log(`Updated position ${tokenId} for wallet ${walletAddress}`);
+    } catch (error) {
+      console.error(`Error updating position ${tokenId}:`, error.message);
+    }
+  }
+
+  /**
+   * Get position by token ID and wallet
+   * @param {string} tokenId - Position token ID
+   * @param {string} walletAddress - Wallet address
+   * @param {number} chatId - Chat ID
+   * @returns {Object|null} Position data or null if not found
+   */
+  async getPosition(tokenId, walletAddress, chatId) {
+    if (!this.isConnected) {
+      console.warn('Cannot get position: Not connected to MongoDB');
+      return null;
+    }
+
+    try {
+      const position = await this.positionsCollection.findOne({
+        tokenId: tokenId.toString(),
+        walletAddress: walletAddress.toLowerCase(),
+        chatId: chatId
+      });
+
+      return position;
+    } catch (error) {
+      console.error(`Error getting position ${tokenId}:`, error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Get all positions for a wallet
+   * @param {string} walletAddress - Wallet address
+   * @param {number} chatId - Chat ID
+   * @returns {Array} Array of positions
+   */
+  async getPositionsByWallet(walletAddress, chatId) {
+    if (!this.isConnected) {
+      console.warn('Cannot get positions: Not connected to MongoDB');
+      return [];
+    }
+
+    try {
+      const positions = await this.positionsCollection.find({
+        walletAddress: walletAddress.toLowerCase(),
+        chatId: chatId
+      }).toArray();
+
+      return positions;
+    } catch (error) {
+      console.error(`Error getting positions for wallet ${walletAddress}:`, error.message);
+      return [];
+    }
+  }
+
+  /**
+   * Get positions by pool address that are in range
+   * @param {string} poolAddress - Pool address
+   * @returns {Array} Array of positions in range
+   */
+  async getInRangePositionsByPool(poolAddress) {
+    if (!this.isConnected) {
+      console.warn('Cannot get positions by pool: Not connected to MongoDB');
+      return [];
+    }
+
+    try {
+      const positions = await this.positionsCollection.find({
+        poolAddress: poolAddress.toLowerCase(),
+        inRange: true,
+        liquidity: { $gt: '0' }
+      }).toArray();
+
+      return positions;
+    } catch (error) {
+      console.error(`Error getting positions for pool ${poolAddress}:`, error.message);
+      return [];
+    }
+  }
+
+  /**
+   * Remove position
+   * @param {string} tokenId - Position token ID
+   * @param {string} walletAddress - Wallet address
+   * @param {number} chatId - Chat ID
+   */
+  async removePosition(tokenId, walletAddress, chatId) {
+    if (!this.isConnected) {
+      console.warn('Cannot remove position: Not connected to MongoDB');
+      return;
+    }
+
+    try {
+      await this.positionsCollection.deleteOne({
+        tokenId: tokenId.toString(),
+        walletAddress: walletAddress.toLowerCase(),
+        chatId: chatId
+      });
+
+      console.log(`Removed position ${tokenId} for wallet ${walletAddress}`);
+    } catch (error) {
+      console.error(`Error removing position ${tokenId}:`, error.message);
     }
   }
 

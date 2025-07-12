@@ -101,6 +101,18 @@ class WalletHandler {
         chat_id: chatId,
         message_id: statusMsg.message_id
       });
+
+      // Save positions to MongoDB with message ID
+      for (const position of positions) {
+        if (!position.error) {
+          const positionData = {
+            ...position,
+            walletAddress: walletAddress,
+            poolAddress: await positionMonitor.getPoolAddressForPosition(position)
+          };
+          await positionMonitor.mongoStateManager.savePosition(positionData, chatId, statusMsg.message_id);
+        }
+      }
     } catch (error) {
       console.error('Error processing wallet:', error);
       await bot.editMessageText(

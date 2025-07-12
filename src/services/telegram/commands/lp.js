@@ -84,7 +84,19 @@ class LpHandler {
             positionMessage += `• Status: ${rangeStatus}`;
 
             // Send the position message immediately
-            await bot.sendMessage(chatId, positionMessage, { parse_mode: 'Markdown' });
+            const sentMessage = await bot.sendMessage(chatId, positionMessage, { parse_mode: 'Markdown' });
+
+            // Save position to MongoDB with message ID
+            try {
+              const positionData = {
+                ...position,
+                walletAddress: walletAddress,
+                poolAddress: await positionMonitor.getPoolAddressForPosition(position)
+              };
+              await positionMonitor.mongoStateManager.savePosition(positionData, chatId, sentMessage.message_id);
+            } catch (saveError) {
+              console.error(`Error saving position ${position.tokenId} from /lp command:`, saveError);
+            }
           }
         }
       }
