@@ -69,8 +69,11 @@ class PoolHandler {
    * @param {Object} provider - Ethereum provider
    * @param {String} timezone - User timezone
    * @param {'send'|'edit'} action - Whether to send new message or edit existing
+   * @param {Object} options - Additional options
+   * @param {number} [options.preCalculatedPrice] - Pre-calculated price to use instead of fetching
+   * @param {boolean} [options.includeTimestamp] - Whether to include timestamp in message
    */
-  static async sendOrUpdatePoolMessage(bot, chatId, messageId, poolAddress, provider, timezone, action = 'send') {
+  static async sendOrUpdatePoolMessage(bot, chatId, messageId, poolAddress, provider, timezone, action = 'send', options = {}) {
     try {
       // Find pool config
       const poolConfig = poolsConfig.getPoolByAddress(poolAddress);
@@ -87,16 +90,20 @@ class PoolHandler {
         return;
       }
 
-      // Get current price
+      // Get current price (use pre-calculated if provided)
       let currentPrice = 'N/A';
-      try {
-        const poolContract = createPoolContract(poolAddress);
-        const slot0 = await poolContract.read.slot0();
-        const sqrtPriceX96 = slot0[0];
-        const price = parseFloat(calculatePrice(sqrtPriceX96, poolInfo.token0.decimals, poolInfo.token1.decimals));
-        currentPrice = price.toFixed(5);
-      } catch (error) {
-        console.error(`Error getting price for pool ${poolAddress}:`, error.message);
+      if (options.preCalculatedPrice !== undefined) {
+        currentPrice = options.preCalculatedPrice.toFixed(5);
+      } else {
+        try {
+          const poolContract = createPoolContract(poolAddress);
+          const slot0 = await poolContract.read.slot0();
+          const sqrtPriceX96 = slot0[0];
+          const price = parseFloat(calculatePrice(sqrtPriceX96, poolInfo.token0.decimals, poolInfo.token1.decimals));
+          currentPrice = price.toFixed(5);
+        } catch (error) {
+          console.error(`Error getting price for pool ${poolAddress}:`, error.message);
+        }
       }
 
       // Check if pool is currently being monitored
@@ -107,8 +114,16 @@ class PoolHandler {
       const feePercent = poolInfo.fee ? (poolInfo.fee / 10000).toFixed(2) + '%' : 'Unknown';
       const pairWithFee = `${pair} (${feePercent})`;
 
-      const messageText = `💰 **${pairWithFee}**
+      let messageText = `💰 **${pairWithFee}**
 📊 Price: ${currentPrice}`;
+
+      // Add timestamp if requested
+      if (options.includeTimestamp) {
+        const { getTimeInTimezone } = require('../../../utils/time');
+        const updateTime = getTimeInTimezone(timezone);
+        messageText += `
+⏰ Updated: ${updateTime}`;
+      }
 
       // Create inline keyboard
       const keyboard = {
@@ -258,21 +273,26 @@ class PoolHandler {
         token0: poolInfo.token0,
         token1: poolInfo.token1,
         lastPriceT1T0: priceT1T0,
-        notifications: []
+        notifications: [],
+        fee: poolInfo.fee
       };
 
       // Start monitoring the pool
       await poolService.startMonitoring(bot, poolAddress, poolData, provider, timezone);
 
-      // Update the message
-      await this.sendOrUpdatePoolMessage(bot, chatId, messageId, poolAddress, provider, timezone, 'edit');
+      // Immediately update the pool message with current price and timestamp
+      await this.sendOrUpdatePoolMessage(bot, chatId, messageId, poolAddress, provider, timezone, 'edit', {
+        preCalculatedPrice: priceT1T0,
+        includeTimestamp: true
+      });
 
-      console.log(`Started monitoring pool ${poolAddress} in chat ${chatId}`);
+      console.log(`Started monitoring pool ${poolAddress} in chat ${chatId} with immediate price update`);
     } catch (error) {
       console.error(`Error starting pool monitoring for ${poolAddress}:`, error.message);
       throw error;
     }
   }
+
 
   /**
    * Returns a brief help description with command signature

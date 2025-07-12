@@ -388,43 +388,22 @@ class PoolService {
    */
   async _updatePoolMessageWithPrice(botInstance, poolAddress, poolInfo, newPrice, timezone) {
     try {
-      // Find pool config to get platform/blockchain info
-      const poolConfig = poolsConfig.getPoolByAddress(poolAddress);
-      if (!poolConfig) {
-        console.error(`Pool config not found for ${poolAddress}`);
-        return;
-      }
+      // Reuse the existing message updating logic from pool command handler
+      const PoolHandler = require('../telegram/commands/pool');
 
-      // Create message text with the same format as pool command handler
-      const pair = `[${poolInfo.token0.symbol}/${poolInfo.token1.symbol}](https://pancakeswap.finance/info/v3/arb/pairs/${poolAddress})`;
-      const feePercent = poolInfo.fee ? (poolInfo.fee / 10000).toFixed(2) + '%' : 'Unknown';
-      const pairWithFee = `${pair} (${feePercent})`;
-      const updateTime = getTimeInTimezone(timezone);
-
-      const messageText = `💰 **${pairWithFee}**
-📊 Price: ${newPrice.toFixed(5)}
-⏰ Updated: ${updateTime}`;
-
-      // Check if pool is currently being monitored
-      const isMonitored = this.isMonitoring(poolAddress);
-
-      // Create inline keyboard
-      const keyboard = {
-        inline_keyboard: [[
-          {
-            text: isMonitored ? '🔴 Stop Monitoring' : '🟢 Start Monitoring',
-            callback_data: `pool_${isMonitored ? 'stop' : 'start'}_${poolAddress}`
-          }
-        ]]
-      };
-
-      await botInstance.editMessageText(messageText, {
-        chat_id: poolInfo.chatId,
-        message_id: poolInfo.messageId,
-        parse_mode: 'Markdown',
-        reply_markup: keyboard,
-        disable_web_page_preview: true
-      });
+      await PoolHandler.sendOrUpdatePoolMessage(
+        botInstance,
+        poolInfo.chatId,
+        poolInfo.messageId,
+        poolAddress,
+        null, // provider not needed when using pre-calculated price
+        timezone,
+        'edit',
+        {
+          preCalculatedPrice: newPrice,
+          includeTimestamp: true
+        }
+      );
 
     } catch (error) {
       console.error(`Error updating pool message for ${poolAddress} in chat ${poolInfo.chatId}: ${error.message}`);
