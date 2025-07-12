@@ -332,19 +332,7 @@ class PositionMonitor {
   async getPoolData(token0Address, token1Address, fee) {
     try {
       const factoryAddress = await this.positionManagerContract.read.factory();
-      const factoryAbi = [
-        {
-          inputs: [
-            { internalType: 'address', name: 'tokenA', type: 'address' },
-            { internalType: 'address', name: 'tokenB', type: 'address' },
-            { internalType: 'uint24', name: 'fee', type: 'uint24' }
-          ],
-          name: 'getPool',
-          outputs: [{ internalType: 'address', name: '', type: 'address' }],
-          stateMutability: 'view',
-          type: 'function'
-        }
-      ];
+      const factoryAbi = require('./abis/v3-factory.json');
 
       const factoryContract = getContract({
         address: factoryAddress,
