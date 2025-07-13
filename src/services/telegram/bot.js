@@ -132,7 +132,7 @@ class Bot extends TelegramBot {
     this.startHandler = new StartHandler(this, this.monitoredPools, this.positionMonitor);
     this.helpHandler = new HelpHandler(this);
     this.notifyHandler = new NotifyHandler(this, this.monitoredPools);
-    this.poolHandler = new PoolHandler(this, this.provider, this.monitoredPools);
+    this.poolHandler = new PoolHandler(this, this.monitoredPools);
     this.walletHandler = new WalletHandler(this, this.positionMonitor);
     this.lpHandler = new LpHandler(this, this.positionMonitor);
   }

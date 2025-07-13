@@ -13,8 +13,9 @@ const MongoStateManager = require('../database/mongo');
 const poolsConfig = require('../../config/pools');
 
 class PoolService extends EventEmitter {
-  constructor() {
+  constructor(provider) {
     super();
+    this.provider = provider;
     this.stateManager = new MongoStateManager();
     // Monitoring-specific properties
     this.monitoredPools = {};
@@ -52,7 +53,7 @@ class PoolService extends EventEmitter {
   /**
    * Get pool information by address
    * @param {string} poolAddress - Pool address
-   * @param {Object} provider - Ethereum provider (optional)
+   * @param {Object} provider - Ethereum provider (optional, uses instance provider if not provided)
    * @returns {Object} Pool information including tokens, fee, and other details
    */
   async getPool(poolAddress, provider = null) {
@@ -67,7 +68,7 @@ class PoolService extends EventEmitter {
 
     // If not cached, fetch and cache
     console.log(`Pool ${poolAddress} not cached, fetching and caching...`);
-    return await this._cachePoolInfo(poolAddress, {}, provider);
+    return await this._cachePoolInfo(poolAddress, {}, provider || this.provider);
   }
 
   /**
@@ -461,11 +462,16 @@ class PoolService extends EventEmitter {
    * @private
    * @param {string} poolAddress - Pool address to cache
    * @param {Object} metadata - Additional metadata (platform, blockchain, etc.)
-   * @param {Object} provider - Ethereum provider (optional, will use default if not provided)
+   * @param {Object} provider - Ethereum provider (uses instance provider if not provided)
    */
   async _cachePoolInfo(poolAddress, metadata = {}, provider = null) {
     if (!isValidEthereumAddress(poolAddress)) {
       throw new Error('Invalid pool address');
+    }
+
+    const providerToUse = provider || this.provider;
+    if (!providerToUse) {
+      throw new Error('No provider available for pool operations');
     }
 
     // Create pool contract
@@ -512,7 +518,7 @@ class PoolService extends EventEmitter {
   /**
    * Get current price for a pool
    * @param {string} poolAddress - Pool address
-   * @param {Object} provider - Ethereum provider (optional)
+   * @param {Object} provider - Ethereum provider (uses instance provider if not provided)
    * @returns {Promise<number|null>} Current price or null if failed
    */
   async getPoolPrice(poolAddress, provider = null) {
@@ -639,6 +645,7 @@ class PoolService extends EventEmitter {
   }
 }
 
-// Export singleton instance
-const poolService = new PoolService();
+// Create singleton instance with provider
+const { getProvider } = require('../blockchain/provider');
+const poolService = new PoolService(getProvider());
 module.exports = poolService;

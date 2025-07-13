@@ -113,12 +113,10 @@ class PoolHandler {
   /**
    * Create a new PoolHandler instance
    * @param {TelegramBot} bot - The bot instance
-   * @param {Object} provider - Ethereum provider instance
    * @param {Object} monitoredPools - Object containing monitored pools
    */
-  constructor(bot, provider, monitoredPools) {
+  constructor(bot, monitoredPools) {
     this.bot = bot;
-    this.provider = provider;
     this.monitoredPools = monitoredPools;
 
     /**
@@ -235,7 +233,7 @@ class PoolHandler {
    */
   async startPoolMonitoring(chatId, messageId, poolAddress) {
     try {
-      const result = await poolService.startPoolMonitoring(this.bot, poolAddress, chatId, messageId, this.provider);
+      const result = await poolService.startPoolMonitoring(this.bot, poolAddress, chatId, messageId);
 
       // Store monitor info for event handling
       this.activeMonitors.set(poolAddress, {
@@ -337,7 +335,7 @@ class PoolHandler {
       }
 
       // Get pool information from cache/database
-      const poolInfo = await poolService.getPool(poolAddress, this.provider);
+      const poolInfo = await poolService.getPool(poolAddress);
 
       if (!poolInfo || !poolInfo.token0 || !poolInfo.token1) {
         console.error(`Pool info not available for ${poolAddress}`);
@@ -350,7 +348,7 @@ class PoolHandler {
         currentPrice = options.preCalculatedPrice.toFixed(5);
       } else {
         try {
-          const price = await poolService.getPoolPrice(poolAddress, this.provider);
+          const price = await poolService.getPoolPrice(poolAddress);
           currentPrice = price !== null ? price.toFixed(5) : 'N/A';
         } catch (error) {
           console.error(`Error getting price for pool ${poolAddress}:`, error.message);
