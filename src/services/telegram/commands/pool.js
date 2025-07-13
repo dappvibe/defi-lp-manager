@@ -217,16 +217,45 @@ class PoolHandler {
     try {
       const result = await poolService.startPoolMonitoring(bot, poolAddress, chatId, messageId, provider);
 
+      // Register callback for pool updates
+      poolService.registerPoolUpdateCallback(poolAddress, (updateData) => {
+        this.handlePoolUpdate(bot, chatId, messageId, poolAddress, updateData);
+      });
+
       // Immediately update the pool message with current price and timestamp
       await this.sendOrUpdatePoolMessage(bot, chatId, messageId, poolAddress, provider, {
         preCalculatedPrice: result.currentPrice,
         includeTimestamp: true
       });
 
-      console.log(`Started monitoring pool ${poolAddress} in chat ${chatId} with immediate price update`);
+      console.log(`Started monitoring pool ${poolAddress} in chat ${chatId} with callback registered`);
     } catch (error) {
       console.error(`Error starting pool monitoring for ${poolAddress}:`, error.message);
       throw error;
+    }
+  }
+
+  /**
+   * Handle pool update callback from the pool service
+   * @param {TelegramBot} bot - The bot instance
+   * @param {number} chatId - Chat ID
+   * @param {number} messageId - Message ID to update
+   * @param {string} poolAddress - Pool address
+   * @param {Object} updateData - Update data from pool service
+   */
+  static async handlePoolUpdate(bot, chatId, messageId, poolAddress, updateData) {
+    try {
+      const { newPrice, timestamp } = updateData;
+
+      // Update the pool message with new price and timestamp
+      await this.sendOrUpdatePoolMessage(bot, chatId, messageId, poolAddress, null, {
+        preCalculatedPrice: newPrice,
+        includeTimestamp: true
+      });
+
+      console.log(`Updated pool message for ${poolAddress} in chat ${chatId} via callback - new price: ${newPrice}`);
+    } catch (error) {
+      console.error(`Error handling pool update callback for ${poolAddress}:`, error.message);
     }
   }
 
@@ -336,9 +365,6 @@ class PoolHandler {
    */
   static async updatePoolMessageId(poolAddress, chatId, messageId) {
     try {
-      // Get the pool service instance to access the state manager
-      const poolService = require('../../uniswap/pool');
-
       // Get existing pool data
       const existingPoolData = await poolService.stateManager.getCachedPoolInfo(poolAddress);
 

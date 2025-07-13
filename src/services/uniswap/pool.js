@@ -19,6 +19,8 @@ class PoolService {
     this.monitoredPools = {};
     this.watchUnsubscribers = {};
     this.autoSaveInterval = null;
+    // Callback system for pool updates
+    this.poolUpdateCallbacks = new Map(); // poolAddress -> callback function
   }
 
   /**
@@ -41,41 +43,39 @@ class PoolService {
   }
 
   /**
-   * Initialize monitoring functionality
-   * @private
-   * @param {Object} botInstance - Telegram bot instance
-   * @param {Object} providerInstance - Viem client instance
-   * @param {string} timezone - Timezone for time display
+   * Register a callback function to be called when a pool's data is updated
+   * @param {string} poolAddress - Pool address to monitor
+   * @param {Function} callback - Callback function to call on pool updates
+   * @param {Object} callback.poolInfo - Updated pool information
+   * @param {number} callback.newPrice - New price from swap event
+   * @param {string} callback.timestamp - Timestamp of the update
    */
-  async _initializeMonitoring(botInstance, providerInstance, timezone) {
-    console.log('Initializing monitoring functionality...');
-
-    // Start auto-save interval (every 30 seconds)
-    this._startAutoSave();
-
-    // Load saved monitored pools state
-    const savedState = await this.stateManager.loadAllPools();
-
-    // Restore monitoring only for pools that have monitoring enabled
-    for (const [poolAddress, poolData] of Object.entries(savedState)) {
-      try {
-        // Only restore monitoring for pools that have the monitoring flag enabled
-        if (poolData.priceMonitoringEnabled === true) {
-          await this.startMonitoring(
-            botInstance,
-            poolAddress,
-            poolData,
-            providerInstance,
-            timezone
-          );
-          console.log(`Restored monitoring for pool: ${poolAddress}`);
-        } else {
-          console.log(`Skipping pool ${poolAddress} - monitoring disabled (priceMonitoringEnabled: ${poolData.priceMonitoringEnabled})`);
-        }
-      } catch (error) {
-        console.error(`Failed to restore monitoring for pool ${poolAddress}:`, error);
-      }
+  registerPoolUpdateCallback(poolAddress, callback) {
+    if (typeof callback !== 'function') {
+      throw new Error('Callback must be a function');
     }
+
+    this.poolUpdateCallbacks.set(poolAddress, callback);
+    console.log(`Registered pool update callback for ${poolAddress}`);
+  }
+
+  /**
+   * Unregister a callback function for a pool
+   * @param {string} poolAddress - Pool address to stop monitoring
+   */
+  unregisterPoolUpdateCallback(poolAddress) {
+    const removed = this.poolUpdateCallbacks.delete(poolAddress);
+    if (removed) {
+      console.log(`Unregistered pool update callback for ${poolAddress}`);
+    }
+  }
+
+  /**
+   * Get all available pools
+   * @returns {Array} Array of all pool information
+   */
+  async getAllPools() {
+    return await this.stateManager.getAllCachedPools();
   }
 
   /**
@@ -97,14 +97,6 @@ class PoolService {
     // If not cached, fetch and cache
     console.log(`Pool ${poolAddress} not cached, fetching and caching...`);
     return await this._cachePoolInfo(poolAddress, {}, provider);
-  }
-
-  /**
-   * Get all available pools
-   * @returns {Array} Array of all pool information
-   */
-  async getAllPools() {
-    return await this.stateManager.getAllCachedPools();
   }
 
   /**
@@ -257,6 +249,9 @@ class PoolService {
       // Remove from memory
       delete this.monitoredPools[poolAddress];
 
+      // Remove callback registration
+      this.unregisterPoolUpdateCallback(poolAddress);
+
       // Set monitoring flag to false in database using MongoDB directly
       await this.stateManager.poolsCollection.updateOne(
         { poolAddress },
@@ -286,6 +281,9 @@ class PoolService {
 
     // Clear memory state
     this.monitoredPools = {};
+
+    // Clear all callbacks
+    this.poolUpdateCallbacks.clear();
 
     // Stop auto-save
     this._stopAutoSave();
@@ -378,7 +376,28 @@ class PoolService {
 
           const newPriceT1T0 = parseFloat(calculatePrice(sqrtPriceX96, poolInfo.token0.decimals, poolInfo.token1.decimals));
 
-          // Update the pool message with the same formatting but new price
+          // Call registered callback if it exists
+          const callback = this.poolUpdateCallbacks.get(poolAddress);
+          if (callback) {
+            try {
+              callback({
+                poolInfo,
+                newPrice: newPriceT1T0,
+                timestamp: getTimeInTimezone(timezone),
+                poolAddress,
+                swapData: {
+                  sqrtPriceX96,
+                  amount0,
+                  amount1,
+                  tick
+                }
+              });
+            } catch (error) {
+              console.error(`Error in pool update callback for ${poolAddress}:`, error.message);
+            }
+          }
+
+          // Legacy: Update pool message with new price (kept for backward compatibility)
           this._updatePoolMessageWithPrice(botInstance, poolAddress, poolInfo, newPriceT1T0, timezone);
 
           // Update position messages for positions in this pool that are in range
@@ -402,7 +421,12 @@ class PoolService {
    */
   async _updatePoolMessageWithPrice(botInstance, poolAddress, poolInfo, newPrice, timezone) {
     try {
-      // Reuse the existing message updating logic from pool command handler
+      // Check if there's a registered callback - if so, let it handle the update
+      if (this.poolUpdateCallbacks.has(poolAddress)) {
+        return; // Skip legacy update when callback is registered
+      }
+
+      // Legacy fallback: Use the existing message updating logic from pool command handler
       const PoolHandler = require('../telegram/commands/pool');
 
       await PoolHandler.sendOrUpdatePoolMessage(
