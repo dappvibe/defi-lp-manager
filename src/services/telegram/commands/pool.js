@@ -150,7 +150,7 @@ class PoolHandler {
 
       // Send a message for each configured pool
       for (const poolConfig of configuredPools) {
-        await this.sendOrUpdatePoolMessage(bot, chatId, null, poolConfig.address, provider, 'send');
+        await this.sendOrUpdatePoolMessage(bot, chatId, null, poolConfig.address, provider);
       }
 
     } catch (error) {
@@ -167,12 +167,11 @@ class PoolHandler {
    * @param {number|null} messageId - Message ID to update (null for new message)
    * @param {string} poolAddress - Pool address
    * @param {Object} provider - Ethereum provider
-   * @param {'send'|'edit'} action - Whether to send new message or edit existing
    * @param {Object} options - Additional options
    * @param {number} [options.preCalculatedPrice] - Pre-calculated price to use instead of fetching
    * @param {boolean} [options.includeTimestamp] - Whether to include timestamp in message
    */
-  static async sendOrUpdatePoolMessage(bot, chatId, messageId, poolAddress, provider, action = 'send', options = {}) {
+  static async sendOrUpdatePoolMessage(bot, chatId, messageId, poolAddress, provider, options = {}) {
     try {
       // Find pool config
       const poolConfig = poolsConfig.getPoolByAddress(poolAddress);
@@ -238,8 +237,8 @@ class PoolHandler {
       };
 
       let resultMessage;
-      // Send or edit message based on action
-      if (action === 'edit' && messageId) {
+      // Update message if messageId is provided, otherwise send new message
+      if (messageId) {
         resultMessage = await bot.editMessageText(poolInfoMessage.toString(), {
           chat_id: chatId,
           message_id: messageId,
@@ -255,7 +254,7 @@ class PoolHandler {
       }
 
     } catch (error) {
-      console.error(`Error ${action === 'edit' ? 'updating' : 'sending'} pool message for ${poolAddress}:`, error.message);
+      console.error(`Error ${messageId ? 'updating' : 'sending'} pool message for ${poolAddress}:`, error.message);
     }
   }
 
@@ -325,7 +324,7 @@ class PoolHandler {
           break;
         case 'stop':
           await poolService.stopMonitoring(poolAddress);
-          await this.sendOrUpdatePoolMessage(bot, chatId, messageId, poolAddress, provider, 'edit');
+          await this.sendOrUpdatePoolMessage(bot, chatId, messageId, poolAddress, provider);
           await bot.answerCallbackQuery(callbackQuery.id, { text: 'Monitoring stopped!' });
           break;
         default:
@@ -375,7 +374,7 @@ class PoolHandler {
       await poolService.startMonitoring(bot, poolAddress, poolData, provider);
 
       // Immediately update the pool message with current price and timestamp
-      await this.sendOrUpdatePoolMessage(bot, chatId, messageId, poolAddress, provider, 'edit', {
+      await this.sendOrUpdatePoolMessage(bot, chatId, messageId, poolAddress, provider, {
         preCalculatedPrice: priceT1T0,
         includeTimestamp: true
       });

@@ -411,8 +411,6 @@ class PoolService {
         poolInfo.messageId,
         poolAddress,
         null, // provider not needed when using pre-calculated price
-        timezone,
-        'edit',
         {
           preCalculatedPrice: newPrice,
           includeTimestamp: true
