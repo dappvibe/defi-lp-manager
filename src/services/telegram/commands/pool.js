@@ -111,46 +111,55 @@ class PoolErrorMessage {
 
 class PoolHandler {
   /**
-   * Store active pool monitors for cleanup
-   * @type {Map<string, {chatId: number, messageId: number}>} Map of poolAddress -> message info
-   */
-  static activeMonitors = new Map();
-
-  /**
-   * Store event listener reference for cleanup
-   * @type {Function|null}
-   */
-  static swapEventListener = null;
-
-  /**
-   * Register command handlers with the bot
+   * Create a new PoolHandler instance
    * @param {TelegramBot} bot - The bot instance
    * @param {Object} provider - Ethereum provider instance
    * @param {Object} monitoredPools - Object containing monitored pools
    */
-  static onText(bot, provider, monitoredPools) {
+  constructor(bot, provider, monitoredPools) {
+    this.bot = bot;
+    this.provider = provider;
+    this.monitoredPools = monitoredPools;
+
+    /**
+     * Store active pool monitors for cleanup
+     * @type {Map<string, {chatId: number, messageId: number}>} Map of poolAddress -> message info
+     */
+    this.activeMonitors = new Map();
+
+    /**
+     * Store event listener reference for cleanup
+     * @type {Function|null}
+     */
+    this.swapEventListener = null;
+
+    // Register handlers on instantiation
+    this.registerHandlers();
+  }
+
+  /**
+   * Register command handlers with the bot
+   */
+  registerHandlers() {
     // Pool listing command
-    bot.onText(/\/pool/, (msg) => {
-      this.handle(bot, msg, provider, monitoredPools);
+    this.bot.onText(/\/pool/, (msg) => {
+      this.handle(msg);
     });
 
     // Callback query handlers for pool toggle buttons
-    bot.on('callback_query', (callbackQuery) => {
-      this.handleCallback(bot, callbackQuery, provider);
+    this.bot.on('callback_query', (callbackQuery) => {
+      this.handleCallback(callbackQuery);
     });
 
     // Initialize event listener for swap events
-    this.initializeSwapEventListener(bot);
+    this.initializeSwapEventListener();
   }
 
   /**
    * Handle pool command to list all configured pools
-   * @param {TelegramBot} bot - The bot instance
    * @param {Object} msg - Message object from Telegram
-   * @param {Object} provider - Ethereum provider instance
-   * @param {Object} monitoredPools - Object containing monitored pools
    */
-  static async handle(bot, msg, provider, monitoredPools) {
+  async handle(msg) {
     const chatId = msg.chat.id;
 
     try {
@@ -159,29 +168,27 @@ class PoolHandler {
 
       if (configuredPools.length === 0) {
         const noPoolsMessage = new NoPoolsMessage();
-        await bot.sendMessage(chatId, noPoolsMessage.toString());
+        await this.bot.sendMessage(chatId, noPoolsMessage.toString());
         return;
       }
 
       // Send a message for each configured pool
       for (const poolConfig of configuredPools) {
-        await this.sendOrUpdatePoolMessage(bot, chatId, null, poolConfig.address, provider);
+        await this.sendOrUpdatePoolMessage(chatId, null, poolConfig.address);
       }
 
     } catch (error) {
       console.error('Error listing pools:', error);
       const errorMessage = new PoolErrorMessage('Error loading pools. Please try again.');
-      await bot.sendMessage(chatId, errorMessage.toString());
+      await this.bot.sendMessage(chatId, errorMessage.toString());
     }
   }
 
   /**
    * Handle callback queries from pool toggle buttons
-   * @param {TelegramBot} bot - The bot instance
    * @param {Object} callbackQuery - Callback query object
-   * @param {Object} provider - Ethereum provider
    */
-  static async handleCallback(bot, callbackQuery, provider) {
+  async handleCallback(callbackQuery) {
     const chatId = callbackQuery.message.chat.id;
     const messageId = callbackQuery.message.message_id;
     const data = callbackQuery.data;
@@ -193,7 +200,7 @@ class PoolHandler {
 
     const parts = data.split('_');
     if (parts.length !== 3) {
-      await bot.answerCallbackQuery(callbackQuery.id, { text: 'Invalid callback data' });
+      await this.bot.answerCallbackQuery(callbackQuery.id, { text: 'Invalid callback data' });
       return;
     }
 
@@ -203,34 +210,32 @@ class PoolHandler {
     try {
       switch (action) {
         case 'start':
-          await this.startPoolMonitoring(bot, chatId, messageId, poolAddress, provider);
-          await bot.answerCallbackQuery(callbackQuery.id, { text: 'Monitoring started!' });
+          await this.startPoolMonitoring(chatId, messageId, poolAddress);
+          await this.bot.answerCallbackQuery(callbackQuery.id, { text: 'Monitoring started!' });
           break;
         case 'stop':
           await this.stopPoolMonitoring(poolAddress, chatId, messageId);
-          await this.sendOrUpdatePoolMessage(bot, chatId, messageId, poolAddress, provider);
-          await bot.answerCallbackQuery(callbackQuery.id, { text: 'Monitoring stopped!' });
+          await this.sendOrUpdatePoolMessage(chatId, messageId, poolAddress);
+          await this.bot.answerCallbackQuery(callbackQuery.id, { text: 'Monitoring stopped!' });
           break;
         default:
-          await bot.answerCallbackQuery(callbackQuery.id, { text: 'Unknown action' });
+          await this.bot.answerCallbackQuery(callbackQuery.id, { text: 'Unknown action' });
       }
     } catch (error) {
       console.error(`Error handling callback for pool ${poolAddress}:`, error.message);
-      await bot.answerCallbackQuery(callbackQuery.id, { text: 'Error processing request' });
+      await this.bot.answerCallbackQuery(callbackQuery.id, { text: 'Error processing request' });
     }
   }
 
   /**
    * Start monitoring a pool from callback
-   * @param {TelegramBot} bot - The bot instance
    * @param {number} chatId - Chat ID
    * @param {number} messageId - Message ID to update
    * @param {string} poolAddress - Pool address
-   * @param {Object} provider - Ethereum provider
    */
-  static async startPoolMonitoring(bot, chatId, messageId, poolAddress, provider) {
+  async startPoolMonitoring(chatId, messageId, poolAddress) {
     try {
-      const result = await poolService.startPoolMonitoring(bot, poolAddress, chatId, messageId, provider);
+      const result = await poolService.startPoolMonitoring(this.bot, poolAddress, chatId, messageId, this.provider);
 
       // Store monitor info for event handling
       this.activeMonitors.set(poolAddress, {
@@ -239,7 +244,7 @@ class PoolHandler {
       });
 
       // Immediately update the pool message with current price and timestamp
-      await this.sendOrUpdatePoolMessage(bot, chatId, messageId, poolAddress, provider, {
+      await this.sendOrUpdatePoolMessage(chatId, messageId, poolAddress, {
         preCalculatedPrice: result.currentPrice,
         includeTimestamp: true
       });
@@ -257,7 +262,7 @@ class PoolHandler {
    * @param {number} chatId - Chat ID
    * @param {number} messageId - Message ID
    */
-  static async stopPoolMonitoring(poolAddress, chatId, messageId) {
+  async stopPoolMonitoring(poolAddress, chatId, messageId) {
     try {
       await poolService.stopMonitoring(poolAddress);
 
@@ -273,15 +278,14 @@ class PoolHandler {
 
   /**
    * Initialize event listener for swap events from PoolService
-   * @param {TelegramBot} bot - The bot instance
    */
-  static initializeSwapEventListener(bot) {
+  initializeSwapEventListener() {
     if (this.swapEventListener) {
       poolService.removeListener('swap', this.swapEventListener);
     }
 
     this.swapEventListener = (swapInfo, poolData) => {
-      this.handleSwapEvent(bot, swapInfo, poolData);
+      this.handleSwapEvent(swapInfo, poolData);
     };
 
     poolService.on('swap', this.swapEventListener);
@@ -290,11 +294,10 @@ class PoolHandler {
 
   /**
    * Handle swap event from PoolService
-   * @param {TelegramBot} bot - The bot instance
    * @param {Object} swapInfo - Swap information
    * @param {Object} poolData - Pool data
    */
-  static async handleSwapEvent(bot, swapInfo, poolData) {
+  async handleSwapEvent(swapInfo, poolData) {
     const { poolAddress, newPrice, timestamp } = swapInfo;
     const monitorInfo = this.activeMonitors.get(poolAddress);
 
@@ -304,7 +307,7 @@ class PoolHandler {
 
     try {
       // Update the pool message with new price and timestamp
-      await this.sendOrUpdatePoolMessage(bot, monitorInfo.chatId, monitorInfo.messageId, poolAddress, null, {
+      await this.sendOrUpdatePoolMessage(monitorInfo.chatId, monitorInfo.messageId, poolAddress, {
         preCalculatedPrice: newPrice,
         includeTimestamp: true
       });
@@ -317,16 +320,14 @@ class PoolHandler {
 
   /**
    * Send or update a pool message with current price, TVL and toggle button
-   * @param {TelegramBot} bot - The bot instance
    * @param {number} chatId - Chat ID
    * @param {number|null} messageId - Message ID to update (null for new message)
    * @param {string} poolAddress - Pool address
-   * @param {Object} provider - Ethereum provider
    * @param {Object} options - Additional options
    * @param {number} [options.preCalculatedPrice] - Pre-calculated price to use instead of fetching
    * @param {boolean} [options.includeTimestamp] - Whether to include timestamp in message
    */
-  static async sendOrUpdatePoolMessage(bot, chatId, messageId, poolAddress, provider, options = {}) {
+  async sendOrUpdatePoolMessage(chatId, messageId, poolAddress, options = {}) {
     try {
       // Find pool config
       const poolConfig = poolsConfig.getPoolByAddress(poolAddress);
@@ -336,7 +337,7 @@ class PoolHandler {
       }
 
       // Get pool information from cache/database
-      const poolInfo = await poolService.getPool(poolAddress, provider);
+      const poolInfo = await poolService.getPool(poolAddress, this.provider);
 
       if (!poolInfo || !poolInfo.token0 || !poolInfo.token1) {
         console.error(`Pool info not available for ${poolAddress}`);
@@ -394,13 +395,13 @@ class PoolHandler {
       let resultMessage;
       // Update message if messageId is provided, otherwise send new message
       if (messageId) {
-        resultMessage = await bot.editMessageText(poolInfoMessage.toString(), {
+        resultMessage = await this.bot.editMessageText(poolInfoMessage.toString(), {
           chat_id: chatId,
           message_id: messageId,
           ...messageOptions
         });
       } else {
-        resultMessage = await bot.sendMessage(chatId, poolInfoMessage.toString(), messageOptions);
+        resultMessage = await this.bot.sendMessage(chatId, poolInfoMessage.toString(), messageOptions);
 
         // Update message ID in MongoDB for this pool
         if (resultMessage && resultMessage.message_id) {
@@ -419,7 +420,7 @@ class PoolHandler {
    * @param {number} chatId - Chat ID
    * @param {number} messageId - New message ID
    */
-  static async updatePoolMessageId(poolAddress, chatId, messageId) {
+  async updatePoolMessageId(poolAddress, chatId, messageId) {
     try {
       // Get existing pool data
       const existingPoolData = await poolService.stateManager.getCachedPoolInfo(poolAddress);
@@ -446,7 +447,7 @@ class PoolHandler {
   /**
    * Clean up event listeners and active monitors
    */
-  static cleanup() {
+  cleanup() {
     if (this.swapEventListener) {
       poolService.removeListener('swap', this.swapEventListener);
       this.swapEventListener = null;

@@ -206,86 +206,93 @@ class WalletListMessage {
 
 class WalletHandler {
   /**
-   * Register command handlers with the bot
+   * Create a new WalletHandler instance
    * @param {TelegramBot} bot - The bot instance
    * @param {object} positionMonitor - Position monitor service
    */
-  static onText(bot, positionMonitor) {
+  constructor(bot, positionMonitor) {
+    this.bot = bot;
+    this.positionMonitor = positionMonitor;
+
+    // Register handlers on instantiation
+    this.registerHandlers();
+  }
+
+  /**
+   * Register command handlers with the bot
+   */
+  registerHandlers() {
     // Wallet position monitoring commands
-    bot.onText(/\/wallet(?:\s+(.+))?/, (msg, match) => {
-      this.handle(bot, msg, match, positionMonitor);
+    this.bot.onText(/\/wallet(?:\s+(.+))?/, (msg, match) => {
+      this.handle(msg, match);
     });
 
-    bot.onText(/\/stop_wallet(?:\s+(.+))?/, (msg, match) => {
-      this.handleStopWallet(bot, msg, match, positionMonitor);
+    this.bot.onText(/\/stop_wallet(?:\s+(.+))?/, (msg, match) => {
+      this.handleStopWallet(msg, match);
     });
 
-    bot.onText(/\/list_wallets/, (msg) => {
-      this.handleListWallets(bot, msg, positionMonitor);
+    this.bot.onText(/\/list_wallets/, (msg) => {
+      this.handleListWallets(msg);
     });
   }
 
   /**
    * Handle wallet command to start monitoring positions
-   * @param {object} bot - Telegram bot instance
    * @param {object} msg - Message object
    * @param {Array} match - Regex match result
-   * @param {object} positionMonitor - Position monitor service
    */
-  static async handle(bot, msg, match, positionMonitor) {
+  async handle(msg, match) {
     const chatId = msg.chat.id;
 
     // If address is provided with command
     if (match && match[1] && match[1].trim()) {
       const walletAddress = match[1].trim();
-      await this.processWalletAddress(bot, chatId, walletAddress, positionMonitor);
+      await this.processWalletAddress(chatId, walletAddress);
       return;
     }
 
     // Prompt for address
     const promptMessage = new WalletPromptMessage();
-    const promptMsg = await bot.sendMessage(
+    const promptMsg = await this.bot.sendMessage(
       chatId,
       promptMessage.toString(),
       { reply_markup: promptMessage.getReplyMarkup() }
     );
 
     // Listen for reply
-    bot.onReplyToMessage(chatId, promptMsg.message_id, async (replyMsg) => {
+    this.bot.onReplyToMessage(chatId, promptMsg.message_id, async (replyMsg) => {
       const walletAddress = replyMsg.text.trim();
-      await this.processWalletAddress(bot, chatId, walletAddress, positionMonitor);
+      await this.processWalletAddress(chatId, walletAddress);
     });
   }
 
   /**
    * Process wallet address for monitoring
-   * @param {object} bot - Telegram bot
    * @param {number} chatId - Chat ID
    * @param {string} walletAddress - Wallet address
-   * @param {object} positionMonitor - Position monitor service
    */
-  static async processWalletAddress(bot, chatId, walletAddress, positionMonitor) {
+  async processWalletAddress(chatId, walletAddress) {
     // Validate address
     if (!isValidEthereumAddress(walletAddress)) {
       const invalidMessage = new InvalidAddressMessage();
-      await bot.sendMessage(chatId, invalidMessage.toString());
+      await this.bot.sendMessage(chatId, invalidMessage.toString());
       return;
     }
 
     // Send processing message
     const processingMessage = new ProcessingWalletMessage();
-    const statusMsg = await bot.sendMessage(chatId, processingMessage.toString());
+    const statusMsg = await this.bot.sendMessage(chatId, processingMessage.toString());
 
     try {
       // Check if already monitoring
-      const isAlreadyMonitored = positionMonitor.monitoredWallets.has(walletAddress.toLowerCase());
+      const isAlreadyMonitored = this.positionMonitor.monitoredWallets.has(walletAddress.toLowerCase());
 
       // Start monitoring the wallet
-      positionMonitor.startMonitoring(walletAddress, chatId);
+      this.positionMonitor.startMonitoring(walletAddress, chatId);
 
       // Create and send monitoring status message
       const statusMessage = new MonitoringStatusMessage(isAlreadyMonitored);
-      await bot.editMessageText(statusMessage.toString(), {
+      await this.bot.editMessageText(statusMessage.toString(), {
         chat_id: chatId,
         message_id: statusMsg.message_id
       });
@@ -293,7 +300,7 @@ class WalletHandler {
     } catch (error) {
       console.error('Error processing wallet:', error);
       const errorMessage = new WalletProcessingErrorMessage(error.message);
-      await bot.editMessageText(
+      await this.bot.editMessageText(
         errorMessage.toString(),
         { chat_id: chatId, message_id: statusMsg.message_id }
       );
@@ -302,31 +309,29 @@ class WalletHandler {
 
   /**
    * Handle stop monitoring command
-   * @param {object} bot - Telegram bot
    * @param {object} msg - Message object
    * @param {Array} match - Regex match result
-   * @param {object} positionMonitor - Position monitor
    */
-  static async handleStopWallet(bot, msg, match, positionMonitor) {
+  async handleStopWallet(msg, match) {
     const chatId = msg.chat.id;
 
     // If address is provided with command
     if (match && match[1] && match[1].trim()) {
       const walletAddress = match[1].trim();
-      await this.processStopMonitoring(bot, chatId, walletAddress, positionMonitor);
+      await this.processStopMonitoring(chatId, walletAddress);
       return;
     }
 
     // If user has only one monitored wallet, stop that one
-    const monitoredWallets = positionMonitor.getMonitoredWallets();
+    const monitoredWallets = this.positionMonitor.getMonitoredWallets();
     if (monitoredWallets.length === 1) {
-      await this.processStopMonitoring(bot, chatId, monitoredWallets[0], positionMonitor);
+      await this.processStopMonitoring(chatId, monitoredWallets[0]);
       return;
     }
 
     // Send instruction message with wallet list
     const instructionMessage = new StopWalletInstructionMessage(monitoredWallets);
-    await bot.sendMessage(
+    await this.bot.sendMessage(
       chatId,
       instructionMessage.toString(),
       { parse_mode: 'Markdown' }
@@ -335,49 +340,45 @@ class WalletHandler {
 
   /**
    * Process stop monitoring request
-   * @param {object} bot - Telegram bot
    * @param {number} chatId - Chat ID
    * @param {string} walletAddress - Wallet address
-   * @param {object} positionMonitor - Position monitor
    */
-  static async processStopMonitoring(bot, chatId, walletAddress, positionMonitor) {
+  async processStopMonitoring(chatId, walletAddress) {
     // Validate address
     if (!isValidEthereumAddress(walletAddress)) {
       const invalidMessage = new InvalidAddressMessage();
-      await bot.sendMessage(chatId, invalidMessage.toString());
+      await this.bot.sendMessage(chatId, invalidMessage.toString());
       return;
     }
 
     // Stop monitoring
-    const success = positionMonitor.stopMonitoring(walletAddress);
+    const success = this.positionMonitor.stopMonitoring(walletAddress);
 
     if (success) {
       const successMessage = new StopMonitoringSuccessMessage(walletAddress);
-      await bot.sendMessage(chatId, successMessage.toString());
+      await this.bot.sendMessage(chatId, successMessage.toString());
     } else {
       const notFoundMessage = new WalletNotFoundMessage(walletAddress);
-      await bot.sendMessage(chatId, notFoundMessage.toString());
+      await this.bot.sendMessage(chatId, notFoundMessage.toString());
     }
   }
 
   /**
    * List all monitored wallets
-   * @param {object} bot - Telegram bot
    * @param {object} msg - Message object
-   * @param {object} positionMonitor - Position monitor
    */
-  static async handleListWallets(bot, msg, positionMonitor) {
+  async handleListWallets(msg) {
     const chatId = msg.chat.id;
-    const monitoredWallets = positionMonitor.getMonitoredWallets();
+    const monitoredWallets = this.positionMonitor.getMonitoredWallets();
 
     if (monitoredWallets.length === 0) {
       const noWalletsMessage = new NoWalletsMonitoredMessage();
-      await bot.sendMessage(chatId, noWalletsMessage.toString());
+      await this.bot.sendMessage(chatId, noWalletsMessage.toString());
       return;
     }
 
     const walletListMessage = new WalletListMessage(monitoredWallets);
-    await bot.sendMessage(
+    await this.bot.sendMessage(
       chatId,
       walletListMessage.toString(),
       { parse_mode: 'Markdown' }

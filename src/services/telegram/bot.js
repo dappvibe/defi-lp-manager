@@ -128,12 +128,13 @@ class Bot extends TelegramBot {
    * Register all command handlers
    */
   registerCommandHandlers() {
-    StartHandler.onText(this, this.monitoredPools, this.positionMonitor);
-    HelpHandler.onText(this);
-    NotifyHandler.onText(this, this.monitoredPools);
-    PoolHandler.onText(this, this.provider, this.monitoredPools);
-    WalletHandler.onText(this, this.positionMonitor);
-    LpHandler.onText(this, this.positionMonitor);
+    // Create all handler instances and store them as properties
+    this.startHandler = new StartHandler(this, this.monitoredPools, this.positionMonitor);
+    this.helpHandler = new HelpHandler(this);
+    this.notifyHandler = new NotifyHandler(this, this.monitoredPools);
+    this.poolHandler = new PoolHandler(this, this.provider, this.monitoredPools);
+    this.walletHandler = new WalletHandler(this, this.positionMonitor);
+    this.lpHandler = new LpHandler(this, this.positionMonitor);
   }
 
   /**
@@ -161,6 +162,15 @@ class Bot extends TelegramBot {
 
     // Clear any pending timeouts
     this.lastEditTimes = {};
+
+    // Clean up handler resources if they have cleanup methods
+    if (this.lpHandler && typeof this.lpHandler.cleanup === 'function') {
+      this.lpHandler.cleanup();
+    }
+
+    if (this.poolHandler && typeof this.poolHandler.cleanup === 'function') {
+      this.poolHandler.cleanup();
+    }
 
     console.log('Bot shutdown complete.');
   }

@@ -9,6 +9,7 @@ const WalletHandler = require('./wallet');
 const HelpHandler = require("./help");
 const { LpHandler, PositionMessage } = require('./lp');
 
+// Export all handlers
 module.exports = {
   StartHandler,
   HelpHandler,

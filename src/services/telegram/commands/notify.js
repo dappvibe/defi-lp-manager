@@ -148,50 +148,59 @@ class PriceAlertSetSpecificPoolMessage {
 
 class NotifyHandler {
   /**
-   * Register command handlers with the bot
+   * Create a new NotifyHandler instance
    * @param {TelegramBot} bot - The bot instance
    * @param {Object} monitoredPools - Object containing monitored pools
    */
-  static onText(bot, monitoredPools) {
-    bot.onText(/\/notify (.+)/, (msg, match) => {
-      this.handle(bot, msg, match, monitoredPools);
+  constructor(bot, monitoredPools) {
+    this.bot = bot;
+    this.monitoredPools = monitoredPools;
+
+    // Register handlers on instantiation
+    this.registerHandlers();
+  }
+
+  /**
+   * Register command handlers with the bot
+   */
+  registerHandlers() {
+    this.bot.onText(/\/notify (.+)/, (msg, match) => {
+      this.handle(msg, match);
     });
   }
 
   /**
    * Handle notify command to set price alerts
-   * @param {TelegramBot} bot - The bot instance
    * @param {Object} msg - Message object from Telegram
    * @param {Array} match - Regex match array containing the command params
-   * @param {Object} monitoredPools - Object containing monitored pools
    */
-  static async handle(bot, msg, match, monitoredPools) {
+  async handle(msg, match) {
     const chatId = msg.chat.id;
     const params = match[1].trim().split(/\s+/);
 
     // Check if we have any pools monitored in this chat
-    const poolsInChat = Object.entries(monitoredPools).filter(
+    const poolsInChat = Object.entries(this.monitoredPools).filter(
       ([_, poolData]) => poolData.chatId === chatId
     );
 
     if (poolsInChat.length === 0) {
       const noPoolsMessage = new NoPoolsMonitoredMessage();
-      await bot.sendMessage(chatId, noPoolsMessage.toString());
+      await this.bot.sendMessage(chatId, noPoolsMessage.toString());
       return;
     }
 
     // Handle both formats: "/notify <price>" and "/notify <price> <pool_address>"
     if (params.length === 1) {
       // Format: "/notify <price>" - applies to all pools in the chat
-      await this.handleNotifyAllPools(bot, chatId, params[0], poolsInChat);
+      await this.handleNotifyAllPools(chatId, params[0], poolsInChat);
     } else if (params.length === 2) {
       // Format: "/notify <price> <pool_address>"
       const targetPrice = parseFloat(params[0]);
       const poolAddress = params[1];
-      await this.handleNotifySpecificPool(bot, chatId, poolAddress, targetPrice, monitoredPools);
+      await this.handleNotifySpecificPool(chatId, poolAddress, targetPrice);
     } else {
       const invalidFormatMessage = new InvalidFormatMessage();
-      await bot.sendMessage(chatId, invalidFormatMessage.toString());
+      await this.bot.sendMessage(chatId, invalidFormatMessage.toString());
     }
   }
 
@@ -231,17 +240,16 @@ class NotifyHandler {
 
   /**
    * Handle setting notifications for all pools in chat
-   * @param {TelegramBot} bot - The bot instance
    * @param {number} chatId - Chat ID
    * @param {string} priceParam - Price parameter from command
    * @param {Array} poolsInChat - Array of pools in the chat
    */
-  static async handleNotifyAllPools(bot, chatId, priceParam, poolsInChat) {
+  async handleNotifyAllPools(chatId, priceParam, poolsInChat) {
     const targetPrice = parseFloat(priceParam);
 
     if (isNaN(targetPrice)) {
       const invalidPriceMessage = new InvalidPriceFormatMessage();
-      await bot.sendMessage(chatId, invalidPriceMessage.toString());
+      await this.bot.sendMessage(chatId, invalidPriceMessage.toString());
       return;
     }
 
@@ -266,40 +274,38 @@ class NotifyHandler {
 
     if (notificationsSet > 0) {
       const alertSetMessage = new PriceAlertSetAllPoolsMessage(targetPrice, notificationsSet);
-      await bot.sendMessage(chatId, alertSetMessage.toString());
+      await this.bot.sendMessage(chatId, alertSetMessage.toString());
     } else {
       const setupFailureMessage = new NotificationsSetupFailureMessage();
-      await bot.sendMessage(chatId, setupFailureMessage.toString());
+      await this.bot.sendMessage(chatId, setupFailureMessage.toString());
     }
   }
 
   /**
    * Handle setting notification for a specific pool
-   * @param {TelegramBot} bot - The bot instance
    * @param {number} chatId - Chat ID
    * @param {string} poolAddress - Pool address
    * @param {number} targetPrice - Target price for notification
-   * @param {Object} monitoredPools - Object containing monitored pools
    */
-  static async handleNotifySpecificPool(bot, chatId, poolAddress, targetPrice, monitoredPools) {
+  async handleNotifySpecificPool(chatId, poolAddress, targetPrice) {
     if (isNaN(targetPrice)) {
       const invalidPriceMessage = new InvalidPriceFormatMessage();
-      await bot.sendMessage(chatId, invalidPriceMessage.toString());
+      await this.bot.sendMessage(chatId, invalidPriceMessage.toString());
       return;
     }
 
     // Check if the specified pool is being monitored
-    if (!monitoredPools[poolAddress] || monitoredPools[poolAddress].chatId !== chatId) {
+    if (!this.monitoredPools[poolAddress] || this.monitoredPools[poolAddress].chatId !== chatId) {
       const poolNotMonitoredMessage = new PoolNotMonitoredMessage(poolAddress);
-      await bot.sendMessage(chatId, poolNotMonitoredMessage.toString());
+      await this.bot.sendMessage(chatId, poolNotMonitoredMessage.toString());
       return;
     }
 
-    const poolInfo = monitoredPools[poolAddress];
+    const poolInfo = this.monitoredPools[poolAddress];
 
     if (!poolInfo.lastPriceT1T0) {
       const poolNotInitializedMessage = new PoolNotInitializedMessage(poolAddress);
-      await bot.sendMessage(chatId, poolNotInitializedMessage.toString());
+      await this.bot.sendMessage(chatId, poolNotInitializedMessage.toString());
       return;
     }
 
@@ -318,7 +324,7 @@ class NotifyHandler {
       poolInfo.token1.symbol,
       poolInfo.token0.symbol
     );
-    await bot.sendMessage(chatId, alertSetMessage.toString());
+    await this.bot.sendMessage(chatId, alertSetMessage.toString());
   }
 }
 

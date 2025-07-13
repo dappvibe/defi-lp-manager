@@ -80,31 +80,40 @@ class HelpHandler {
     static description = 'Show help information for all commands';
 
     /**
-     * Register command commands with the bot
+     * Create a new HelpHandler instance
      * @param {TelegramBot} bot - The bot instance
      */
-    static onText(bot) {
-        bot.onText(/\/help/, (msg) => {
-            this.handle(bot, msg);
+    constructor(bot) {
+        this.bot = bot;
+
+        // Register handlers on instantiation
+        this.registerHandlers();
+    }
+
+    /**
+     * Register command handlers with the bot
+     */
+    registerHandlers() {
+        this.bot.onText(/\/help/, (msg) => {
+            this.handle(msg);
         });
     }
 
     /**
      * Handle the help command
-     * @param {TelegramBot} bot - The bot instance
      * @param {Object} msg - Message object
      * @param {Array} args - Command arguments
      */
-    static async handle(bot, msg, args) {
+    async handle(msg, args) {
         try {
             const helpMessage = new HelpMessage();
-            await bot.sendMessage(msg.chat.id, helpMessage.toString(), {
+            await this.bot.sendMessage(msg.chat.id, helpMessage.toString(), {
                 parse_mode: 'Markdown',
                 disable_web_page_preview: true
             });
         } catch (error) {
             console.error('Error in help command:', error);
-            await bot.sendMessage(msg.chat.id, 'Sorry, there was an error displaying help information.');
+            await this.bot.sendMessage(msg.chat.id, 'Sorry, there was an error displaying help information.');
         }
     }
 

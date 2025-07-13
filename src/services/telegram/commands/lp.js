@@ -154,46 +154,55 @@ class GeneralErrorMessage {
  */
 class LpHandler {
   /**
-   * Store for tracking active position monitors by pool address
-   * @type {Map<string, Set<Object>>} Map of poolAddress -> Set of {tokenId, chatId, messageId}
-   */
-  static activePositions = new Map();
-
-  /**
-   * Store event listener reference for cleanup
-   * @type {Function|null}
-   */
-  static swapEventListener = null;
-
-  /**
-   * Register command handlers with the bot
+   * Create a new LpHandler instance
    * @param {TelegramBot} bot - The bot instance
    * @param {Object} positionMonitor - Position monitor instance
    */
-  static onText(bot, positionMonitor) {
-    bot.onText(/\/lp/, (msg) => {
-      this.handle(bot, msg, positionMonitor);
+  constructor(bot, positionMonitor) {
+    this.bot = bot;
+    this.positionMonitor = positionMonitor;
+
+    /**
+     * Store for tracking active position monitors by pool address
+     * @type {Map<string, Set<Object>>} Map of poolAddress -> Set of {tokenId, chatId, messageId}
+     */
+    this.activePositions = new Map();
+
+    /**
+     * Store event listener reference for cleanup
+     * @type {Function|null}
+     */
+    this.swapEventListener = null;
+
+    // Register handlers on instantiation
+    this.registerHandlers();
+  }
+
+  /**
+   * Register command handlers with the bot
+   */
+  registerHandlers() {
+    this.bot.onText(/\/lp/, (msg) => {
+      this.handle(msg);
     });
 
     // Initialize event listener for swap events
-    this.initializeSwapEventListener(bot);
+    this.initializeSwapEventListener();
   }
 
   /**
    * Handle lp command
-   * @param {TelegramBot} bot - The bot instance
    * @param {Object} msg - Message object from Telegram
-   * @param {Object} positionMonitor - Position monitor instance
    */
-  static async handle(bot, msg, positionMonitor) {
+  async handle(msg) {
     const chatId = msg.chat.id;
 
     // Get monitored wallets
-    const monitoredWallets = positionMonitor.getMonitoredWallets();
+    const monitoredWallets = this.positionMonitor.getMonitoredWallets();
 
     if (monitoredWallets.length === 0) {
       const noWalletsMessage = new NoWalletsMessage();
-      await bot.sendMessage(chatId, noWalletsMessage.toString());
+      await this.bot.sendMessage(chatId, noWalletsMessage.toString());
       return;
     }
 
@@ -204,19 +213,19 @@ class LpHandler {
 
         // Send initial wallet message with loading status
         const loadingMessage = new WalletLoadingMessage(walletIndex, walletAddress);
-        const loadingMessageSent = await bot.sendMessage(
+        const loadingMessageSent = await this.bot.sendMessage(
             chatId,
             loadingMessage.toString(),
             { parse_mode: 'Markdown' }
         );
 
         // Get positions for this wallet
-        const positions = await positionMonitor.getPositions(walletAddress);
+        const positions = await this.positionMonitor.getPositions(walletAddress);
 
         if (positions.length === 0) {
           // Replace loading message with "no positions" message
           const noPositionsMessage = new NoPositionsMessage();
-          await bot.editMessageText(
+          await this.bot.editMessageText(
               noPositionsMessage.toString(),
               {
                 chat_id: chatId,
@@ -235,7 +244,7 @@ class LpHandler {
 
               if (positionIndex === 0) {
                 // Replace loading message with first position error
-                await bot.editMessageText(
+                await this.bot.editMessageText(
                     errorMessage.toString(),
                     {
                       chat_id: chatId,
@@ -246,7 +255,7 @@ class LpHandler {
                 );
               } else {
                 // Send as separate message
-                await bot.sendMessage(chatId, errorMessage.toString(), { parse_mode: 'Markdown' });
+                await this.bot.sendMessage(chatId, errorMessage.toString(), { parse_mode: 'Markdown' });
               }
               continue;
             }
@@ -257,7 +266,7 @@ class LpHandler {
             let sentMessage;
             if (positionIndex === 0) {
               // Replace loading message with first position
-              await bot.editMessageText(
+              await this.bot.editMessageText(
                   positionMessage.toString(),
                   {
                     chat_id: chatId,
@@ -269,18 +278,18 @@ class LpHandler {
               sentMessage = { message_id: loadingMessageSent.message_id };
             } else {
               // Send additional positions as separate messages
-              sentMessage = await bot.sendMessage(chatId, positionMessage.toString(), { parse_mode: 'Markdown' });
+              sentMessage = await this.bot.sendMessage(chatId, positionMessage.toString(), { parse_mode: 'Markdown' });
             }
 
             // Save position to MongoDB with message ID
             try {
-              const poolAddress = await positionMonitor.getPoolAddressForPosition(position);
+              const poolAddress = await this.positionMonitor.getPoolAddressForPosition(position);
               const positionData = {
                 ...position,
                 walletAddress: walletAddress,
                 poolAddress: poolAddress
               };
-              await positionMonitor.mongoStateManager.savePosition(positionData, chatId, sentMessage.message_id);
+              await this.positionMonitor.mongoStateManager.savePosition(positionData, chatId, sentMessage.message_id);
 
               // Register position for event monitoring if it's in range
               if (position.inRange && poolAddress) {
@@ -296,17 +305,16 @@ class LpHandler {
     } catch (error) {
       console.error('Error fetching liquidity positions:', error);
       const generalErrorMessage = new GeneralErrorMessage(error.message);
-      await bot.sendMessage(chatId, generalErrorMessage.toString());
+      await this.bot.sendMessage(chatId, generalErrorMessage.toString());
     }
   }
 
   /**
    * Handle swap event from PoolService
-   * @param {TelegramBot} bot - The bot instance
    * @param {Object} swapInfo - Swap information
    * @param {Object} poolData - Pool data
    */
-  static async handleSwapEvent(bot, swapInfo, poolData) {
+  async handleSwapEvent(swapInfo, poolData) {
     const { poolAddress, newPrice, timestamp } = swapInfo;
     const activePositions = this.activePositions.get(poolAddress);
 
@@ -348,7 +356,7 @@ class LpHandler {
           const positionMessage = new PositionMessage(updatedPosition, true);
 
           // Update the message in Telegram
-          await bot.editMessageText(positionMessage.toString(), {
+          await this.bot.editMessageText(positionMessage.toString(), {
             chat_id: positionData.chatId,
             message_id: positionData.messageId,
             parse_mode: 'Markdown',
@@ -391,16 +399,15 @@ class LpHandler {
 
   /**
    * Initialize event listener for swap events from PoolService
-   * @param {TelegramBot} bot - The bot instance
    */
-  static initializeSwapEventListener(bot) {
+  initializeSwapEventListener() {
     if (this.swapEventListener) {
       const poolService = require('../../uniswap/pool');
       poolService.removeListener('swap', this.swapEventListener);
     }
 
     this.swapEventListener = (swapInfo, poolData) => {
-      this.handleSwapEvent(bot, swapInfo, poolData);
+      this.handleSwapEvent(swapInfo, poolData);
     };
 
     const poolService = require('../../uniswap/pool');
@@ -415,7 +422,7 @@ class LpHandler {
    * @param {number} chatId - Chat ID
    * @param {number} messageId - Message ID
    */
-  static async registerPositionForEventMonitoring(poolAddress, tokenId, chatId, messageId) {
+  async registerPositionForEventMonitoring(poolAddress, tokenId, chatId, messageId) {
     try {
       // Create or get the position set for this pool
       if (!this.activePositions.has(poolAddress)) {
@@ -444,7 +451,7 @@ class LpHandler {
    * @param {string} tokenId - Position token ID
    * @param {number} chatId - Chat ID
    */
-  static unregisterPositionFromEventMonitoring(poolAddress, tokenId, chatId) {
+  unregisterPositionFromEventMonitoring(poolAddress, tokenId, chatId) {
     const positions = this.activePositions.get(poolAddress);
     if (positions) {
       // Find and remove the position
@@ -466,16 +473,15 @@ class LpHandler {
 
   /**
    * Update a specific position message
-   * @param {TelegramBot} bot - The bot instance
    * @param {number} chatId - Chat ID
    * @param {number} messageId - Message ID
    * @param {Object} position - Updated position data
    */
-  static async updatePositionMessage(bot, chatId, messageId, position) {
+  async updatePositionMessage(chatId, messageId, position) {
     try {
       const positionMessage = new PositionMessage(position, true);
 
-      await bot.editMessageText(positionMessage.toString(), {
+      await this.bot.editMessageText(positionMessage.toString(), {
         chat_id: chatId,
         message_id: messageId,
         parse_mode: 'Markdown',
@@ -492,7 +498,7 @@ class LpHandler {
    * Clean up positions for a specific chat (e.g., when user stops monitoring)
    * @param {number} chatId - Chat ID to clean up
    */
-  static cleanupPositionsForChat(chatId) {
+  cleanupPositionsForChat(chatId) {
     for (const [poolAddress, positions] of this.activePositions.entries()) {
       const toRemove = [];
 
@@ -520,14 +526,14 @@ class LpHandler {
    * Get all active positions (for debugging)
    * @returns {Map} Map of active positions
    */
-  static getActivePositions() {
+  getActivePositions() {
     return this.activePositions;
   }
 
   /**
    * Clean up event listeners and active positions
    */
-  static cleanup() {
+  cleanup() {
     if (this.swapEventListener) {
       const poolService = require('../../uniswap/pool');
       poolService.removeListener('swap', this.swapEventListener);

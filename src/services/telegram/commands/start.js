@@ -82,28 +82,37 @@ class StartMessage {
  */
 class StartHandler {
   /**
-   * Register command handlers with the bot
+   * Create a new StartHandler instance
    * @param {TelegramBot} bot - The bot instance
    * @param {Object} monitoredPools - Object containing monitored pools
    * @param {Object} positionMonitor - Position monitor instance
    */
-  static onText(bot, monitoredPools, positionMonitor) {
-    bot.onText(/\/start/, (msg) => {
-      this.handle(bot, msg, monitoredPools, positionMonitor);
+  constructor(bot, monitoredPools, positionMonitor) {
+    this.bot = bot;
+    this.monitoredPools = monitoredPools;
+    this.positionMonitor = positionMonitor;
+
+    // Register handlers on instantiation
+    this.registerHandlers();
+  }
+
+  /**
+   * Register command handlers with the bot
+   */
+  registerHandlers() {
+    this.bot.onText(/\/start/, (msg) => {
+      this.handle(msg);
     });
   }
 
   /**
    * Handle start command
-   * @param {TelegramBot} bot - The bot instance
    * @param {Object} msg - Message object from Telegram
-   * @param {Object} monitoredPools - Object containing monitored pools
-   * @param {Object} positionMonitor - Position monitor instance
    */
-  static async handle(bot, msg, monitoredPools, positionMonitor) {
+  async handle(msg) {
     const chatId = msg.chat.id;
-    const startMessage = new StartMessage(chatId, monitoredPools, positionMonitor);
-    await bot.sendMessage(chatId, startMessage.toString(), { parse_mode: 'Markdown' });
+    const startMessage = new StartMessage(chatId, this.monitoredPools, this.positionMonitor);
+    await this.bot.sendMessage(chatId, startMessage.toString(), { parse_mode: 'Markdown' });
   }
 
   /**
