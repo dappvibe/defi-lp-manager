@@ -350,11 +350,8 @@ class PoolHandler {
         currentPrice = options.preCalculatedPrice.toFixed(5);
       } else {
         try {
-          const poolContract = createPoolContract(poolAddress);
-          const slot0 = await poolContract.read.slot0();
-          const sqrtPriceX96 = slot0[0];
-          const price = parseFloat(calculatePrice(sqrtPriceX96, poolInfo.token0.decimals, poolInfo.token1.decimals));
-          currentPrice = price.toFixed(5);
+          const price = await poolService.getPoolPrice(poolAddress, this.provider);
+          currentPrice = price !== null ? price.toFixed(5) : 'N/A';
         } catch (error) {
           console.error(`Error getting price for pool ${poolAddress}:`, error.message);
         }

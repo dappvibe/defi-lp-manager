@@ -510,6 +510,36 @@ class PoolService extends EventEmitter {
   }
 
   /**
+   * Get current price for a pool
+   * @param {string} poolAddress - Pool address
+   * @param {Object} provider - Ethereum provider (optional)
+   * @returns {Promise<number|null>} Current price or null if failed
+   */
+  async getPoolPrice(poolAddress, provider = null) {
+    try {
+      // Get pool information
+      const poolInfo = await this.getPool(poolAddress, provider);
+      if (!poolInfo || !poolInfo.token0 || !poolInfo.token1) {
+        throw new Error('Pool information not available');
+      }
+
+      // Get current price using blockchain operations
+      const { createPoolContract } = require('./contracts');
+      const { calculatePrice } = require('./utils');
+
+      const poolContract = createPoolContract(poolAddress);
+      const slot0 = await poolContract.read.slot0();
+      const sqrtPriceX96 = slot0[0];
+      const price = parseFloat(calculatePrice(sqrtPriceX96, poolInfo.token0.decimals, poolInfo.token1.decimals));
+
+      return price;
+    } catch (error) {
+      console.error(`Error getting price for pool ${poolAddress}:`, error.message);
+      return null;
+    }
+  }
+
+  /**
    * Calculate TVL for a Uniswap V3 pool using token balances
    * @param {Object} poolInfo - Pool information object
    * @param {string} poolAddress - Pool address
