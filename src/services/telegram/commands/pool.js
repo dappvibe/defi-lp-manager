@@ -3,13 +3,10 @@
  * Lists all configured pools with toggle buttons for monitoring
  * Usage: /pool
  */
-const { getTokenInfo, createPoolContract } = require('../../uniswap/contracts');
+const { createPoolContract } = require('../../uniswap/contracts');
 const poolService = require('../../uniswap/pool');
 const { calculatePrice } = require('../../uniswap/utils');
-const { isValidEthereumAddress } = require('../../uniswap/utils');
 const poolsConfig = require('../../../config/pools');
-const { Pool } = require('@uniswap/v3-sdk');
-const { Token } = require('@uniswap/sdk-core');
 
 /**
  * Represents a no pools configured message
@@ -114,50 +111,6 @@ class PoolErrorMessage {
 
 class PoolHandler {
   /**
-   * Calculate TVL for a Uniswap V3 pool using token balances
-   * @param {Object} poolInfo - Pool information object
-   * @param {string} poolAddress - Pool address
-   * @returns {Promise<number|null>} TVL value or null if calculation fails
-   */
-  static async calculatePoolTVL(poolInfo, poolAddress) {
-    try {
-      // Get token balances in the pool directly
-      const { createErc20Contract } = require('../../uniswap/contracts');
-
-      const token0Contract = createErc20Contract(poolInfo.token0.address);
-      const token1Contract = createErc20Contract(poolInfo.token1.address);
-
-      // Get token balances in the pool
-      const [token0Balance, token1Balance] = await Promise.all([
-        token0Contract.read.balanceOf([poolAddress]),
-        token1Contract.read.balanceOf([poolAddress])
-      ]);
-
-      // Convert to human readable amounts
-      const token0Amount = parseFloat(token0Balance) / Math.pow(10, poolInfo.token0.decimals);
-      const token1Amount = parseFloat(token1Balance) / Math.pow(10, poolInfo.token1.decimals);
-
-      // Get current price from pool
-      const poolContract = createPoolContract(poolAddress);
-      const slot0 = await poolContract.read.slot0();
-      const sqrtPriceX96 = slot0[0];
-
-      // Calculate price using the existing utility function
-      const currentPrice = parseFloat(calculatePrice(sqrtPriceX96, poolInfo.token0.decimals, poolInfo.token1.decimals));
-
-      // Calculate TVL (assuming token1 is stablecoin like USDC)
-      const token0ValueInToken1 = token0Amount * currentPrice;
-      const totalTVL = token0ValueInToken1 + token1Amount;
-
-      return totalTVL;
-
-    } catch (error) {
-      console.error('Error calculating pool TVL:', error);
-      return null;
-    }
-  }
-
-  /**
    * Register command handlers with the bot
    * @param {TelegramBot} bot - The bot instance
    * @param {Object} provider - Ethereum provider instance
@@ -255,7 +208,7 @@ class PoolHandler {
       // Calculate TVL
       let tvlText = '';
       try {
-        const tvl = await this.calculatePoolTVL(poolInfo, poolAddress);
+        const tvl = await poolService.getPoolTVL(poolInfo, poolAddress);
         if (tvl !== null && tvl > 0) {
           tvlText = `💎 TVL: $${tvl.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
         }
