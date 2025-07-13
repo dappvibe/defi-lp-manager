@@ -209,12 +209,11 @@ class WalletHandler {
    * Register command handlers with the bot
    * @param {TelegramBot} bot - The bot instance
    * @param {object} positionMonitor - Position monitor service
-   * @param {string} timezone - User timezone
    */
-  static onText(bot, positionMonitor, timezone) {
+  static onText(bot, positionMonitor) {
     // Wallet position monitoring commands
     bot.onText(/\/wallet(?:\s+(.+))?/, (msg, match) => {
-      this.handle(bot, msg, match, positionMonitor, timezone);
+      this.handle(bot, msg, match, positionMonitor);
     });
 
     bot.onText(/\/stop_wallet(?:\s+(.+))?/, (msg, match) => {
@@ -232,15 +231,14 @@ class WalletHandler {
    * @param {object} msg - Message object
    * @param {Array} match - Regex match result
    * @param {object} positionMonitor - Position monitor service
-   * @param {string} timezone - User timezone
    */
-  static async handle(bot, msg, match, positionMonitor, timezone) {
+  static async handle(bot, msg, match, positionMonitor) {
     const chatId = msg.chat.id;
 
     // If address is provided with command
     if (match && match[1] && match[1].trim()) {
       const walletAddress = match[1].trim();
-      await this.processWalletAddress(bot, chatId, walletAddress, positionMonitor, timezone);
+      await this.processWalletAddress(bot, chatId, walletAddress, positionMonitor);
       return;
     }
 
@@ -255,7 +253,7 @@ class WalletHandler {
     // Listen for reply
     bot.onReplyToMessage(chatId, promptMsg.message_id, async (replyMsg) => {
       const walletAddress = replyMsg.text.trim();
-      await this.processWalletAddress(bot, chatId, walletAddress, positionMonitor, timezone);
+      await this.processWalletAddress(bot, chatId, walletAddress, positionMonitor);
     });
   }
 
@@ -265,9 +263,8 @@ class WalletHandler {
    * @param {number} chatId - Chat ID
    * @param {string} walletAddress - Wallet address
    * @param {object} positionMonitor - Position monitor service
-   * @param {string} timezone - User timezone
    */
-  static async processWalletAddress(bot, chatId, walletAddress, positionMonitor, timezone) {
+  static async processWalletAddress(bot, chatId, walletAddress, positionMonitor) {
     // Validate address
     if (!isValidEthereumAddress(walletAddress)) {
       const invalidMessage = new InvalidAddressMessage();

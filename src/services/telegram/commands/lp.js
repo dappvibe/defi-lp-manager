@@ -77,12 +77,10 @@ class PositionMessage {
   /**
    * Create a position message instance
    * @param {Object} position - Position object
-   * @param {string} timezone - User timezone
    * @param {boolean} isUpdate - Whether this is an update message
    */
-  constructor(position, timezone = 'UTC', isUpdate = false) {
+  constructor(position, isUpdate = false) {
     this.position = position;
-    this.timezone = timezone;
     this.isUpdate = isUpdate;
   }
 
@@ -121,7 +119,7 @@ class PositionMessage {
     // Add timestamp if this is an update
     if (this.isUpdate) {
       const { getTimeInTimezone } = require('../../../utils/time');
-      message += `\n🕐 Updated: ${getTimeInTimezone(this.timezone)}`;
+      message += `\n🕐 Updated: ${getTimeInTimezone()}`;
     }
 
     return message;
@@ -159,11 +157,10 @@ class LpHandler {
    * Register command handlers with the bot
    * @param {TelegramBot} bot - The bot instance
    * @param {Object} positionMonitor - Position monitor instance
-   * @param {String} timezone - User timezone
    */
-  static onText(bot, positionMonitor, timezone) {
+  static onText(bot, positionMonitor) {
     bot.onText(/\/lp/, (msg) => {
-      this.handle(bot, msg, positionMonitor, timezone);
+      this.handle(bot, msg, positionMonitor);
     });
   }
 
@@ -172,9 +169,8 @@ class LpHandler {
    * @param {TelegramBot} bot - The bot instance
    * @param {Object} msg - Message object from Telegram
    * @param {Object} positionMonitor - Position monitor instance
-   * @param {String} timezone - User timezone
    */
-  static async handle(bot, msg, positionMonitor, timezone) {
+  static async handle(bot, msg, positionMonitor) {
     const chatId = msg.chat.id;
 
     // Get monitored wallets
@@ -241,7 +237,7 @@ class LpHandler {
             }
 
             // Create position message
-            const positionMessage = new PositionMessage(position, timezone, false);
+            const positionMessage = new PositionMessage(position, false);
 
             let sentMessage;
             if (positionIndex === 0) {

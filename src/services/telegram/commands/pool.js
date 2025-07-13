@@ -37,7 +37,6 @@ class PoolInfoMessage {
    * @param {boolean} isMonitored - Whether pool is currently monitored
    * @param {Object} options - Additional options
    * @param {boolean} [options.includeTimestamp] - Whether to include timestamp
-   * @param {string} [options.timezone] - User timezone for timestamp
    */
   constructor(poolInfo, poolAddress, currentPrice, tvlText, isMonitored, options = {}) {
     this.poolInfo = poolInfo;
@@ -66,9 +65,9 @@ class PoolInfoMessage {
     }
 
     // Add timestamp if requested
-    if (this.options.includeTimestamp && this.options.timezone) {
+    if (this.options.includeTimestamp) {
       const { getTimeInTimezone } = require('../../../utils/time');
-      const updateTime = getTimeInTimezone(this.options.timezone);
+      const updateTime = getTimeInTimezone();
       messageText += `
 ⏰ ${updateTime}`;
     }
@@ -163,17 +162,16 @@ class PoolHandler {
    * @param {TelegramBot} bot - The bot instance
    * @param {Object} provider - Ethereum provider instance
    * @param {Object} monitoredPools - Object containing monitored pools
-   * @param {String} timezone - User timezone
    */
-  static onText(bot, provider, monitoredPools, timezone) {
+  static onText(bot, provider, monitoredPools) {
     // Pool listing command
     bot.onText(/\/pool/, (msg) => {
-      this.handle(bot, msg, provider, monitoredPools, timezone);
+      this.handle(bot, msg, provider, monitoredPools);
     });
 
     // Callback query handlers for pool toggle buttons
     bot.on('callback_query', (callbackQuery) => {
-      this.handleCallback(bot, callbackQuery, provider, timezone);
+      this.handleCallback(bot, callbackQuery, provider);
     });
   }
 
@@ -183,9 +181,8 @@ class PoolHandler {
    * @param {Object} msg - Message object from Telegram
    * @param {Object} provider - Ethereum provider instance
    * @param {Object} monitoredPools - Object containing monitored pools
-   * @param {String} timezone - User timezone
    */
-  static async handle(bot, msg, provider, monitoredPools, timezone) {
+  static async handle(bot, msg, provider, monitoredPools) {
     const chatId = msg.chat.id;
 
     try {
@@ -200,7 +197,7 @@ class PoolHandler {
 
       // Send a message for each configured pool
       for (const poolConfig of configuredPools) {
-        await this.sendOrUpdatePoolMessage(bot, chatId, null, poolConfig.address, provider, timezone, 'send');
+        await this.sendOrUpdatePoolMessage(bot, chatId, null, poolConfig.address, provider, 'send');
       }
 
     } catch (error) {
@@ -217,13 +214,12 @@ class PoolHandler {
    * @param {number|null} messageId - Message ID to update (null for new message)
    * @param {string} poolAddress - Pool address
    * @param {Object} provider - Ethereum provider
-   * @param {String} timezone - User timezone
    * @param {'send'|'edit'} action - Whether to send new message or edit existing
    * @param {Object} options - Additional options
    * @param {number} [options.preCalculatedPrice] - Pre-calculated price to use instead of fetching
    * @param {boolean} [options.includeTimestamp] - Whether to include timestamp in message
    */
-  static async sendOrUpdatePoolMessage(bot, chatId, messageId, poolAddress, provider, timezone, action = 'send', options = {}) {
+  static async sendOrUpdatePoolMessage(bot, chatId, messageId, poolAddress, provider, action = 'send', options = {}) {
     try {
       // Find pool config
       const poolConfig = poolsConfig.getPoolByAddress(poolAddress);
@@ -278,8 +274,7 @@ class PoolHandler {
         tvlText,
         isMonitored,
         {
-          includeTimestamp: options.includeTimestamp,
-          timezone: timezone
+          includeTimestamp: options.includeTimestamp
         }
       );
 
@@ -349,9 +344,8 @@ class PoolHandler {
    * @param {TelegramBot} bot - The bot instance
    * @param {Object} callbackQuery - Callback query object
    * @param {Object} provider - Ethereum provider
-   * @param {String} timezone - User timezone
    */
-  static async handleCallback(bot, callbackQuery, provider, timezone) {
+  static async handleCallback(bot, callbackQuery, provider) {
     const chatId = callbackQuery.message.chat.id;
     const messageId = callbackQuery.message.message_id;
     const data = callbackQuery.data;
@@ -373,12 +367,12 @@ class PoolHandler {
     try {
       switch (action) {
         case 'start':
-          await this.startPoolMonitoring(bot, chatId, messageId, poolAddress, provider, timezone);
+          await this.startPoolMonitoring(bot, chatId, messageId, poolAddress, provider);
           await bot.answerCallbackQuery(callbackQuery.id, { text: 'Monitoring started!' });
           break;
         case 'stop':
           await poolService.stopMonitoring(poolAddress);
-          await this.sendOrUpdatePoolMessage(bot, chatId, messageId, poolAddress, provider, timezone, 'edit');
+          await this.sendOrUpdatePoolMessage(bot, chatId, messageId, poolAddress, provider, 'edit');
           await bot.answerCallbackQuery(callbackQuery.id, { text: 'Monitoring stopped!' });
           break;
         default:
@@ -397,9 +391,8 @@ class PoolHandler {
    * @param {number} messageId - Message ID to update
    * @param {string} poolAddress - Pool address
    * @param {Object} provider - Ethereum provider
-   * @param {String} timezone - User timezone
    */
-  static async startPoolMonitoring(bot, chatId, messageId, poolAddress, provider, timezone) {
+  static async startPoolMonitoring(bot, chatId, messageId, poolAddress, provider) {
     try {
       // Get pool information
       const poolInfo = await poolService.getPool(poolAddress, provider);
@@ -426,10 +419,10 @@ class PoolHandler {
       };
 
       // Start monitoring the pool
-      await poolService.startMonitoring(bot, poolAddress, poolData, provider, timezone);
+      await poolService.startMonitoring(bot, poolAddress, poolData, provider);
 
       // Immediately update the pool message with current price and timestamp
-      await this.sendOrUpdatePoolMessage(bot, chatId, messageId, poolAddress, provider, timezone, 'edit', {
+      await this.sendOrUpdatePoolMessage(bot, chatId, messageId, poolAddress, provider, 'edit', {
         preCalculatedPrice: priceT1T0,
         includeTimestamp: true
       });

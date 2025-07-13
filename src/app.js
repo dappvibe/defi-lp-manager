@@ -32,13 +32,12 @@ async function initializeApp() {
         environment.telegram.botToken,
         provider,
         poolService.getMonitoredPools(),
-        positionMonitor,
-        environment.telegram.timezone
+        positionMonitor
     );
 
     // Initialize pool service with monitoring functionality
     // This must be done after the bot is initialized since it needs the bot instance
-    await poolService.initialize(bot, provider, environment.telegram.timezone);
+    await poolService.initialize(bot, provider);
 
     return {
         provider,

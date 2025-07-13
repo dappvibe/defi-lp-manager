@@ -1,11 +1,11 @@
 /**
- * Get the current time formatted in a specific timezone
- * @param {string} tz - Timezone (e.g., 'Asia/Phnom_Penh', 'UTC', 'America/New_York')
+ * Get the current time formatted in the configured timezone
  * @param {Object} options - Formatting options for toLocaleTimeString
  * @returns {string} - Formatted time string
  */
-function getTimeInTimezone(tz, options = { hour12: false }) {
-    return new Date().toLocaleTimeString('en-US', { timeZone: tz, ...options });
+function getTimeInTimezone(options = { hour12: false }) {
+    const timezone = process.env.TELEGRAM_TIMEZONE || 'UTC';
+    return new Date().toLocaleTimeString('en-US', { timeZone: timezone, ...options });
 }
 
 module.exports = {

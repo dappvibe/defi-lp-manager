@@ -17,10 +17,9 @@ class Bot extends TelegramBot {
    * @param {object} provider - Ethereum provider instance
    * @param {object} monitoredPools - Object to store monitored pools
    * @param {object} positionMonitor - Position monitor instance
-   * @param {string} timezone - Timezone for time display
    * @param {object} options - Additional bot options
    */
-  constructor(token, provider, monitoredPools, positionMonitor, timezone, options = {}) {
+  constructor(token, provider, monitoredPools, positionMonitor, options = {}) {
     // Initialize parent TelegramBot with polling enabled
     super(token, { polling: true, ...options });
 
@@ -28,7 +27,6 @@ class Bot extends TelegramBot {
     this.provider = provider;
     this.monitoredPools = monitoredPools;
     this.positionMonitor = positionMonitor;
-    this.timezone = timezone;
 
     // Initialize throttling
     this.rateLimit = environment.telegram.rateLimit;
@@ -132,10 +130,10 @@ class Bot extends TelegramBot {
   registerCommandHandlers() {
     StartHandler.onText(this, this.monitoredPools, this.positionMonitor);
     HelpHandler.onText(this);
-    NotifyHandler.onText(this, this.monitoredPools, this.timezone);
-    PoolHandler.onText(this, this.provider, this.monitoredPools, this.timezone);
-    WalletHandler.onText(this, this.positionMonitor, this.timezone);
-    LpHandler.onText(this, this.positionMonitor, this.timezone);
+    NotifyHandler.onText(this, this.monitoredPools);
+    PoolHandler.onText(this, this.provider, this.monitoredPools);
+    WalletHandler.onText(this, this.positionMonitor);
+    LpHandler.onText(this, this.positionMonitor);
   }
 
   /**

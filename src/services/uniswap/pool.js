@@ -502,7 +502,7 @@ class PoolService {
           }
 
           // Use the unified position formatting method for updates
-          const positionMessage = new PositionMessage(updatedPosition, timezone, true);
+          const positionMessage = new PositionMessage(updatedPosition, true);
           const updatedMessage = positionMessage.toString();
 
           // Update the message in Telegram
