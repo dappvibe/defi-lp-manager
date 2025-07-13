@@ -666,6 +666,59 @@ class PoolService {
       return null;
     }
   }
+
+  /**
+   * Start pool monitoring with blockchain operations
+   * @param {TelegramBot} bot - The bot instance
+   * @param {string} poolAddress - Pool address
+   * @param {number} chatId - Chat ID
+   * @param {number} messageId - Message ID to update
+   * @param {Object} provider - Ethereum provider
+   * @returns {Promise<Object>} Pool data with current price
+   */
+  async startPoolMonitoring(bot, poolAddress, chatId, messageId, provider) {
+    try {
+      // Get pool information
+      const poolInfo = await this.getPool(poolAddress, provider);
+      if (!poolInfo || !poolInfo.token0 || !poolInfo.token1) {
+        throw new Error('Pool information not available');
+      }
+
+      // Get current price using blockchain operations
+      const { createPoolContract } = require('./contracts');
+      const { calculatePrice } = require('./utils');
+
+      const poolContract = createPoolContract(poolAddress);
+      const slot0 = await poolContract.read.slot0();
+      const sqrtPriceX96 = slot0[0];
+      const priceT1T0 = parseFloat(calculatePrice(sqrtPriceX96, poolInfo.token0.decimals, poolInfo.token1.decimals));
+
+      // Prepare pool data
+      const poolData = {
+        chatId,
+        messageId,
+        token0: poolInfo.token0,
+        token1: poolInfo.token1,
+        lastPriceT1T0: priceT1T0,
+        notifications: [],
+        fee: poolInfo.fee
+      };
+
+      // Start monitoring the pool using existing method
+      await this.startMonitoring(bot, poolAddress, poolData, provider);
+
+      console.log(`Started monitoring pool ${poolAddress} in chat ${chatId} with immediate price update`);
+
+      // Return pool data with current price for immediate UI update
+      return {
+        poolData,
+        currentPrice: priceT1T0
+      };
+    } catch (error) {
+      console.error(`Error starting pool monitoring for ${poolAddress}:`, error.message);
+      throw error;
+    }
+  }
 }
 
 // Export singleton instance

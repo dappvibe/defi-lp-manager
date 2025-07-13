@@ -215,35 +215,11 @@ class PoolHandler {
    */
   static async startPoolMonitoring(bot, chatId, messageId, poolAddress, provider) {
     try {
-      // Get pool information
-      const poolInfo = await poolService.getPool(poolAddress, provider);
-      if (!poolInfo || !poolInfo.token0 || !poolInfo.token1) {
-        throw new Error('Pool information not available');
-      }
-
-      // Get current price
-      const poolContract = createPoolContract(poolAddress);
-      const slot0 = await poolContract.read.slot0();
-      const sqrtPriceX96 = slot0[0];
-      const priceT1T0 = parseFloat(calculatePrice(sqrtPriceX96, poolInfo.token0.decimals, poolInfo.token1.decimals));
-
-      // Prepare pool data
-      const poolData = {
-        chatId,
-        messageId,
-        token0: poolInfo.token0,
-        token1: poolInfo.token1,
-        lastPriceT1T0: priceT1T0,
-        notifications: [],
-        fee: poolInfo.fee
-      };
-
-      // Start monitoring the pool
-      await poolService.startMonitoring(bot, poolAddress, poolData, provider);
+      const result = await poolService.startPoolMonitoring(bot, poolAddress, chatId, messageId, provider);
 
       // Immediately update the pool message with current price and timestamp
       await this.sendOrUpdatePoolMessage(bot, chatId, messageId, poolAddress, provider, {
-        preCalculatedPrice: priceT1T0,
+        preCalculatedPrice: result.currentPrice,
         includeTimestamp: true
       });
 
