@@ -154,6 +154,12 @@ class GeneralErrorMessage {
  */
 class LpHandler {
   /**
+   * Store for tracking position callbacks by pool address
+   * @type {Map<string, Set<Object>>} Map of poolAddress -> Set of {tokenId, chatId, messageId, callbackId}
+   */
+  static poolCallbacks = new Map();
+
+  /**
    * Register command handlers with the bot
    * @param {TelegramBot} bot - The bot instance
    * @param {Object} positionMonitor - Position monitor instance
@@ -190,9 +196,9 @@ class LpHandler {
         // Send initial wallet message with loading status
         const loadingMessage = new WalletLoadingMessage(walletIndex, walletAddress);
         const loadingMessageSent = await bot.sendMessage(
-          chatId,
-          loadingMessage.toString(),
-          { parse_mode: 'Markdown' }
+            chatId,
+            loadingMessage.toString(),
+            { parse_mode: 'Markdown' }
         );
 
         // Get positions for this wallet
@@ -202,13 +208,13 @@ class LpHandler {
           // Replace loading message with "no positions" message
           const noPositionsMessage = new NoPositionsMessage();
           await bot.editMessageText(
-            noPositionsMessage.toString(),
-            {
-              chat_id: chatId,
-              message_id: loadingMessageSent.message_id,
-              parse_mode: 'Markdown',
-              disable_web_page_preview: true
-            }
+              noPositionsMessage.toString(),
+              {
+                chat_id: chatId,
+                message_id: loadingMessageSent.message_id,
+                parse_mode: 'Markdown',
+                disable_web_page_preview: true
+              }
           );
         } else {
           // Process each position
@@ -221,13 +227,13 @@ class LpHandler {
               if (positionIndex === 0) {
                 // Replace loading message with first position error
                 await bot.editMessageText(
-                  errorMessage.toString(),
-                  {
-                    chat_id: chatId,
-                    message_id: loadingMessageSent.message_id,
-                    parse_mode: 'Markdown',
-                    disable_web_page_preview: true
-                  }
+                    errorMessage.toString(),
+                    {
+                      chat_id: chatId,
+                      message_id: loadingMessageSent.message_id,
+                      parse_mode: 'Markdown',
+                      disable_web_page_preview: true
+                    }
                 );
               } else {
                 // Send as separate message
@@ -243,13 +249,13 @@ class LpHandler {
             if (positionIndex === 0) {
               // Replace loading message with first position
               await bot.editMessageText(
-                positionMessage.toString(),
-                {
-                  chat_id: chatId,
-                  message_id: loadingMessageSent.message_id,
-                  parse_mode: 'Markdown',
-                  disable_web_page_preview: true
-                }
+                  positionMessage.toString(),
+                  {
+                    chat_id: chatId,
+                    message_id: loadingMessageSent.message_id,
+                    parse_mode: 'Markdown',
+                    disable_web_page_preview: true
+                  }
               );
               sentMessage = { message_id: loadingMessageSent.message_id };
             } else {
@@ -259,12 +265,18 @@ class LpHandler {
 
             // Save position to MongoDB with message ID
             try {
+              const poolAddress = await positionMonitor.getPoolAddressForPosition(position);
               const positionData = {
                 ...position,
                 walletAddress: walletAddress,
-                poolAddress: await positionMonitor.getPoolAddressForPosition(position)
+                poolAddress: poolAddress
               };
               await positionMonitor.mongoStateManager.savePosition(positionData, chatId, sentMessage.message_id);
+
+              // Register callback for this position's pool if it's in range
+              if (position.inRange && poolAddress) {
+                await this.registerPositionCallback(bot, poolAddress, position.tokenId, chatId, sentMessage.message_id);
+              }
             } catch (saveError) {
               console.error(`Error saving position ${position.tokenId} from /lp command:`, saveError);
             }
@@ -277,6 +289,231 @@ class LpHandler {
       const generalErrorMessage = new GeneralErrorMessage(error.message);
       await bot.sendMessage(chatId, generalErrorMessage.toString());
     }
+  }
+
+  /**
+   * Register a callback for position updates when pool swaps occur
+   * @param {TelegramBot} bot - The bot instance
+   * @param {string} poolAddress - Pool address
+   * @param {string} tokenId - Position token ID
+   * @param {number} chatId - Chat ID
+   * @param {number} messageId - Message ID
+   */
+  static async registerPositionCallback(bot, poolAddress, tokenId, chatId, messageId) {
+    try {
+      // Import pool service
+      const poolService = require('../../uniswap/pool');
+
+      // Create or get the callback set for this pool
+      if (!this.poolCallbacks.has(poolAddress)) {
+        this.poolCallbacks.set(poolAddress, new Set());
+      }
+
+      // Register pool callback with unique ID if this is the first position for this pool
+      const callbackSet = this.poolCallbacks.get(poolAddress);
+      let callbackId = null;
+
+      if (callbackSet.size === 0) {
+        // First position for this pool - register the callback
+        callbackId = poolService.registerPoolUpdateCallback(
+          poolAddress,
+          (updateData) => {
+            this.handlePoolUpdate(bot, poolAddress, updateData);
+          },
+          `lp_handler_${poolAddress}`
+        );
+      }
+
+      // Add this position to the callback set
+      const callbackData = {
+        tokenId: tokenId,
+        chatId: chatId,
+        messageId: messageId,
+        callbackId: callbackId // Store the callback ID only for the first position
+      };
+
+      callbackSet.add(callbackData);
+
+      console.log(`Registered position callback for pool ${poolAddress}, tokenId ${tokenId}, chat ${chatId}${callbackId ? ` with callback ID: ${callbackId}` : ''}`);
+    } catch (error) {
+      console.error(`Error registering position callback for pool ${poolAddress}:`, error.message);
+    }
+  }
+
+  /**
+   * Unregister a position callback
+   * @param {string} poolAddress - Pool address
+   * @param {string} tokenId - Position token ID
+   * @param {number} chatId - Chat ID
+   */
+  static unregisterPositionCallback(poolAddress, tokenId, chatId) {
+    const callbacks = this.poolCallbacks.get(poolAddress);
+    if (callbacks) {
+      let callbackIdToRemove = null;
+
+      // Find and remove the callback
+      for (const callback of callbacks) {
+        if (callback.tokenId === tokenId && callback.chatId === chatId) {
+          callbackIdToRemove = callback.callbackId;
+          callbacks.delete(callback);
+          console.log(`Unregistered position callback for pool ${poolAddress}, tokenId ${tokenId}, chat ${chatId}`);
+          break;
+        }
+      }
+
+      // If no more callbacks for this pool, remove the pool callback entirely
+      if (callbacks.size === 0) {
+        this.poolCallbacks.delete(poolAddress);
+
+        if (callbackIdToRemove) {
+          const poolService = require('../../uniswap/pool');
+          poolService.unregisterPoolUpdateCallback(poolAddress, callbackIdToRemove);
+          console.log(`Removed pool callback for ${poolAddress} with ID: ${callbackIdToRemove} - no more positions tracking`);
+        }
+      }
+    }
+  }
+
+  /**
+   * Handle pool update callback from the pool service
+   * @param {TelegramBot} bot - The bot instance
+   * @param {string} poolAddress - Pool address that was updated
+   * @param {Object} updateData - Update data from pool service
+   */
+  static async handlePoolUpdate(bot, poolAddress, updateData) {
+    const callbacks = this.poolCallbacks.get(poolAddress);
+    if (!callbacks || callbacks.size === 0) {
+      return;
+    }
+
+    try {
+      // Import necessary modules
+      const PositionMonitor = require('../../uniswap/position-monitor');
+      const MongoStateManager = require('../../database/mongo');
+
+      // Create temporary instances to get updated position data
+      const stateManager = new MongoStateManager();
+      await stateManager.connect();
+
+      const tempMonitor = new PositionMonitor(updateData.poolInfo.client, stateManager);
+
+      // Process each registered position for this pool
+      for (const callbackData of callbacks) {
+        try {
+          // Get fresh position details with updated token amounts
+          const updatedPosition = await tempMonitor.getPositionDetails(BigInt(callbackData.tokenId), false);
+
+          if (updatedPosition.error) {
+            console.warn(`Error getting updated position details for token ID ${callbackData.tokenId}:`, updatedPosition.error);
+            continue;
+          }
+
+          // Check if position is still in range
+          if (!updatedPosition.inRange) {
+            // Position went out of range, unregister callback
+            this.unregisterPositionCallback(poolAddress, callbackData.tokenId, callbackData.chatId);
+            continue;
+          }
+
+          // Create updated position message
+          const positionMessage = new PositionMessage(updatedPosition, true);
+
+          // Update the message in Telegram
+          await bot.editMessageText(positionMessage.toString(), {
+            chat_id: callbackData.chatId,
+            message_id: callbackData.messageId,
+            parse_mode: 'Markdown',
+            disable_web_page_preview: true
+          });
+
+          // Update position data in MongoDB
+          await stateManager.updatePosition(
+              callbackData.tokenId,
+              updatedPosition.walletAddress || 'unknown',
+              callbackData.chatId,
+              {
+                token0Amount: updatedPosition.token0Amount,
+                token1Amount: updatedPosition.token1Amount,
+                currentPrice: updatedPosition.currentPrice,
+                inRange: updatedPosition.inRange,
+                liquidity: updatedPosition.liquidity?.toString()
+              }
+          );
+
+          console.log(`Updated position message for token ID ${callbackData.tokenId} in chat ${callbackData.chatId} via LP callback`);
+
+        } catch (error) {
+          console.error(`Error updating position message for token ID ${callbackData.tokenId}:`, error.message);
+        }
+      }
+
+      await stateManager.close();
+
+    } catch (error) {
+      console.error(`Error handling pool update for LP positions in pool ${poolAddress}:`, error.message);
+    }
+  }
+
+  /**
+   * Update a specific position message
+   * @param {TelegramBot} bot - The bot instance
+   * @param {number} chatId - Chat ID
+   * @param {number} messageId - Message ID
+   * @param {Object} position - Updated position data
+   */
+  static async updatePositionMessage(bot, chatId, messageId, position) {
+    try {
+      const positionMessage = new PositionMessage(position, true);
+
+      await bot.editMessageText(positionMessage.toString(), {
+        chat_id: chatId,
+        message_id: messageId,
+        parse_mode: 'Markdown',
+        disable_web_page_preview: true
+      });
+
+      console.log(`Updated individual position message for token ID ${position.tokenId} in chat ${chatId}`);
+    } catch (error) {
+      console.error(`Error updating individual position message:`, error.message);
+    }
+  }
+
+  /**
+   * Clean up callbacks for a specific chat (e.g., when user stops monitoring)
+   * @param {number} chatId - Chat ID to clean up
+   */
+  static cleanupCallbacksForChat(chatId) {
+    for (const [poolAddress, callbacks] of this.poolCallbacks.entries()) {
+      const toRemove = [];
+
+      for (const callback of callbacks) {
+        if (callback.chatId === chatId) {
+          toRemove.push(callback);
+        }
+      }
+
+      // Remove callbacks for this chat
+      for (const callback of toRemove) {
+        callbacks.delete(callback);
+        console.log(`Removed callback for chat ${chatId}, pool ${poolAddress}, tokenId ${callback.tokenId}`);
+      }
+
+      // If no more callbacks for this pool, remove the pool callback entirely
+      if (callbacks.size === 0) {
+        this.poolCallbacks.delete(poolAddress);
+        const poolService = require('../../uniswap/pool');
+        poolService.unregisterPoolUpdateCallback(poolAddress);
+        console.log(`Removed pool callback for ${poolAddress} - no more positions tracking`);
+      }
+    }
+  }
+
+  /**
+   * Get all active callbacks (for debugging)
+   * @returns {Map} Map of pool callbacks
+   */
+  static getActiveCallbacks() {
+    return this.poolCallbacks;
   }
 
   /**

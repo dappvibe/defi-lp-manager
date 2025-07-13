@@ -111,6 +111,12 @@ class PoolErrorMessage {
 
 class PoolHandler {
   /**
+   * Store callback IDs for cleanup
+   * @type {Map<string, string>} Map of poolAddress -> callbackId
+   */
+  static poolCallbackIds = new Map();
+
+  /**
    * Register command handlers with the bot
    * @param {TelegramBot} bot - The bot instance
    * @param {Object} provider - Ethereum provider instance
@@ -217,10 +223,17 @@ class PoolHandler {
     try {
       const result = await poolService.startPoolMonitoring(bot, poolAddress, chatId, messageId, provider);
 
-      // Register callback for pool updates
-      poolService.registerPoolUpdateCallback(poolAddress, (updateData) => {
-        this.handlePoolUpdate(bot, chatId, messageId, poolAddress, updateData);
-      });
+      // Register callback for pool updates with unique ID
+      const callbackId = poolService.registerPoolUpdateCallback(
+        poolAddress,
+        (updateData) => {
+          this.handlePoolUpdate(bot, chatId, messageId, poolAddress, updateData);
+        },
+        `pool_handler_${poolAddress}_${chatId}_${messageId}`
+      );
+
+      // Store callback ID for cleanup
+      this.poolCallbackIds.set(`${poolAddress}_${chatId}_${messageId}`, callbackId);
 
       // Immediately update the pool message with current price and timestamp
       await this.sendOrUpdatePoolMessage(bot, chatId, messageId, poolAddress, provider, {
@@ -228,10 +241,27 @@ class PoolHandler {
         includeTimestamp: true
       });
 
-      console.log(`Started monitoring pool ${poolAddress} in chat ${chatId} with callback registered`);
+      console.log(`Started monitoring pool ${poolAddress} in chat ${chatId} with callback ID: ${callbackId}`);
     } catch (error) {
       console.error(`Error starting pool monitoring for ${poolAddress}:`, error.message);
       throw error;
+    }
+  }
+
+  /**
+   * Clean up callback for a specific pool and chat
+   * @param {string} poolAddress - Pool address
+   * @param {number} chatId - Chat ID
+   * @param {number} messageId - Message ID
+   */
+  static cleanupPoolCallback(poolAddress, chatId, messageId) {
+    const key = `${poolAddress}_${chatId}_${messageId}`;
+    const callbackId = this.poolCallbackIds.get(key);
+
+    if (callbackId) {
+      poolService.unregisterPoolUpdateCallback(poolAddress, callbackId);
+      this.poolCallbackIds.delete(key);
+      console.log(`Cleaned up pool callback for ${poolAddress} in chat ${chatId} with ID: ${callbackId}`);
     }
   }
 
