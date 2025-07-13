@@ -161,6 +161,100 @@ class PoolHandler {
   }
 
   /**
+   * Handle callback queries from pool toggle buttons
+   * @param {TelegramBot} bot - The bot instance
+   * @param {Object} callbackQuery - Callback query object
+   * @param {Object} provider - Ethereum provider
+   */
+  static async handleCallback(bot, callbackQuery, provider) {
+    const chatId = callbackQuery.message.chat.id;
+    const messageId = callbackQuery.message.message_id;
+    const data = callbackQuery.data;
+
+    // Parse callback data: pool_action_address
+    if (!data.startsWith('pool_')) {
+      return; // Not our callback
+    }
+
+    const parts = data.split('_');
+    if (parts.length !== 3) {
+      await bot.answerCallbackQuery(callbackQuery.id, { text: 'Invalid callback data' });
+      return;
+    }
+
+    const action = parts[1]; // start, stop
+    const poolAddress = parts[2];
+
+    try {
+      switch (action) {
+        case 'start':
+          await this.startPoolMonitoring(bot, chatId, messageId, poolAddress, provider);
+          await bot.answerCallbackQuery(callbackQuery.id, { text: 'Monitoring started!' });
+          break;
+        case 'stop':
+          await poolService.stopMonitoring(poolAddress);
+          await this.sendOrUpdatePoolMessage(bot, chatId, messageId, poolAddress, provider);
+          await bot.answerCallbackQuery(callbackQuery.id, { text: 'Monitoring stopped!' });
+          break;
+        default:
+          await bot.answerCallbackQuery(callbackQuery.id, { text: 'Unknown action' });
+      }
+    } catch (error) {
+      console.error(`Error handling callback for pool ${poolAddress}:`, error.message);
+      await bot.answerCallbackQuery(callbackQuery.id, { text: 'Error processing request' });
+    }
+  }
+
+  /**
+   * Start monitoring a pool from callback
+   * @param {TelegramBot} bot - The bot instance
+   * @param {number} chatId - Chat ID
+   * @param {number} messageId - Message ID to update
+   * @param {string} poolAddress - Pool address
+   * @param {Object} provider - Ethereum provider
+   */
+  static async startPoolMonitoring(bot, chatId, messageId, poolAddress, provider) {
+    try {
+      // Get pool information
+      const poolInfo = await poolService.getPool(poolAddress, provider);
+      if (!poolInfo || !poolInfo.token0 || !poolInfo.token1) {
+        throw new Error('Pool information not available');
+      }
+
+      // Get current price
+      const poolContract = createPoolContract(poolAddress);
+      const slot0 = await poolContract.read.slot0();
+      const sqrtPriceX96 = slot0[0];
+      const priceT1T0 = parseFloat(calculatePrice(sqrtPriceX96, poolInfo.token0.decimals, poolInfo.token1.decimals));
+
+      // Prepare pool data
+      const poolData = {
+        chatId,
+        messageId,
+        token0: poolInfo.token0,
+        token1: poolInfo.token1,
+        lastPriceT1T0: priceT1T0,
+        notifications: [],
+        fee: poolInfo.fee
+      };
+
+      // Start monitoring the pool
+      await poolService.startMonitoring(bot, poolAddress, poolData, provider);
+
+      // Immediately update the pool message with current price and timestamp
+      await this.sendOrUpdatePoolMessage(bot, chatId, messageId, poolAddress, provider, {
+        preCalculatedPrice: priceT1T0,
+        includeTimestamp: true
+      });
+
+      console.log(`Started monitoring pool ${poolAddress} in chat ${chatId} with immediate price update`);
+    } catch (error) {
+      console.error(`Error starting pool monitoring for ${poolAddress}:`, error.message);
+      throw error;
+    }
+  }
+
+  /**
    * Send or update a pool message with current price, TVL and toggle button
    * @param {TelegramBot} bot - The bot instance
    * @param {number} chatId - Chat ID
@@ -288,101 +382,6 @@ class PoolHandler {
       }
     } catch (error) {
       console.error(`Error updating message ID for pool ${poolAddress}:`, error.message);
-    }
-  }
-
-  /**
-   * Handle callback queries from pool toggle buttons
-   * @param {TelegramBot} bot - The bot instance
-   * @param {Object} callbackQuery - Callback query object
-   * @param {Object} provider - Ethereum provider
-   */
-  static async handleCallback(bot, callbackQuery, provider) {
-    const chatId = callbackQuery.message.chat.id;
-    const messageId = callbackQuery.message.message_id;
-    const data = callbackQuery.data;
-
-    // Parse callback data: pool_action_address
-    if (!data.startsWith('pool_')) {
-      return; // Not our callback
-    }
-
-    const parts = data.split('_');
-    if (parts.length !== 3) {
-      await bot.answerCallbackQuery(callbackQuery.id, { text: 'Invalid callback data' });
-      return;
-    }
-
-    const action = parts[1]; // start, stop
-    const poolAddress = parts[2];
-
-    try {
-      switch (action) {
-        case 'start':
-          await this.startPoolMonitoring(bot, chatId, messageId, poolAddress, provider);
-          await bot.answerCallbackQuery(callbackQuery.id, { text: 'Monitoring started!' });
-          break;
-        case 'stop':
-          await poolService.stopMonitoring(poolAddress);
-          await this.sendOrUpdatePoolMessage(bot, chatId, messageId, poolAddress, provider);
-          await bot.answerCallbackQuery(callbackQuery.id, { text: 'Monitoring stopped!' });
-          break;
-        default:
-          await bot.answerCallbackQuery(callbackQuery.id, { text: 'Unknown action' });
-      }
-    } catch (error) {
-      console.error(`Error handling callback for pool ${poolAddress}:`, error.message);
-      await bot.answerCallbackQuery(callbackQuery.id, { text: 'Error processing request' });
-    }
-  }
-
-  /**
-   * Start monitoring a pool from callback
-   * @param {TelegramBot} bot - The bot instance
-   * @param {number} chatId - Chat ID
-   * @param {number} messageId - Message ID to update
-   * @param {string} poolAddress - Pool address
-   * @param {Object} provider - Ethereum provider
-   */
-  static async startPoolMonitoring(bot, chatId, messageId, poolAddress, provider) {
-    try {
-      // Get pool information
-      const poolInfo = await poolService.getPool(poolAddress, provider);
-
-      if (!poolInfo || !poolInfo.token0 || !poolInfo.token1) {
-        throw new Error('Pool information not available');
-      }
-
-      // Get current price
-      const poolContract = createPoolContract(poolAddress);
-      const slot0 = await poolContract.read.slot0();
-      const sqrtPriceX96 = slot0[0];
-      const priceT1T0 = parseFloat(calculatePrice(sqrtPriceX96, poolInfo.token0.decimals, poolInfo.token1.decimals));
-
-      // Prepare pool data
-      const poolData = {
-        chatId,
-        messageId,
-        token0: poolInfo.token0,
-        token1: poolInfo.token1,
-        lastPriceT1T0: priceT1T0,
-        notifications: [],
-        fee: poolInfo.fee
-      };
-
-      // Start monitoring the pool
-      await poolService.startMonitoring(bot, poolAddress, poolData, provider);
-
-      // Immediately update the pool message with current price and timestamp
-      await this.sendOrUpdatePoolMessage(bot, chatId, messageId, poolAddress, provider, {
-        preCalculatedPrice: priceT1T0,
-        includeTimestamp: true
-      });
-
-      console.log(`Started monitoring pool ${poolAddress} in chat ${chatId} with immediate price update`);
-    } catch (error) {
-      console.error(`Error starting pool monitoring for ${poolAddress}:`, error.message);
-      throw error;
     }
   }
 
