@@ -380,6 +380,9 @@ class PoolService {
           // Update the pool message with the same formatting but new price
           this._updatePoolMessageWithPrice(botInstance, poolAddress, poolInfo, newPriceT1T0, timezone);
 
+          // Update position messages for positions in this pool that are in range
+          this._updatePositionMessages(botInstance, poolAddress, timezone);
+
           this._checkPriceAlerts(botInstance, poolInfo, newPriceT1T0);
           poolInfo.lastPriceT1T0 = newPriceT1T0;
         });
@@ -462,6 +465,75 @@ class PoolService {
           console.error(`Error saving state after alert trigger for ${poolAddress}:`, err.message);
         });
       }
+    }
+  }
+
+  /**
+   * Update position messages for positions in this pool that are in range
+   * @private
+   * @param {Object} botInstance - Telegram bot instance
+   * @param {string} poolAddress - Pool address
+   * @param {string} timezone - Timezone for time display
+   */
+  async _updatePositionMessages(botInstance, poolAddress, timezone) {
+    try {
+      // Get positions that are in range for this pool
+      const positions = await this.stateManager.getInRangePositionsByPool(poolAddress);
+
+      if (positions.length === 0) {
+        return; // No positions to update
+      }
+
+      // Import PositionMonitor to get updated position data
+      const PositionMonitor = require('./position-monitor');
+
+      for (const storedPosition of positions) {
+        try {
+          // Create a temporary position monitor instance to get updated position data
+          const tempMonitor = new PositionMonitor(this.monitoredPools[poolAddress]?.client, this.stateManager);
+
+          // Get fresh position details with updated token amounts
+          const updatedPosition = await tempMonitor.getPositionDetails(BigInt(storedPosition.tokenId), storedPosition.isStaked);
+
+          if (updatedPosition.error) {
+            console.warn(`Error getting updated position details for token ID ${storedPosition.tokenId}:`, updatedPosition.error);
+            continue;
+          }
+
+          // Use the unified position formatting method for updates
+          const updatedMessage = tempMonitor.formatSinglePositionMessage(updatedPosition, timezone, true);
+
+          // Update the message in Telegram
+          await botInstance.editMessageText(updatedMessage, {
+            chat_id: storedPosition.chatId,
+            message_id: storedPosition.messageId,
+            parse_mode: 'Markdown',
+            disable_web_page_preview: true
+          });
+
+          // Update position data in MongoDB
+          await this.stateManager.updatePosition(
+            storedPosition.tokenId,
+            storedPosition.walletAddress,
+            storedPosition.chatId,
+            {
+              token0Amount: updatedPosition.token0Amount,
+              token1Amount: updatedPosition.token1Amount,
+              currentPrice: updatedPosition.currentPrice,
+              inRange: updatedPosition.inRange,
+              liquidity: updatedPosition.liquidity?.toString()
+            }
+          );
+
+          console.log(`Updated position message for token ID ${storedPosition.tokenId} in chat ${storedPosition.chatId}`);
+
+        } catch (error) {
+          console.error(`Error updating position message for token ID ${storedPosition.tokenId}:`, error.message);
+        }
+      }
+
+    } catch (error) {
+      console.error(`Error updating position messages for pool ${poolAddress}:`, error.message);
     }
   }
 

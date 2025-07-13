@@ -17,10 +17,16 @@ class PositionMonitor {
     this.provider = provider;
     this.mongoStateManager = mongoStateManager;
     this.tokenService = new TokenService(provider);
-    this.monitoredWallets = new Map(); // wallet -> { chatId, lastCheck }
+    this.monitoredWallets = new Map(); // wallet -> { chatId, lastCheck, lastPositions }
     this.positionManagerAddress = contracts.getContractAddress('pancakeswap', 'arbitrum', 'nonfungiblePositionManager');
     this.positionManagerContract = this.createPositionManagerContract();
-    this.erc20Abi = require('./abis/erc20.json');
+
+    // Add staking contract support
+    this.stakingContractAddress = contracts.getContractAddress('pancakeswap', 'arbitrum', 'masterChefV3');
+    this.stakingContract = this.createStakingContract();
+
+    // Load monitored wallets from MongoDB on initialization
+    this.loadMonitoredWalletsFromDB();
   }
 
   /**
@@ -37,47 +43,50 @@ class PositionMonitor {
   }
 
   /**
-   * Check if a position is active in the current price range
-   * @param {number} tickLower - Lower tick boundary
-   * @param {number} tickUpper - Upper tick boundary
-   * @param {number} tickCurrent - Current pool tick
-   * @returns {boolean} True if position is in range
+   * Create the staking contract instance
+   * @returns {object} Contract instance
    */
-  isPositionInRange(tickLower, tickUpper, tickCurrent) {
-    return isPositionInRange(tickLower, tickUpper, tickCurrent);
-  }
-
-  /**
-   * Get token symbol and decimals
-   * @param {string} tokenAddress - Token address
-   * @returns {Promise<{symbol: string, decimals: number}>} Token info
-   */
-  async getTokenInfo(tokenAddress) {
+  createStakingContract() {
     try {
-      const tokenContract = getContract({
-        address: tokenAddress,
-        abi: this.erc20Abi,
+      const stakingAbi = require('./abis/masterchef-v3.json');
+      return getContract({
+        address: this.stakingContractAddress,
+        abi: stakingAbi,
         client: this.provider
       });
-
-      const [symbol, decimals] = await Promise.all([
-        tokenContract.read.symbol(),
-        tokenContract.read.decimals()
-      ]);
-
-      return { symbol, decimals };
     } catch (error) {
-      console.error(`Error getting token info for ${tokenAddress}:`, error);
-      return { symbol: 'UNKNOWN', decimals: 18 };
+      console.warn('Staking contract not available:', error.message);
+      return null;
     }
   }
 
   /**
-   * Fetch all positions for a wallet
+   * Fetch all positions for a wallet (including staked positions)
    * @param {string} walletAddress - Wallet address
    * @returns {Promise<Array>} Positions array
    */
   async getPositions(walletAddress) {
+    try {
+      // Get both unstaked and staked positions
+      const [unstakedPositions, stakedPositions] = await Promise.all([
+        this.getUnstakedPositions(walletAddress),
+        this.getStakedPositions(walletAddress)
+      ]);
+
+      // Combine and return all positions
+      return [...unstakedPositions, ...stakedPositions];
+    } catch (error) {
+      console.error('Error fetching positions:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Fetch unstaked positions (original implementation)
+   * @param {string} walletAddress - Wallet address
+   * @returns {Promise<Array>} Positions array
+   */
+  async getUnstakedPositions(walletAddress) {
     try {
       // Get balance of position NFTs
       const balance = await this.positionManagerContract.read.balanceOf([walletAddress]);
@@ -90,7 +99,7 @@ class PositionMonitor {
       const positions = [];
       for (let i = 0; i < Number(balance); i++) {
         const tokenId = await this.positionManagerContract.read.tokenOfOwnerByIndex([walletAddress, BigInt(i)]);
-        const position = await this.getPositionDetails(tokenId);
+        const position = await this.getPositionDetails(tokenId, false); // false = not staked
 
         // Skip positions with 0 liquidity
         if (position.liquidity && position.liquidity > 0n) {
@@ -106,7 +115,59 @@ class PositionMonitor {
 
       return positions;
     } catch (error) {
-      console.error('Error fetching positions:', error);
+      console.error('Error fetching unstaked positions:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Fetch staked positions from MasterChef V3
+   * @param {string} walletAddress - Wallet address
+   * @returns {Promise<Array>} Staked positions array
+   */
+  async getStakedPositions(walletAddress) {
+    try {
+      if (!this.stakingContract) {
+        console.warn('Staking contract not available');
+        return [];
+      }
+
+      // Get balance of staked positions using balanceOf from the staking contract
+      const balance = await this.stakingContract.read.balanceOf([walletAddress]);
+
+      if (balance === 0n) {
+        return [];
+      }
+
+      const stakedPositions = [];
+
+      // Iterate through staked positions using tokenOfOwnerByIndex
+      for (let i = 0; i < Number(balance); i++) {
+        try {
+          // Get the token ID from the staking contract
+          const tokenId = await this.stakingContract.read.tokenOfOwnerByIndex([walletAddress, BigInt(i)]);
+
+          // Get position details from the position manager
+          const position = await this.getPositionDetails(tokenId, true); // true = staked
+
+          // Skip positions with 0 liquidity
+          if (position.liquidity && position.liquidity > 0n) {
+            // Calculate combined value in terms of token1 (stablecoin)
+            const combinedToken1Value = await this.calculateCombinedToken1Value(position);
+
+            // Only include positions with combined value >= 0.1 token1
+            if (combinedToken1Value >= 0.1) {
+              stakedPositions.push(position);
+            }
+          }
+        } catch (error) {
+          console.error(`Error processing staked position at index ${i}:`, error);
+        }
+      }
+
+      return stakedPositions;
+    } catch (error) {
+      console.error('Error fetching staked positions:', error);
       return [];
     }
   }
@@ -181,7 +242,13 @@ class PositionMonitor {
     }
   }
 
-  async getPositionDetails(tokenId) {
+  /**
+   * Get position details including staking status
+   * @param {bigint} tokenId - Token ID
+   * @param {boolean} isStaked - Whether position is staked
+   * @returns {Promise<Object>} Position details
+   */
+  async getPositionDetails(tokenId, isStaked = false) {
     try {
       const positionData = await this.positionManagerContract.read.positions([tokenId]);
 
@@ -244,32 +311,28 @@ class PositionMonitor {
         upperPrice,
         currentPrice,
         inRange,
+        isStaked, // Add staking status
         // Add SDK token instances for advanced operations
         token0Instance: token0,
         token1Instance: token1
       };
     } catch (error) {
       console.error(`Error getting position details for token ID ${tokenId}:`, error);
-      return { tokenId, error: 'Failed to fetch position details' };
+      return { tokenId, error: 'Failed to fetch position details', isStaked };
     }
   }
 
+  /**
+   * Get pool data from factory
+   * @param {string} token0Address - Token0 address
+   * @param {string} token1Address - Token1 address
+   * @param {number} fee - Pool fee
+   * @returns {Promise<Object>} Pool data
+   */
   async getPoolData(token0Address, token1Address, fee) {
     try {
       const factoryAddress = await this.positionManagerContract.read.factory();
-      const factoryAbi = [
-        {
-          inputs: [
-            { internalType: 'address', name: 'tokenA', type: 'address' },
-            { internalType: 'address', name: 'tokenB', type: 'address' },
-            { internalType: 'uint24', name: 'fee', type: 'uint24' }
-          ],
-          name: 'getPool',
-          outputs: [{ internalType: 'address', name: '', type: 'address' }],
-          stateMutability: 'view',
-          type: 'function'
-        }
-      ];
+      const factoryAbi = require('./abis/v3-factory.json');
 
       const factoryContract = getContract({
         address: factoryAddress,
@@ -305,159 +368,132 @@ class PositionMonitor {
   }
 
   /**
-   * Format positions for display in Telegram
-   * @param {Array} positions - Position array
-   * @param {string} timezone - User's timezone
-   * @returns {string} Formatted message
+   * Format a single position message according to the unified format
+   * @param {Object} position - Position object
+   * @param {string} timezone - User timezone
+   * @param {boolean} isUpdate - Whether this is an update message (includes "Updated:" timestamp)
+   * @returns {string} Formatted position message
    */
-  formatPositionsMessage(positions, timezone) {
-    if (positions.length === 0) {
-      return "No active positions found for this wallet address.";
+  formatSinglePositionMessage(position, timezone = 'UTC', isUpdate = false) {
+    if (!position || position.error) {
+      return `❌ Error loading position: ${position?.error || 'Unknown error'}`;
     }
 
-    let message = ` ${positions.length} active position(s) found:\n\n`;
+    // Format fee percentage
+    const feePercent = (position.fee / 10000).toFixed(2);
 
-    positions.forEach((position, index) => {
-      if (position.error) {
-        message += `Position #${index + 1}: Error - ${position.error}\n\n`;
-        return;
-      }
+    // Create pool link (PancakeSwap format)
+    const poolLink = `https://pancakeswap.finance/liquidity/${position.tokenId}?chain=arb&persistChain=1`;
 
-      message += ` Position #${index + 1}\n`;
-      message += `ID: ${position.tokenId}\n`;
-      message += `Pair: ${position.token0Symbol}/${position.token1Symbol}\n`;
-      message += `Fee: ${Number(position.fee) / 10000}%\n`;
+    // Format token pair with link
+    const tokenPairLine = `**${position.token0Symbol}/${position.token1Symbol}** (${feePercent}%) - [#${position.tokenId}](${poolLink})`;
 
-      // Add token amounts
-      message += `Liquidity in tokens:\n`;
-      message += `- ${position.token0Amount} ${position.token0Symbol}\n`;
-      message += `- ${position.token1Amount} ${position.token1Symbol}\n`;
+    // Format token amounts
+    const amountsLine = `💰 ${parseFloat(position.token0Amount).toFixed(4)} ${position.token0Symbol} + ${parseFloat(position.token1Amount).toFixed(2)} ${position.token1Symbol}`;
 
-      // Add human-readable price ranges
-      message += `Price range (${position.token1Symbol} per ${position.token0Symbol}):\n`;
-      message += `- Min: ${position.lowerPrice}\n`;
-      message += `- Max: ${position.upperPrice}\n`;
-      message += `- Current: ${position.currentPrice}\n`;
+    // Format price and range
+    const priceRangeLine = `📊 **$${parseFloat(position.currentPrice).toFixed(2)}** - $${parseFloat(position.lowerPrice).toFixed(2)} - $${parseFloat(position.upperPrice).toFixed(2)}`;
 
-      // Show if position is in range
-      const rangeStatus = position.inRange ? '🟢 In range' : '🔴 Out of range';
-      message += `Status: ${rangeStatus}\n`;
+    // Format status
+    const stakingStatus = position.isStaked ? '🥩 STAKED' : '💼 UNSTAKED';
+    const rangeStatus = position.inRange ? '🟢 IN RANGE' : '🔴 OUT OF RANGE';
+    const statusLine = `${stakingStatus} | ${rangeStatus}`;
 
-      // Add raw liquidity and ticks for reference
-      message += `Raw liquidity: ${position.liquidity.toString()}\n`;
-      message += `Ticks: [${position.tickLower} to ${position.tickUpper}]\n\n`;
-    });
+    // Build the message
+    let message = `${tokenPairLine}\n${amountsLine}\n${priceRangeLine}\n${statusLine}`;
 
-    // Add timestamp
-    message += `\nLast updated: ${getTimeInTimezone(timezone)}`;
+    // Add timestamp if this is an update
+    if (isUpdate) {
+      message += `\n🕐 Updated: ${getTimeInTimezone(timezone)}`;
+    }
 
     return message;
   }
 
   /**
-   * Start database a wallet for position changes
-   * @param {string} walletAddress - Wallet address to monitor
-   * @param {number} chatId - Telegram chat ID
-   * @returns {boolean} Success status
+   * Load monitored wallets from MongoDB
    */
-  async startMonitoring(walletAddress, chatId) {
-    // Normalize address
-    const normalizedAddress = walletAddress.toLowerCase();
-
-    // Check if already database
-    if (this.monitoredWallets.has(normalizedAddress)) {
-      const info = this.monitoredWallets.get(normalizedAddress);
-
-      // Update the chat ID if it's different
-      if (info.chatId !== chatId) {
-        info.chatId = chatId;
-        this.monitoredWallets.set(normalizedAddress, info);
-        await this.saveState();
+  async loadMonitoredWalletsFromDB() {
+    try {
+      const wallets = await this.mongoStateManager.loadMonitoredWallets();
+      for (const wallet of wallets) {
+        this.monitoredWallets.set(wallet.walletAddress, {
+          chatId: wallet.chatId,
+          lastCheck: wallet.lastCheck || new Date(),
+          lastPositions: [] // Reset positions on startup - they'll be fetched fresh
+        });
       }
-
-      return false; // Already database
+      console.log(`Loaded ${wallets.length} monitored wallets from database`);
+    } catch (error) {
+      console.error('Error loading monitored wallets from database:', error);
     }
-
-    // Start database
-    this.monitoredWallets.set(normalizedAddress, {
-      chatId,
-      lastCheck: Date.now()
-    });
-
-    // Save to MongoDB
-    await this.saveState();
-
-    return true; // Started database
   }
 
   /**
-   * Stop database a wallet
-   * @param {string} walletAddress - Wallet address
-   * @returns {boolean} Success status
+   * Save monitored wallets to MongoDB
    */
-  async stopMonitoring(walletAddress) {
-    const normalizedAddress = walletAddress.toLowerCase();
-    const result = this.monitoredWallets.delete(normalizedAddress);
+  async saveMonitoredWalletsToDB() {
+    try {
+      await this.mongoStateManager.saveMonitoredWallets(this.monitoredWallets);
+    } catch (error) {
+      console.error('Error saving monitored wallets to database:', error);
+    }
+  }
 
-    if (result) {
-      // Save updated state to MongoDB
-      await this.saveState();
+  /**
+   * Start monitoring a wallet
+   * @param {string} walletAddress - Wallet address to monitor
+   * @param {number} chatId - Telegram chat ID
+   */
+  startMonitoring(walletAddress, chatId) {
+    const key = walletAddress.toLowerCase();
+    this.monitoredWallets.set(key, {
+      chatId,
+      lastCheck: new Date(),
+      lastPositions: []
+    });
+
+    // Save to database
+    this.saveMonitoredWalletsToDB();
+  }
+
+  /**
+   * Stop monitoring a wallet
+   * @param {string} walletAddress - Wallet address to stop monitoring
+   * @returns {boolean} True if wallet was being monitored
+   */
+  stopMonitoring(walletAddress) {
+    const key = walletAddress.toLowerCase();
+    const wasMonitored = this.monitoredWallets.delete(key);
+
+    if (wasMonitored) {
+      // Save to database
+      this.saveMonitoredWalletsToDB();
     }
 
-    return result;
+    return wasMonitored;
   }
 
   /**
    * Get list of monitored wallets
-   * @returns {string[]} List of addresses
+   * @returns {Array} Array of monitored wallet addresses
    */
   getMonitoredWallets() {
     return Array.from(this.monitoredWallets.keys());
   }
 
   /**
-   * Check if a wallet is being monitored
-   * @param {string} walletAddress - Wallet address
-   * @returns {boolean} Is monitored
+   * Get pool address for a position
+   * @param {Object} position - Position object
+   * @returns {Promise<string>} Pool address
    */
-  isMonitored(walletAddress) {
-    const normalizedAddress = walletAddress.toLowerCase();
-    return this.monitoredWallets.has(normalizedAddress);
-  }
-
-  /**
-   * Save current state to MongoDB
-   */
-  async saveState() {
-    if (this.mongoStateManager) {
-      await this.mongoStateManager.saveMonitoredWallets(this.monitoredWallets);
-    }
-  }
-
-  /**
-   * Initialize the position monitor by restoring state from MongoDB
-   */
-  async initialize() {
-    if (!this.mongoStateManager) {
-      console.warn('MongoDB state manager not provided, cannot restore wallets');
-      return;
-    }
-
+  async getPoolAddressForPosition(position) {
     try {
-      // Load wallets from MongoDB
-      const wallets = await this.mongoStateManager.loadMonitoredWallets();
-
-      // Restore each wallet to the monitored map
-      wallets.forEach(wallet => {
-        this.monitoredWallets.set(wallet.walletAddress, {
-          chatId: wallet.chatId,
-          lastCheck: wallet.lastCheck || Date.now()
-        });
-      });
-
-      console.log(`Restored ${wallets.length} monitored wallets from database`);
+      const poolData = await this.getPoolData(position.token0, position.token1, position.fee);
+      return poolData.address || '';
     } catch (error) {
-      console.error('Error initializing position monitor:', error);
+      console.error('Error getting pool address for position:', error);
+      return '';
     }
   }
 }

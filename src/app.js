@@ -27,9 +27,6 @@ async function initializeApp() {
     // Initialize position monitor for wallet tracking with state manager
     const positionMonitor = new PositionMonitor(provider, mongoStateManager);
 
-    // Restore position monitor state from MongoDB
-    await positionMonitor.initialize();
-
     // Initialize the Telegram bot with the pool service and position monitor
     const bot = initTelegramBot(
         environment.telegram.botToken,
