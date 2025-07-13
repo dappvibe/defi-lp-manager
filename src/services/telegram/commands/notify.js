@@ -3,6 +3,149 @@
  * Sets price alerts for monitored pools
  * Usage: /notify price [pool]
  */
+
+/**
+ * Represents a no pools monitored message
+ */
+class NoPoolsMonitoredMessage {
+  /**
+   * Get the formatted message content
+   * @returns {string} The no pools message
+   */
+  toString() {
+    return "No pools are currently being monitored in this chat. Use /pool <address> to start monitoring a pool first.";
+  }
+}
+
+/**
+ * Represents an invalid format message
+ */
+class InvalidFormatMessage {
+  /**
+   * Get the formatted message content
+   * @returns {string} The invalid format message
+   */
+  toString() {
+    return "Invalid format. Use /notify <price> or /notify <price> <pool_address>";
+  }
+}
+
+/**
+ * Represents an invalid price format message
+ */
+class InvalidPriceFormatMessage {
+  /**
+   * Get the formatted message content
+   * @returns {string} The invalid price format message
+   */
+  toString() {
+    return "Invalid price format. Use /notify <price> or /notify <price> <pool_address>";
+  }
+}
+
+/**
+ * Represents a price alert set for all pools message
+ */
+class PriceAlertSetAllPoolsMessage {
+  /**
+   * Create a price alert set for all pools message instance
+   * @param {number} targetPrice - Target price for the alert
+   * @param {number} notificationsSet - Number of notifications set
+   */
+  constructor(targetPrice, notificationsSet) {
+    this.targetPrice = targetPrice;
+    this.notificationsSet = notificationsSet;
+  }
+
+  /**
+   * Get the formatted message content
+   * @returns {string} The price alert set message
+   */
+  toString() {
+    return `Price alert set at ${this.targetPrice} for ${this.notificationsSet} pool(s) in this chat.`;
+  }
+}
+
+/**
+ * Represents a notifications setup failure message
+ */
+class NotificationsSetupFailureMessage {
+  /**
+   * Get the formatted message content
+   * @returns {string} The setup failure message
+   */
+  toString() {
+    return "Could not set notifications. Make sure pools are properly initialized.";
+  }
+}
+
+/**
+ * Represents a pool not monitored message
+ */
+class PoolNotMonitoredMessage {
+  /**
+   * Create a pool not monitored message instance
+   * @param {string} poolAddress - Pool address
+   */
+  constructor(poolAddress) {
+    this.poolAddress = poolAddress;
+  }
+
+  /**
+   * Get the formatted message content
+   * @returns {string} The pool not monitored message
+   */
+  toString() {
+    return `Pool ${this.poolAddress} is not monitored in this chat.`;
+  }
+}
+
+/**
+ * Represents a pool not initialized message
+ */
+class PoolNotInitializedMessage {
+  /**
+   * Create a pool not initialized message instance
+   * @param {string} poolAddress - Pool address
+   */
+  constructor(poolAddress) {
+    this.poolAddress = poolAddress;
+  }
+
+  /**
+   * Get the formatted message content
+   * @returns {string} The pool not initialized message
+   */
+  toString() {
+    return `Pool ${this.poolAddress} is not initialized yet or price data is not available.`;
+  }
+}
+
+/**
+ * Represents a price alert set for specific pool message
+ */
+class PriceAlertSetSpecificPoolMessage {
+  /**
+   * Create a price alert set for specific pool message instance
+   * @param {number} targetPrice - Target price for the alert
+   * @param {string} token1Symbol - Token 1 symbol
+   * @param {string} token0Symbol - Token 0 symbol
+   */
+  constructor(targetPrice, token1Symbol, token0Symbol) {
+    this.targetPrice = targetPrice;
+    this.token1Symbol = token1Symbol;
+    this.token0Symbol = token0Symbol;
+  }
+
+  /**
+   * Get the formatted message content
+   * @returns {string} The price alert set message
+   */
+  toString() {
+    return `Price alert set at ${this.targetPrice} for ${this.token1Symbol}/${this.token0Symbol} pool.`;
+  }
+}
+
 class NotifyHandler {
   /**
    * Register command handlers with the bot
@@ -30,27 +173,27 @@ class NotifyHandler {
 
     // Check if we have any pools monitored in this chat
     const poolsInChat = Object.entries(monitoredPools).filter(
-        ([_, poolData]) => poolData.chatId === chatId
+      ([_, poolData]) => poolData.chatId === chatId
     );
 
     if (poolsInChat.length === 0) {
-      await bot.sendMessage(chatId, "No pools are currently being monitored in this chat. Use /pool <address> to start monitoring a pool first.");
+      const noPoolsMessage = new NoPoolsMonitoredMessage();
+      await bot.sendMessage(chatId, noPoolsMessage.toString());
       return;
     }
 
     // Handle both formats: "/notify <price>" and "/notify <price> <pool_address>"
-    let targetPrice, poolAddress;
-
     if (params.length === 1) {
       // Format: "/notify <price>" - applies to all pools in the chat
       await this.handleNotifyAllPools(bot, chatId, params[0], poolsInChat);
     } else if (params.length === 2) {
       // Format: "/notify <price> <pool_address>"
-      targetPrice = parseFloat(params[0]);
-      poolAddress = params[1];
+      const targetPrice = parseFloat(params[0]);
+      const poolAddress = params[1];
       await this.handleNotifySpecificPool(bot, chatId, poolAddress, targetPrice, monitoredPools);
     } else {
-      await bot.sendMessage(chatId, "Invalid format. Use /notify <price> or /notify <price> <pool_address>");
+      const invalidFormatMessage = new InvalidFormatMessage();
+      await bot.sendMessage(chatId, invalidFormatMessage.toString());
     }
   }
 
@@ -99,7 +242,8 @@ class NotifyHandler {
     const targetPrice = parseFloat(priceParam);
 
     if (isNaN(targetPrice)) {
-      await bot.sendMessage(chatId, "Invalid price format. Use /notify <price> or /notify <price> <pool_address>");
+      const invalidPriceMessage = new InvalidPriceFormatMessage();
+      await bot.sendMessage(chatId, invalidPriceMessage.toString());
       return;
     }
 
@@ -123,15 +267,11 @@ class NotifyHandler {
     }
 
     if (notificationsSet > 0) {
-      await bot.sendMessage(
-          chatId,
-          `Price alert set at ${targetPrice} for ${notificationsSet} pool(s) in this chat.`
-      );
+      const alertSetMessage = new PriceAlertSetAllPoolsMessage(targetPrice, notificationsSet);
+      await bot.sendMessage(chatId, alertSetMessage.toString());
     } else {
-      await bot.sendMessage(
-          chatId,
-          "Could not set notifications. Make sure pools are properly initialized."
-      );
+      const setupFailureMessage = new NotificationsSetupFailureMessage();
+      await bot.sendMessage(chatId, setupFailureMessage.toString());
     }
   }
 
@@ -145,20 +285,23 @@ class NotifyHandler {
    */
   static async handleNotifySpecificPool(bot, chatId, poolAddress, targetPrice, monitoredPools) {
     if (isNaN(targetPrice)) {
-      await bot.sendMessage(chatId, "Invalid price format. Use /notify <price> or /notify <price> <pool_address>");
+      const invalidPriceMessage = new InvalidPriceFormatMessage();
+      await bot.sendMessage(chatId, invalidPriceMessage.toString());
       return;
     }
 
     // Check if the specified pool is being monitored
     if (!monitoredPools[poolAddress] || monitoredPools[poolAddress].chatId !== chatId) {
-      await bot.sendMessage(chatId, `Pool ${poolAddress} is not monitored in this chat.`);
+      const poolNotMonitoredMessage = new PoolNotMonitoredMessage(poolAddress);
+      await bot.sendMessage(chatId, poolNotMonitoredMessage.toString());
       return;
     }
 
     const poolInfo = monitoredPools[poolAddress];
 
     if (!poolInfo.lastPriceT1T0) {
-      await bot.sendMessage(chatId, `Pool ${poolAddress} is not initialized yet or price data is not available.`);
+      const poolNotInitializedMessage = new PoolNotInitializedMessage(poolAddress);
+      await bot.sendMessage(chatId, poolNotInitializedMessage.toString());
       return;
     }
 
@@ -172,10 +315,12 @@ class NotifyHandler {
       triggered: false
     });
 
-    await bot.sendMessage(
-        chatId,
-        `Price alert set at ${targetPrice} for ${poolInfo.token1.symbol}/${poolInfo.token0.symbol} pool.`
+    const alertSetMessage = new PriceAlertSetSpecificPoolMessage(
+      targetPrice,
+      poolInfo.token1.symbol,
+      poolInfo.token0.symbol
     );
+    await bot.sendMessage(chatId, alertSetMessage.toString());
   }
 }
 

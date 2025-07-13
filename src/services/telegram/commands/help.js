@@ -4,6 +4,77 @@ const WalletHandler = require('./wallet');
 const NotifyHandler = require('./notify');
 const LpHandler = require('./lp');
 
+/**
+ * Represents a help message with its content and formatting
+ */
+class HelpMessage {
+  /**
+   * Create a help message instance
+   */
+  constructor() {
+    this.allHandlers = [
+      StartHandler,
+      PoolHandler,
+      WalletHandler,
+      NotifyHandler,
+      LpHandler,
+      HelpHandler  // Include self for completeness
+    ];
+  }
+
+  /**
+   * Get the formatted help message content
+   * @returns {string} The complete formatted help message
+   */
+  toString() {
+    const title = `🤖 **Bot Commands Help**\n\n`;
+    const availableCommands = `**Available Commands:**\n`;
+
+    const commandsList = this._getCommandsList();
+    const detailedHelp = this._getDetailedHelp();
+
+    let finalMessage = title + availableCommands + commandsList;
+
+    if (detailedHelp) {
+      finalMessage += `\n**Detailed Information:**\n${detailedHelp}`;
+    }
+
+    return finalMessage;
+  }
+
+  /**
+   * Get the commands list section
+   * @returns {string} Commands list content
+   */
+  _getCommandsList() {
+    let commandsList = '';
+
+    this.allHandlers.forEach(handler => {
+      if (handler && typeof handler.help === 'function') {
+        commandsList += `• ${handler.help()}\n`;
+      }
+    });
+
+    return commandsList;
+  }
+
+  /**
+   * Get the detailed help section
+   * @returns {string} Detailed help content
+   */
+  _getDetailedHelp() {
+    let detailedHelp = '';
+
+    this.allHandlers.forEach(handler => {
+      if (handler && typeof handler.usage === 'function') {
+        detailedHelp += `\n${handler.usage()}\n\n`;
+      }
+    });
+
+    return detailedHelp;
+  }
+}
+
 class HelpHandler {
     static command = '/help';
     static description = 'Show help information for all commands';
@@ -26,8 +97,8 @@ class HelpHandler {
      */
     static async handle(bot, msg, args) {
         try {
-            const helpMessage = this.buildHelpMessage();
-            await bot.sendMessage(msg.chat.id, helpMessage, {
+            const helpMessage = new HelpMessage();
+            await bot.sendMessage(msg.chat.id, helpMessage.toString(), {
                 parse_mode: 'Markdown',
                 disable_web_page_preview: true
             });
@@ -35,49 +106,6 @@ class HelpHandler {
             console.error('Error in help command:', error);
             await bot.sendMessage(msg.chat.id, 'Sorry, there was an error displaying help information.');
         }
-    }
-
-    /**
-     * Build the complete help message by calling Help() for each handler
-     * @returns {string} Complete help message
-     */
-    static buildHelpMessage() {
-        const title = `🤖 **Bot Commands Help**\n\n`;
-        const availableCommands = `**Available Commands:**\n`;
-
-        let commandsList = '';
-        let detailedHelp = '';
-
-        // List of all handlers - update this list when adding new handlers
-        const allHandlers = [
-            StartHandler,
-            PoolHandler,
-            WalletHandler,
-            NotifyHandler,
-            LpHandler,
-            HelpHandler  // Include self for completeness
-        ];
-
-        allHandlers.forEach(handler => {
-            if (handler && typeof handler.help === 'function') {
-                // Add to commands list
-                commandsList += `• ${handler.help()}\n`;
-
-                // Add detailed usage if available
-                if (typeof handler.usage === 'function') {
-                    detailedHelp += `\n${handler.usage()}\n\n`;
-                }
-            }
-        });
-
-        // Build final message
-        let finalMessage = title + availableCommands + commandsList;
-
-        if (detailedHelp) {
-            finalMessage += `\n**Detailed Information:**\n${detailedHelp}`;
-        }
-
-        return finalMessage;
     }
 
     /**

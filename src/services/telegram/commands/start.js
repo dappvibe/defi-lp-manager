@@ -1,4 +1,82 @@
 /**
+ * Represents a start message with its content and formatting
+ */
+class StartMessage {
+  /**
+   * Create a start message instance
+   * @param {number} chatId - The chat ID
+   * @param {Object} monitoredPools - Object containing monitored pools
+   * @param {Object} positionMonitor - Position monitor instance
+   */
+  constructor(chatId, monitoredPools, positionMonitor) {
+    this.chatId = chatId;
+    this.monitoredPools = monitoredPools;
+    this.positionMonitor = positionMonitor;
+  }
+
+  /**
+   * Get the formatted message content
+   * @returns {string} The complete formatted message
+   */
+  toString() {
+    let content = "🤖 **DeFi LP Manager Bot**\n\n";
+    content += "🔧 **What I can do:**\n";
+    content += "• Monitor Uniswap V3 liquidity pool prices\n";
+    content += "• Track wallet positions and changes\n";
+    content += "• Set price alerts for monitored pools\n";
+    content += "• Display current liquidity positions\n\n";
+    content += "📊 **Current Monitoring Status:**\n\n";
+
+    content += this._getPoolsSection();
+    content += this._getWalletsSection();
+    content += "Use /help for available commands.";
+
+    return content;
+  }
+
+  /**
+   * Get the pools section content
+   * @returns {string} The pools section
+   */
+  _getPoolsSection() {
+    const poolsInChat = Object.entries(this.monitoredPools).filter(
+      ([_, poolData]) => poolData.chatId === this.chatId
+    );
+
+    if (poolsInChat.length > 0) {
+      let section = `🏊 **Pools (${poolsInChat.length}):**\n`;
+      poolsInChat.forEach(([address, data], idx) => {
+        const pair = `${data.token1?.symbol || '???'}/${data.token0?.symbol || '???'}`;
+        const price = data.lastPriceT1T0 ? data.lastPriceT1T0.toFixed(8) : 'N/A';
+        section += `${idx + 1}. ${pair} - ${price}\n`;
+        section += `   \`${address}\`\n`;
+      });
+      return section + "\n";
+    } else {
+      return "🏊 **Pools:** None monitored in this chat\n\n";
+    }
+  }
+
+  /**
+   * Get the wallets section content
+   * @returns {string} The wallets section
+   */
+  _getWalletsSection() {
+    const monitoredWallets = this.positionMonitor.getMonitoredWallets();
+
+    if (monitoredWallets.length > 0) {
+      let section = `💼 **Wallets (${monitoredWallets.length}):**\n`;
+      monitoredWallets.forEach((addr, idx) => {
+        section += `${idx + 1}. \`${addr}\`\n`;
+      });
+      return section + "\n";
+    } else {
+      return "💼 **Wallets:** None monitored\n\n";
+    }
+  }
+}
+
+/**
  * Handler for /start command
  * Sends welcome message to the user and shows current monitoring status
  */
@@ -24,47 +102,8 @@ class StartHandler {
    */
   static async handle(bot, msg, monitoredPools, positionMonitor) {
     const chatId = msg.chat.id;
-
-    // Welcome message
-    let message = "🤖 **DeFi LP Manager Bot**\n\n";
-    message += "Use /notify <price> to set a price alert for monitored pools in this chat.\n\n";
-
-    // Show current monitoring status
-    message += "📊 **Current Monitoring Status:**\n\n";
-
-    // Show monitored pools for this chat
-    const poolsInChat = Object.entries(monitoredPools).filter(
-      ([_, poolData]) => poolData.chatId === chatId
-    );
-
-    if (poolsInChat.length > 0) {
-      message += `🏊 **Pools (${poolsInChat.length}):**\n`;
-      poolsInChat.forEach(([address, data], idx) => {
-        const pair = `${data.token1?.symbol || '???'}/${data.token0?.symbol || '???'}`;
-        const price = data.lastPriceT1T0 ? data.lastPriceT1T0.toFixed(8) : 'N/A';
-        message += `${idx + 1}. ${pair} - ${price}\n`;
-        message += `   \`${address}\`\n`;
-      });
-      message += "\n";
-    } else {
-      message += "🏊 **Pools:** None monitored in this chat\n\n";
-    }
-
-    // Show monitored wallets (global)
-    const monitoredWallets = positionMonitor.getMonitoredWallets();
-    if (monitoredWallets.length > 0) {
-      message += `💼 **Wallets (${monitoredWallets.length}):**\n`;
-      monitoredWallets.forEach((addr, idx) => {
-        message += `${idx + 1}. \`${addr}\`\n`;
-      });
-      message += "\n";
-    } else {
-      message += "💼 **Wallets:** None monitored\n\n";
-    }
-
-    message += "Use /help for available commands.";
-
-    await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+    const startMessage = new StartMessage(chatId, monitoredPools, positionMonitor);
+    await bot.sendMessage(chatId, startMessage.toString(), { parse_mode: 'Markdown' });
   }
 
   /**

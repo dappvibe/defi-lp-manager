@@ -10,6 +10,7 @@ const { uniswapV3Pool: poolAbi } = require('./abis');
 const { getTimeInTimezone } = require('../../utils/time');
 const MongoStateManager = require('../database/mongo');
 const poolsConfig = require('../../config/pools');
+const { PositionMessage } = require('../telegram/commands/lp');
 
 class PoolService {
   constructor() {
@@ -501,7 +502,8 @@ class PoolService {
           }
 
           // Use the unified position formatting method for updates
-          const updatedMessage = tempMonitor.formatSinglePositionMessage(updatedPosition, timezone, true);
+          const positionMessage = new PositionMessage(updatedPosition, timezone, true);
+          const updatedMessage = positionMessage.toString();
 
           // Update the message in Telegram
           await botInstance.editMessageText(updatedMessage, {

@@ -6,6 +6,204 @@
 
 const { isValidEthereumAddress } = require('../../uniswap/utils');
 
+/**
+ * Represents a wallet address prompt message
+ */
+class WalletPromptMessage {
+  /**
+   * Get the formatted message content
+   * @returns {string} The prompt message
+   */
+  toString() {
+    return "Send a wallet address to monitor PancakeSwap V3 positions:";
+  }
+
+  /**
+   * Get the reply markup for the message
+   * @returns {Object} Reply markup object
+   */
+  getReplyMarkup() {
+    return { force_reply: true };
+  }
+}
+
+/**
+ * Represents an invalid address message
+ */
+class InvalidAddressMessage {
+  /**
+   * Get the formatted message content
+   * @returns {string} The invalid address message
+   */
+  toString() {
+    return "❌ Invalid Ethereum address. Please send a valid wallet address.";
+  }
+}
+
+/**
+ * Represents a processing wallet message
+ */
+class ProcessingWalletMessage {
+  /**
+   * Get the formatted message content
+   * @returns {string} The processing message
+   */
+  toString() {
+    return "⏳ Processing wallet address...";
+  }
+}
+
+/**
+ * Represents a monitoring status message
+ */
+class MonitoringStatusMessage {
+  /**
+   * Create a monitoring status message instance
+   * @param {boolean} isAlreadyMonitored - Whether wallet was already monitored
+   */
+  constructor(isAlreadyMonitored) {
+    this.isAlreadyMonitored = isAlreadyMonitored;
+  }
+
+  /**
+   * Get the formatted message content
+   * @returns {string} The monitoring status message
+   */
+  toString() {
+    const monitoringStatus = this.isAlreadyMonitored
+      ? "✅ Already monitoring this wallet"
+      : "✅ Started monitoring this wallet for position changes";
+
+    return `${monitoringStatus}\n\n💡 Use /lp to view current positions for monitored wallets.`;
+  }
+}
+
+/**
+ * Represents a wallet processing error message
+ */
+class WalletProcessingErrorMessage {
+  /**
+   * Create a wallet processing error message instance
+   * @param {string} errorMessage - Error message
+   */
+  constructor(errorMessage) {
+    this.errorMessage = errorMessage;
+  }
+
+  /**
+   * Get the formatted message content
+   * @returns {string} The error message
+   */
+  toString() {
+    return `❌ Error processing wallet: ${this.errorMessage}`;
+  }
+}
+
+/**
+ * Represents a stop wallet instruction message
+ */
+class StopWalletInstructionMessage {
+  /**
+   * Create a stop wallet instruction message instance
+   * @param {Array} monitoredWallets - Array of monitored wallet addresses
+   */
+  constructor(monitoredWallets) {
+    this.monitoredWallets = monitoredWallets;
+  }
+
+  /**
+   * Get the formatted message content
+   * @returns {string} The instruction message
+   */
+  toString() {
+    const walletList = this.monitoredWallets.map((addr, idx) =>
+      `${idx + 1}. \`${addr}\``
+    ).join('\n');
+
+    return `Use /stop_wallet <address> to stop monitoring a specific wallet.\n\nCurrently monitoring:\n${walletList}`;
+  }
+}
+
+/**
+ * Represents a stop monitoring success message
+ */
+class StopMonitoringSuccessMessage {
+  /**
+   * Create a stop monitoring success message instance
+   * @param {string} walletAddress - Wallet address that was stopped
+   */
+  constructor(walletAddress) {
+    this.walletAddress = walletAddress;
+  }
+
+  /**
+   * Get the formatted message content
+   * @returns {string} The success message
+   */
+  toString() {
+    return `✅ Stopped monitoring wallet: ${this.walletAddress}`;
+  }
+}
+
+/**
+ * Represents a wallet not found message
+ */
+class WalletNotFoundMessage {
+  /**
+   * Create a wallet not found message instance
+   * @param {string} walletAddress - Wallet address that was not found
+   */
+  constructor(walletAddress) {
+    this.walletAddress = walletAddress;
+  }
+
+  /**
+   * Get the formatted message content
+   * @returns {string} The not found message
+   */
+  toString() {
+    return `❌ Wallet not found in monitoring list: ${this.walletAddress}`;
+  }
+}
+
+/**
+ * Represents a no wallets monitored message
+ */
+class NoWalletsMonitoredMessage {
+  /**
+   * Get the formatted message content
+   * @returns {string} The no wallets message
+   */
+  toString() {
+    return "No wallets are currently being monitored.";
+  }
+}
+
+/**
+ * Represents a wallet list message
+ */
+class WalletListMessage {
+  /**
+   * Create a wallet list message instance
+   * @param {Array} monitoredWallets - Array of monitored wallet addresses
+   */
+  constructor(monitoredWallets) {
+    this.monitoredWallets = monitoredWallets;
+  }
+
+  /**
+   * Get the formatted message content
+   * @returns {string} The wallet list message
+   */
+  toString() {
+    const walletList = this.monitoredWallets.map((addr, idx) =>
+      `${idx + 1}. \`${addr}\``
+    ).join('\n');
+
+    return `📊 Monitoring ${this.monitoredWallets.length} wallet(s):\n\n${walletList}`;
+  }
+}
+
 class WalletHandler {
   /**
    * Register command handlers with the bot
@@ -47,10 +245,11 @@ class WalletHandler {
     }
 
     // Prompt for address
+    const promptMessage = new WalletPromptMessage();
     const promptMsg = await bot.sendMessage(
-        chatId,
-        "Send a wallet address to monitor PancakeSwap V3 positions:",
-        { reply_markup: { force_reply: true } }
+      chatId,
+      promptMessage.toString(),
+      { reply_markup: promptMessage.getReplyMarkup() }
     );
 
     // Listen for reply
@@ -71,12 +270,14 @@ class WalletHandler {
   static async processWalletAddress(bot, chatId, walletAddress, positionMonitor, timezone) {
     // Validate address
     if (!isValidEthereumAddress(walletAddress)) {
-      await bot.sendMessage(chatId, "❌ Invalid Ethereum address. Please send a valid wallet address.");
+      const invalidMessage = new InvalidAddressMessage();
+      await bot.sendMessage(chatId, invalidMessage.toString());
       return;
     }
 
     // Send processing message
-    const statusMsg = await bot.sendMessage(chatId, "⏳ Processing wallet address...");
+    const processingMessage = new ProcessingWalletMessage();
+    const statusMsg = await bot.sendMessage(chatId, processingMessage.toString());
 
     try {
       // Check if already monitoring
@@ -85,24 +286,19 @@ class WalletHandler {
       // Start monitoring the wallet
       positionMonitor.startMonitoring(walletAddress, chatId);
 
-      // Format message based on monitoring status
-      const monitoringStatus = isAlreadyMonitored
-          ? "✅ Already monitoring this wallet"
-          : "✅ Started monitoring this wallet for position changes";
-
-      const message = `${monitoringStatus}\n\n💡 Use /lp to view current positions for monitored wallets.`;
-
-      // Update status message
-      await bot.editMessageText(message, {
+      // Create and send monitoring status message
+      const statusMessage = new MonitoringStatusMessage(isAlreadyMonitored);
+      await bot.editMessageText(statusMessage.toString(), {
         chat_id: chatId,
         message_id: statusMsg.message_id
       });
 
     } catch (error) {
       console.error('Error processing wallet:', error);
+      const errorMessage = new WalletProcessingErrorMessage(error.message);
       await bot.editMessageText(
-          `❌ Error processing wallet: ${error.message}`,
-          { chat_id: chatId, message_id: statusMsg.message_id }
+        errorMessage.toString(),
+        { chat_id: chatId, message_id: statusMsg.message_id }
       );
     }
   }
@@ -131,15 +327,12 @@ class WalletHandler {
       return;
     }
 
-    // Send list of monitored wallets
-    const walletList = monitoredWallets.map((addr, idx) =>
-        `${idx + 1}. \`${addr}\``
-    ).join('\n');
-
+    // Send instruction message with wallet list
+    const instructionMessage = new StopWalletInstructionMessage(monitoredWallets);
     await bot.sendMessage(
-        chatId,
-        `Use /stop_wallet <address> to stop monitoring a specific wallet.\n\nCurrently monitoring:\n${walletList}`,
-        { parse_mode: 'Markdown' }
+      chatId,
+      instructionMessage.toString(),
+      { parse_mode: 'Markdown' }
     );
   }
 
@@ -153,7 +346,8 @@ class WalletHandler {
   static async processStopMonitoring(bot, chatId, walletAddress, positionMonitor) {
     // Validate address
     if (!isValidEthereumAddress(walletAddress)) {
-      await bot.sendMessage(chatId, "❌ Invalid Ethereum address.");
+      const invalidMessage = new InvalidAddressMessage();
+      await bot.sendMessage(chatId, invalidMessage.toString());
       return;
     }
 
@@ -161,9 +355,11 @@ class WalletHandler {
     const success = positionMonitor.stopMonitoring(walletAddress);
 
     if (success) {
-      await bot.sendMessage(chatId, `✅ Stopped monitoring wallet: ${walletAddress}`);
+      const successMessage = new StopMonitoringSuccessMessage(walletAddress);
+      await bot.sendMessage(chatId, successMessage.toString());
     } else {
-      await bot.sendMessage(chatId, `❌ Wallet not found in monitoring list: ${walletAddress}`);
+      const notFoundMessage = new WalletNotFoundMessage(walletAddress);
+      await bot.sendMessage(chatId, notFoundMessage.toString());
     }
   }
 
@@ -178,21 +374,18 @@ class WalletHandler {
     const monitoredWallets = positionMonitor.getMonitoredWallets();
 
     if (monitoredWallets.length === 0) {
-      await bot.sendMessage(chatId, "No wallets are currently being monitored.");
+      const noWalletsMessage = new NoWalletsMonitoredMessage();
+      await bot.sendMessage(chatId, noWalletsMessage.toString());
       return;
     }
 
-    const walletList = monitoredWallets.map((addr, idx) =>
-        `${idx + 1}. \`${addr}\``
-    ).join('\n');
-
+    const walletListMessage = new WalletListMessage(monitoredWallets);
     await bot.sendMessage(
-        chatId,
-        `📊 Monitoring ${monitoredWallets.length} wallet(s):\n\n${walletList}`,
-        { parse_mode: 'Markdown' }
+      chatId,
+      walletListMessage.toString(),
+      { parse_mode: 'Markdown' }
     );
   }
-
 
   /**
    * Returns a brief help description with command signature

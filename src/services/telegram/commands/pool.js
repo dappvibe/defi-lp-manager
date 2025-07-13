@@ -11,6 +11,108 @@ const poolsConfig = require('../../../config/pools');
 const { Pool } = require('@uniswap/v3-sdk');
 const { Token } = require('@uniswap/sdk-core');
 
+/**
+ * Represents a no pools configured message
+ */
+class NoPoolsMessage {
+  /**
+   * Get the formatted message content
+   * @returns {string} The no pools message
+   */
+  toString() {
+    return "No pools are configured.";
+  }
+}
+
+/**
+ * Represents a pool information message with current price, TVL and toggle button
+ */
+class PoolInfoMessage {
+  /**
+   * Create a pool info message instance
+   * @param {Object} poolInfo - Pool information object
+   * @param {string} poolAddress - Pool address
+   * @param {string} currentPrice - Current price as string
+   * @param {string} tvlText - TVL text (empty if not available)
+   * @param {boolean} isMonitored - Whether pool is currently monitored
+   * @param {Object} options - Additional options
+   * @param {boolean} [options.includeTimestamp] - Whether to include timestamp
+   * @param {string} [options.timezone] - User timezone for timestamp
+   */
+  constructor(poolInfo, poolAddress, currentPrice, tvlText, isMonitored, options = {}) {
+    this.poolInfo = poolInfo;
+    this.poolAddress = poolAddress;
+    this.currentPrice = currentPrice;
+    this.tvlText = tvlText;
+    this.isMonitored = isMonitored;
+    this.options = options;
+  }
+
+  /**
+   * Get the formatted message content
+   * @returns {string} The complete formatted message
+   */
+  toString() {
+    const pair = `[${this.poolInfo.token0.symbol}/${this.poolInfo.token1.symbol}](https://pancakeswap.finance/info/v3/arb/pairs/${this.poolAddress})`;
+    const feePercent = this.poolInfo.fee ? (this.poolInfo.fee / 10000).toFixed(2) + '%' : 'Unknown';
+    const pairWithFee = `${pair} (${feePercent})`;
+
+    let messageText = `📊 ${this.currentPrice}
+💰 **${pairWithFee}**`;
+
+    // Add TVL if available
+    if (this.tvlText) {
+      messageText += `\n${this.tvlText}`;
+    }
+
+    // Add timestamp if requested
+    if (this.options.includeTimestamp && this.options.timezone) {
+      const { getTimeInTimezone } = require('../../../utils/time');
+      const updateTime = getTimeInTimezone(this.options.timezone);
+      messageText += `
+⏰ ${updateTime}`;
+    }
+
+    return messageText;
+  }
+
+  /**
+   * Get the inline keyboard for the message
+   * @returns {Object} Inline keyboard object
+   */
+  getKeyboard() {
+    return {
+      inline_keyboard: [[
+        {
+          text: this.isMonitored ? '🔴 Stop Monitoring' : '🟢 Start Monitoring',
+          callback_data: `pool_${this.isMonitored ? 'stop' : 'start'}_${this.poolAddress}`
+        }
+      ]]
+    };
+  }
+}
+
+/**
+ * Represents an error message for pool operations
+ */
+class PoolErrorMessage {
+  /**
+   * Create a pool error message instance
+   * @param {string} errorText - Error message text
+   */
+  constructor(errorText) {
+    this.errorText = errorText;
+  }
+
+  /**
+   * Get the formatted message content
+   * @returns {string} The error message
+   */
+  toString() {
+    return this.errorText;
+  }
+}
+
 class PoolHandler {
   /**
    * Calculate TVL for a Uniswap V3 pool using token balances
@@ -91,7 +193,8 @@ class PoolHandler {
       const configuredPools = poolsConfig.getEnabledPools();
 
       if (configuredPools.length === 0) {
-        await bot.sendMessage(chatId, "No pools are configured.");
+        const noPoolsMessage = new NoPoolsMessage();
+        await bot.sendMessage(chatId, noPoolsMessage.toString());
         return;
       }
 
@@ -102,7 +205,8 @@ class PoolHandler {
 
     } catch (error) {
       console.error('Error listing pools:', error);
-      await bot.sendMessage(chatId, 'Error loading pools. Please try again.');
+      const errorMessage = new PoolErrorMessage('Error loading pools. Please try again.');
+      await bot.sendMessage(chatId, errorMessage.toString());
     }
   }
 
@@ -166,53 +270,35 @@ class PoolHandler {
       // Check if pool is currently being monitored
       const isMonitored = poolService.isMonitoring(poolAddress);
 
-      // Create message text
-      const pair = `[${poolInfo.token0.symbol}/${poolInfo.token1.symbol}](https://pancakeswap.finance/info/v3/arb/pairs/${poolAddress})`;
-      const feePercent = poolInfo.fee ? (poolInfo.fee / 10000).toFixed(2) + '%' : 'Unknown';
-      const pairWithFee = `${pair} (${feePercent})`;
-
-      let messageText = `📊 ${currentPrice}
-💰 **${pairWithFee}**`;
-
-      // Add TVL if available
-      if (tvlText) {
-        messageText += `\n${tvlText}`;
-      }
-
-      // Add timestamp if requested
-      if (options.includeTimestamp) {
-        const { getTimeInTimezone } = require('../../../utils/time');
-        const updateTime = getTimeInTimezone(timezone);
-        messageText += `
-⏰ ${updateTime}`;
-      }
-
-      // Create inline keyboard
-      const keyboard = {
-        inline_keyboard: [[
-          {
-            text: isMonitored ? '🔴 Stop Monitoring' : '🟢 Start Monitoring',
-            callback_data: `pool_${isMonitored ? 'stop' : 'start'}_${poolAddress}`
-          }
-        ]]
-      };
+      // Create pool info message
+      const poolInfoMessage = new PoolInfoMessage(
+        poolInfo,
+        poolAddress,
+        currentPrice,
+        tvlText,
+        isMonitored,
+        {
+          includeTimestamp: options.includeTimestamp,
+          timezone: timezone
+        }
+      );
 
       const messageOptions = {
         parse_mode: 'Markdown',
-        reply_markup: keyboard,
+        reply_markup: poolInfoMessage.getKeyboard(),
         disable_web_page_preview: true
       };
 
       let resultMessage;
       // Send or edit message based on action
       if (action === 'edit' && messageId) {
-        resultMessage = await bot.editMessageText(messageText, {
+        resultMessage = await bot.editMessageText(poolInfoMessage.toString(), {
           chat_id: chatId,
           message_id: messageId,
           ...messageOptions
         });
       } else {
-        resultMessage = await bot.sendMessage(chatId, messageText, messageOptions);
+        resultMessage = await bot.sendMessage(chatId, poolInfoMessage.toString(), messageOptions);
 
         // Update message ID in MongoDB for this pool
         if (resultMessage && resultMessage.message_id) {

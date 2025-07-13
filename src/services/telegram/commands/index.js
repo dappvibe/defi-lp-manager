@@ -7,7 +7,7 @@ const NotifyHandler = require('./notify');
 const PoolHandler = require('./pool');
 const WalletHandler = require('./wallet');
 const HelpHandler = require("./help");
-const LpHandler = require('./lp');
+const { LpHandler, PositionMessage } = require('./lp');
 
 module.exports = {
   StartHandler,
@@ -15,5 +15,6 @@ module.exports = {
   NotifyHandler,
   PoolHandler,
   WalletHandler,
-  LpHandler
+  LpHandler,
+  PositionMessage
 };
