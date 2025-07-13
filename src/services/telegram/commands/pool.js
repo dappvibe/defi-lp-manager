@@ -141,9 +141,9 @@ class PoolHandler {
    * Register command handlers with the bot
    */
   registerHandlers() {
-    // Pool listing command
+    // Wrap to keep 'this' context of PoolHandler
     this.bot.onText(/\/pool/, (msg) => {
-      this.handle(msg);
+      this.handleText(msg);
     });
 
     // Callback query handlers for pool toggle buttons
@@ -159,7 +159,7 @@ class PoolHandler {
    * Handle pool command to list all configured pools
    * @param {Object} msg - Message object from Telegram
    */
-  async handle(msg) {
+  async handleText(msg) {
     const chatId = msg.chat.id;
 
     try {
