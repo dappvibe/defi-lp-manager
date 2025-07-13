@@ -5,7 +5,7 @@
 const { environment } = require('./config');
 const { getProvider } = require('./services/blockchain/provider');
 const poolService = require('./services/uniswap/pool');
-const initTelegramBot = require('./services/telegram/bot');
+const Bot = require('./services/telegram/bot');
 const PositionMonitor = require('./services/uniswap/position-monitor');
 const MongoStateManager = require('./services/database/mongo');
 
@@ -27,8 +27,8 @@ async function initializeApp() {
     // Initialize position monitor for wallet tracking with state manager
     const positionMonitor = new PositionMonitor(provider, mongoStateManager);
 
-    // Initialize the Telegram bot with the pool service and position monitor
-    const bot = initTelegramBot(
+    // Initialize the Bot with the pool service and position monitor
+    const bot = new Bot(
         environment.telegram.botToken,
         provider,
         poolService.getMonitoredPools(),
@@ -66,9 +66,9 @@ async function cleanupApp(appContext) {
         await mongoStateManager.close();
     }
 
-    // Stop the Telegram bot
-    if (bot && typeof bot.stopPolling === 'function') {
-        bot.stopPolling();
+    // Bot shutdown
+    if (bot && typeof bot.shutdown === 'function') {
+        await bot.shutdown();
     }
 }
 

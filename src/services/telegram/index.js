@@ -1,11 +1,10 @@
 /**
- * Telegram service module
- * Exports all Telegram-related functionality
+ * Telegram service exports
  */
-const bot = require('./bot');
-const handlers = require('./commands');
+const Bot = require('./bot');
+const Throttler = require('./throttler');
 
 module.exports = {
-  initTelegramBot: bot,
-  handlers
+  Bot,
+  Throttler
 };
