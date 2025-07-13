@@ -8,8 +8,54 @@ const poolService = require('../../uniswap/pool');
 const { calculatePrice } = require('../../uniswap/utils');
 const { isValidEthereumAddress } = require('../../uniswap/utils');
 const poolsConfig = require('../../../config/pools');
+const { Pool } = require('@uniswap/v3-sdk');
+const { Token } = require('@uniswap/sdk-core');
 
 class PoolHandler {
+  /**
+   * Calculate TVL for a Uniswap V3 pool using token balances
+   * @param {Object} poolInfo - Pool information object
+   * @param {string} poolAddress - Pool address
+   * @returns {Promise<number|null>} TVL value or null if calculation fails
+   */
+  static async calculatePoolTVL(poolInfo, poolAddress) {
+    try {
+      // Get token balances in the pool directly
+      const { createErc20Contract } = require('../../uniswap/contracts');
+
+      const token0Contract = createErc20Contract(poolInfo.token0.address);
+      const token1Contract = createErc20Contract(poolInfo.token1.address);
+
+      // Get token balances in the pool
+      const [token0Balance, token1Balance] = await Promise.all([
+        token0Contract.read.balanceOf([poolAddress]),
+        token1Contract.read.balanceOf([poolAddress])
+      ]);
+
+      // Convert to human readable amounts
+      const token0Amount = parseFloat(token0Balance) / Math.pow(10, poolInfo.token0.decimals);
+      const token1Amount = parseFloat(token1Balance) / Math.pow(10, poolInfo.token1.decimals);
+
+      // Get current price from pool
+      const poolContract = createPoolContract(poolAddress);
+      const slot0 = await poolContract.read.slot0();
+      const sqrtPriceX96 = slot0[0];
+
+      // Calculate price using the existing utility function
+      const currentPrice = parseFloat(calculatePrice(sqrtPriceX96, poolInfo.token0.decimals, poolInfo.token1.decimals));
+
+      // Calculate TVL (assuming token1 is stablecoin like USDC)
+      const token0ValueInToken1 = token0Amount * currentPrice;
+      const totalTVL = token0ValueInToken1 + token1Amount;
+
+      return totalTVL;
+
+    } catch (error) {
+      console.error('Error calculating pool TVL:', error);
+      return null;
+    }
+  }
+
   /**
    * Register command handlers with the bot
    * @param {TelegramBot} bot - The bot instance
@@ -61,7 +107,7 @@ class PoolHandler {
   }
 
   /**
-   * Send or update a pool message with current price and toggle button
+   * Send or update a pool message with current price, TVL and toggle button
    * @param {TelegramBot} bot - The bot instance
    * @param {number} chatId - Chat ID
    * @param {number|null} messageId - Message ID to update (null for new message)
@@ -106,6 +152,17 @@ class PoolHandler {
         }
       }
 
+      // Calculate TVL
+      let tvlText = '';
+      try {
+        const tvl = await this.calculatePoolTVL(poolInfo, poolAddress);
+        if (tvl !== null && tvl > 0) {
+          tvlText = `💎 TVL: $${tvl.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+        }
+      } catch (error) {
+        console.error(`Error calculating TVL for pool ${poolAddress}:`, error.message);
+      }
+
       // Check if pool is currently being monitored
       const isMonitored = poolService.isMonitoring(poolAddress);
 
@@ -116,6 +173,11 @@ class PoolHandler {
 
       let messageText = `📊 ${currentPrice}
 💰 **${pairWithFee}**`;
+
+      // Add TVL if available
+      if (tvlText) {
+        messageText += `\n${tvlText}`;
+      }
 
       // Add timestamp if requested
       if (options.includeTimestamp) {
@@ -293,7 +355,6 @@ class PoolHandler {
     }
   }
 
-
   /**
    * Returns a brief help description with command signature
    * @returns {string} One-line help text
@@ -316,6 +377,7 @@ class PoolHandler {
 Shows all pre-configured pools as individual messages, each displaying:
 • Current price
 • Token pair information
+• Total Value Locked (TVL)
 • Platform and blockchain
 • Toggle button to start/stop monitoring
 
@@ -326,7 +388,7 @@ Shows all pre-configured pools as individual messages, each displaying:
 **Notes:**
 • Pool monitoring includes real-time price updates
 • Price alerts can be set for monitored pools
-• Current prices are displayed for all pools
+• Current prices and TVL are displayed for all pools
 • Use toggle buttons to control monitoring state
 
 **Related Commands:**
