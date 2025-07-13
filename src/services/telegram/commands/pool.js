@@ -111,10 +111,16 @@ class PoolErrorMessage {
 
 class PoolHandler {
   /**
-   * Store callback IDs for cleanup
-   * @type {Map<string, string>} Map of poolAddress -> callbackId
+   * Store active pool monitors for cleanup
+   * @type {Map<string, {chatId: number, messageId: number}>} Map of poolAddress -> message info
    */
-  static poolCallbackIds = new Map();
+  static activeMonitors = new Map();
+
+  /**
+   * Store event listener reference for cleanup
+   * @type {Function|null}
+   */
+  static swapEventListener = null;
 
   /**
    * Register command handlers with the bot
@@ -132,6 +138,9 @@ class PoolHandler {
     bot.on('callback_query', (callbackQuery) => {
       this.handleCallback(bot, callbackQuery, provider);
     });
+
+    // Initialize event listener for swap events
+    this.initializeSwapEventListener(bot);
   }
 
   /**
@@ -198,7 +207,7 @@ class PoolHandler {
           await bot.answerCallbackQuery(callbackQuery.id, { text: 'Monitoring started!' });
           break;
         case 'stop':
-          await poolService.stopMonitoring(poolAddress);
+          await this.stopPoolMonitoring(poolAddress, chatId, messageId);
           await this.sendOrUpdatePoolMessage(bot, chatId, messageId, poolAddress, provider);
           await bot.answerCallbackQuery(callbackQuery.id, { text: 'Monitoring stopped!' });
           break;
@@ -223,17 +232,11 @@ class PoolHandler {
     try {
       const result = await poolService.startPoolMonitoring(bot, poolAddress, chatId, messageId, provider);
 
-      // Register callback for pool updates with unique ID
-      const callbackId = poolService.registerPoolUpdateCallback(
-        poolAddress,
-        (updateData) => {
-          this.handlePoolUpdate(bot, chatId, messageId, poolAddress, updateData);
-        },
-        `pool_handler_${poolAddress}_${chatId}_${messageId}`
-      );
-
-      // Store callback ID for cleanup
-      this.poolCallbackIds.set(`${poolAddress}_${chatId}_${messageId}`, callbackId);
+      // Store monitor info for event handling
+      this.activeMonitors.set(poolAddress, {
+        chatId: chatId,
+        messageId: messageId
+      });
 
       // Immediately update the pool message with current price and timestamp
       await this.sendOrUpdatePoolMessage(bot, chatId, messageId, poolAddress, provider, {
@@ -241,7 +244,7 @@ class PoolHandler {
         includeTimestamp: true
       });
 
-      console.log(`Started monitoring pool ${poolAddress} in chat ${chatId} with callback ID: ${callbackId}`);
+      console.log(`Started monitoring pool ${poolAddress} in chat ${chatId}`);
     } catch (error) {
       console.error(`Error starting pool monitoring for ${poolAddress}:`, error.message);
       throw error;
@@ -249,43 +252,66 @@ class PoolHandler {
   }
 
   /**
-   * Clean up callback for a specific pool and chat
+   * Stop monitoring a pool
    * @param {string} poolAddress - Pool address
    * @param {number} chatId - Chat ID
    * @param {number} messageId - Message ID
    */
-  static cleanupPoolCallback(poolAddress, chatId, messageId) {
-    const key = `${poolAddress}_${chatId}_${messageId}`;
-    const callbackId = this.poolCallbackIds.get(key);
+  static async stopPoolMonitoring(poolAddress, chatId, messageId) {
+    try {
+      await poolService.stopMonitoring(poolAddress);
 
-    if (callbackId) {
-      poolService.unregisterPoolUpdateCallback(poolAddress, callbackId);
-      this.poolCallbackIds.delete(key);
-      console.log(`Cleaned up pool callback for ${poolAddress} in chat ${chatId} with ID: ${callbackId}`);
+      // Remove from active monitors
+      this.activeMonitors.delete(poolAddress);
+
+      console.log(`Stopped monitoring pool ${poolAddress} in chat ${chatId}`);
+    } catch (error) {
+      console.error(`Error stopping pool monitoring for ${poolAddress}:`, error.message);
+      throw error;
     }
   }
 
   /**
-   * Handle pool update callback from the pool service
+   * Initialize event listener for swap events from PoolService
    * @param {TelegramBot} bot - The bot instance
-   * @param {number} chatId - Chat ID
-   * @param {number} messageId - Message ID to update
-   * @param {string} poolAddress - Pool address
-   * @param {Object} updateData - Update data from pool service
    */
-  static async handlePoolUpdate(bot, chatId, messageId, poolAddress, updateData) {
-    try {
-      const { newPrice, timestamp } = updateData;
+  static initializeSwapEventListener(bot) {
+    if (this.swapEventListener) {
+      poolService.removeListener('swap', this.swapEventListener);
+    }
 
+    this.swapEventListener = (swapInfo, poolData) => {
+      this.handleSwapEvent(bot, swapInfo, poolData);
+    };
+
+    poolService.on('swap', this.swapEventListener);
+    console.log('Initialized swap event listener for pool command');
+  }
+
+  /**
+   * Handle swap event from PoolService
+   * @param {TelegramBot} bot - The bot instance
+   * @param {Object} swapInfo - Swap information
+   * @param {Object} poolData - Pool data
+   */
+  static async handleSwapEvent(bot, swapInfo, poolData) {
+    const { poolAddress, newPrice, timestamp } = swapInfo;
+    const monitorInfo = this.activeMonitors.get(poolAddress);
+
+    if (!monitorInfo) {
+      return; // No active monitor for this pool
+    }
+
+    try {
       // Update the pool message with new price and timestamp
-      await this.sendOrUpdatePoolMessage(bot, chatId, messageId, poolAddress, null, {
+      await this.sendOrUpdatePoolMessage(bot, monitorInfo.chatId, monitorInfo.messageId, poolAddress, null, {
         preCalculatedPrice: newPrice,
         includeTimestamp: true
       });
 
-      console.log(`Updated pool message for ${poolAddress} in chat ${chatId} via callback - new price: ${newPrice}`);
+      console.log(`Updated pool message for ${poolAddress} in chat ${monitorInfo.chatId} via swap event - new price: ${newPrice}`);
     } catch (error) {
-      console.error(`Error handling pool update callback for ${poolAddress}:`, error.message);
+      console.error(`Error handling swap event for pool ${poolAddress}:`, error.message);
     }
   }
 
@@ -415,6 +441,18 @@ class PoolHandler {
     } catch (error) {
       console.error(`Error updating message ID for pool ${poolAddress}:`, error.message);
     }
+  }
+
+  /**
+   * Clean up event listeners and active monitors
+   */
+  static cleanup() {
+    if (this.swapEventListener) {
+      poolService.removeListener('swap', this.swapEventListener);
+      this.swapEventListener = null;
+    }
+    this.activeMonitors.clear();
+    console.log('Cleaned up pool handler resources');
   }
 
   /**

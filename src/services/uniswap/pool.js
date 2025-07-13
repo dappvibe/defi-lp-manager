@@ -4,6 +4,7 @@
  * Provides a clean interface hiding MongoDB implementation details
  * Handles caching, retrieval, and real-time monitoring of pool information
  */
+const { EventEmitter } = require('events');
 const { getTokenInfo, createPoolContract } = require('./contracts');
 const { isValidEthereumAddress, calculatePrice } = require('./utils');
 const { uniswapV3Pool: poolAbi } = require('./abis');
@@ -11,16 +12,14 @@ const { getTimeInTimezone } = require('../../utils/time');
 const MongoStateManager = require('../database/mongo');
 const poolsConfig = require('../../config/pools');
 
-class PoolService {
+class PoolService extends EventEmitter {
   constructor() {
+    super();
     this.stateManager = new MongoStateManager();
     // Monitoring-specific properties
     this.monitoredPools = {};
     this.watchUnsubscribers = {};
     this.autoSaveInterval = null;
-    // Callback system for pool updates - now supports multiple callbacks per pool
-    this.poolUpdateCallbacks = new Map(); // poolAddress -> Set of {id, callback} objects
-    this.callbackIdCounter = 0;
   }
 
   /**
@@ -40,100 +39,6 @@ class PoolService {
     if (botInstance && providerInstance && timezone) {
       await this._initializeMonitoring(botInstance, providerInstance, timezone);
     }
-  }
-
-  /**
-   * Register a callback function to be called when a pool's data is updated
-   * @param {string} poolAddress - Pool address to monitor
-   * @param {Function} callback - Callback function to call on pool updates
-   * @param {string} [callbackId] - Optional unique identifier for the callback
-   * @returns {string} Unique callback ID for unregistering
-   */
-  registerPoolUpdateCallback(poolAddress, callback, callbackId = null) {
-    if (typeof callback !== 'function') {
-      throw new Error('Callback must be a function');
-    }
-
-    // Generate unique callback ID if not provided
-    const id = callbackId || `callback_${++this.callbackIdCounter}`;
-
-    // Initialize callback set for this pool if it doesn't exist
-    if (!this.poolUpdateCallbacks.has(poolAddress)) {
-      this.poolUpdateCallbacks.set(poolAddress, new Set());
-    }
-
-    // Add callback to the set
-    const callbackSet = this.poolUpdateCallbacks.get(poolAddress);
-    callbackSet.add({ id, callback });
-
-    console.log(`Registered pool update callback for ${poolAddress} with ID: ${id} (total callbacks: ${callbackSet.size})`);
-    return id;
-  }
-
-  /**
-   * Unregister a specific callback function for a pool
-   * @param {string} poolAddress - Pool address
-   * @param {string} callbackId - Unique callback ID returned by registerPoolUpdateCallback
-   * @returns {boolean} True if callback was found and removed
-   */
-  unregisterPoolUpdateCallback(poolAddress, callbackId) {
-    const callbackSet = this.poolUpdateCallbacks.get(poolAddress);
-    if (!callbackSet) {
-      return false;
-    }
-
-    // Find and remove the callback with the matching ID
-    for (const callbackInfo of callbackSet) {
-      if (callbackInfo.id === callbackId) {
-        callbackSet.delete(callbackInfo);
-        console.log(`Unregistered pool update callback for ${poolAddress} with ID: ${callbackId} (remaining callbacks: ${callbackSet.size})`);
-
-        // Remove the entire set if no callbacks remain
-        if (callbackSet.size === 0) {
-          this.poolUpdateCallbacks.delete(poolAddress);
-          console.log(`Removed all callbacks for pool ${poolAddress}`);
-        }
-
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  /**
-   * Unregister all callbacks for a pool
-   * @param {string} poolAddress - Pool address
-   * @returns {number} Number of callbacks removed
-   */
-  unregisterAllCallbacksForPool(poolAddress) {
-    const callbackSet = this.poolUpdateCallbacks.get(poolAddress);
-    if (!callbackSet) {
-      return 0;
-    }
-
-    const count = callbackSet.size;
-    this.poolUpdateCallbacks.delete(poolAddress);
-    console.log(`Removed all ${count} callbacks for pool ${poolAddress}`);
-    return count;
-  }
-
-  /**
-   * Get the number of registered callbacks for a pool
-   * @param {string} poolAddress - Pool address
-   * @returns {number} Number of registered callbacks
-   */
-  getCallbackCount(poolAddress) {
-    const callbackSet = this.poolUpdateCallbacks.get(poolAddress);
-    return callbackSet ? callbackSet.size : 0;
-  }
-
-  /**
-   * Get all pools with registered callbacks
-   * @returns {Array<string>} Array of pool addresses with callbacks
-   */
-  getPoolsWithCallbacks() {
-    return Array.from(this.poolUpdateCallbacks.keys());
   }
 
   /**
@@ -315,9 +220,6 @@ class PoolService {
       // Remove from memory
       delete this.monitoredPools[poolAddress];
 
-      // Remove all callback registrations for this pool
-      this.unregisterAllCallbacksForPool(poolAddress);
-
       // Set monitoring flag to false in database using MongoDB directly
       await this.stateManager.poolsCollection.updateOne(
         { poolAddress },
@@ -347,9 +249,6 @@ class PoolService {
 
     // Clear memory state
     this.monitoredPools = {};
-
-    // Clear all callbacks
-    this.poolUpdateCallbacks.clear();
 
     // Stop auto-save
     this._stopAutoSave();
@@ -442,76 +341,43 @@ class PoolService {
 
           const newPriceT1T0 = parseFloat(calculatePrice(sqrtPriceX96, poolInfo.token0.decimals, poolInfo.token1.decimals));
 
-          // Call all registered callbacks for this pool
-          const callbackSet = this.poolUpdateCallbacks.get(poolAddress);
-          if (callbackSet && callbackSet.size > 0) {
-            const updateData = {
-              poolInfo,
-              newPrice: newPriceT1T0,
-              timestamp: getTimeInTimezone(timezone),
-              poolAddress,
-              swapData: {
-                sqrtPriceX96,
-                amount0,
-                amount1,
-                tick
-              }
-            };
+          // Prepare swap information
+          const swapInfo = {
+            poolAddress,
+            transactionHash: log.transactionHash,
+            blockNumber: log.blockNumber,
+            logIndex: log.logIndex,
+            sender: args.sender,
+            recipient: args.recipient,
+            amount0: args.amount0,
+            amount1: args.amount1,
+            sqrtPriceX96: args.sqrtPriceX96,
+            liquidity: args.liquidity,
+            tick: args.tick,
+            newPrice: newPriceT1T0,
+            timestamp: getTimeInTimezone(timezone)
+          };
 
-            // Call each registered callback
-            for (const callbackInfo of callbackSet) {
-              try {
-                callbackInfo.callback(updateData);
-              } catch (error) {
-                console.error(`Error in pool update callback ${callbackInfo.id} for ${poolAddress}:`, error.message);
-              }
-            }
-          }
+          // Prepare pool information
+          const poolData = {
+            poolAddress,
+            token0: poolInfo.token0,
+            token1: poolInfo.token1,
+            fee: poolInfo.fee,
+            platform: poolInfo.platform,
+            blockchain: poolInfo.blockchain,
+            currentPrice: newPriceT1T0,
+            lastPrice: poolInfo.lastPriceT1T0
+          };
 
-          // Legacy: Update pool message with new price (kept for backward compatibility)
-          this._updatePoolMessageWithPrice(botInstance, poolAddress, poolInfo, newPriceT1T0, timezone);
+          // Emit swap event with swap info and pool info
+          this.emit('swap', swapInfo, poolData);
 
           this._checkPriceAlerts(botInstance, poolInfo, newPriceT1T0);
           poolInfo.lastPriceT1T0 = newPriceT1T0;
         });
       }
     });
-  }
-
-  /**
-   * Update pool message with new price while keeping the same formatting
-   * @private
-   * @param {Object} botInstance - Telegram bot instance
-   * @param {string} poolAddress - Pool address
-   * @param {Object} poolInfo - Pool information
-   * @param {number} newPrice - New price
-   * @param {string} timezone - Timezone for time display
-   */
-  async _updatePoolMessageWithPrice(botInstance, poolAddress, poolInfo, newPrice, timezone) {
-    try {
-      // Check if there are any registered callbacks - if so, let them handle the update
-      if (this.poolUpdateCallbacks.has(poolAddress)) {
-        return; // Skip legacy update when callbacks are registered
-      }
-
-      // Legacy fallback: Use the existing message updating logic from pool command handler
-      const PoolHandler = require('../telegram/commands/pool');
-
-      await PoolHandler.sendOrUpdatePoolMessage(
-        botInstance,
-        poolInfo.chatId,
-        poolInfo.messageId,
-        poolAddress,
-        null, // provider not needed when using pre-calculated price
-        {
-          preCalculatedPrice: newPrice,
-          includeTimestamp: true
-        }
-      );
-
-    } catch (error) {
-      console.error(`Error updating pool message for ${poolAddress} in chat ${poolInfo.chatId}: ${error.message}`);
-    }
   }
 
   /**
