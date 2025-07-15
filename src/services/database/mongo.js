@@ -5,7 +5,19 @@
 const { MongoClient } = require('mongodb');
 
 class Mongo {
+  static #instance = null;
+
+  static getInstance() {
+    if (!Mongo.#instance) {
+      Mongo.#instance = new Mongo();
+    }
+    return Mongo.#instance;
+  }
+
   constructor() {
+    if (Mongo.#instance) {
+      throw new Error('Use Mongo.getInstance() instead of new operator');
+    }
     this.client = null;
     this.db = null;
     this.poolsCollection = null;
@@ -696,4 +708,6 @@ class Mongo {
   }
 }
 
-module.exports = Mongo;
+module.exports = {
+  mongo: Mongo.getInstance()
+};

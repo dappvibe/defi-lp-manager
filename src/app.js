@@ -7,13 +7,15 @@ const { getProvider } = require('./services/blockchain/provider');
 const poolService = require('./services/uniswap/pool');
 const Bot = require('./services/telegram/bot');
 const PositionMonitor = require('./services/uniswap/position-monitor');
-const MongoStateManager = require('./services/database/mongo');
+const { mongo } = require('./services/database/mongo');
 
 /**
  * Initialize the application
  * @returns {Object} Application context with initialized services
  */
 async function initializeApp() {
+    await mongo.connect();
+
     // Initialize services
     const provider = getProvider();
 
@@ -25,7 +27,7 @@ async function initializeApp() {
     await poolService.initialize();
 
     // Initialize position monitor for wallet tracking with state manager
-    const positionMonitor = new PositionMonitor(provider, mongoStateManager);
+    const positionMonitor = new PositionMonitor(provider, mongo);
 
     // Initialize the Bot with the pool service and position monitor
     const bot = new Bot(
@@ -44,7 +46,7 @@ async function initializeApp() {
         bot,
         poolService,
         positionMonitor,
-        mongoStateManager,
+        mongo,
     };
 }
 
