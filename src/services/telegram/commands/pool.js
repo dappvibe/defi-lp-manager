@@ -3,10 +3,7 @@
  * Lists all configured pools with toggle buttons for monitoring
  * Usage: /pool
  */
-const { createPoolContract } = require('../../uniswap/contracts');
-const poolService = require('../../uniswap/pool');
-const { calculatePrice } = require('../../uniswap/utils');
-const poolsConfig = require('../../../config/pools');
+const { Pool } = require('../../uniswap/pool');
 
 /**
  * Represents a no pools configured message
@@ -27,21 +24,12 @@ class NoPoolsMessage {
 class PoolInfoMessage {
   /**
    * Create a pool info message instance
-   * @param {Object} poolInfo - Pool information object
-   * @param {string} poolAddress - Pool address
-   * @param {string} currentPrice - Current price as string
-   * @param {string} tvlText - TVL text (empty if not available)
-   * @param {boolean} isMonitored - Whether pool is currently monitored
-   * @param {Object} options - Additional options
-   * @param {boolean} [options.includeTimestamp] - Whether to include timestamp
+   * @param pool
+   * @param price
    */
-  constructor(poolInfo, poolAddress, currentPrice, tvlText, isMonitored, options = {}) {
-    this.poolInfo = poolInfo;
-    this.poolAddress = poolAddress;
-    this.currentPrice = currentPrice;
-    this.tvlText = tvlText;
-    this.isMonitored = isMonitored;
-    this.options = options;
+  constructor(pool, price) {
+    this.pool = pool;
+    this.price = price;
   }
 
   /**
@@ -49,27 +37,33 @@ class PoolInfoMessage {
    * @returns {string} The complete formatted message
    */
   toString() {
-    const pair = `[${this.poolInfo.token0.symbol}/${this.poolInfo.token1.symbol}](https://pancakeswap.finance/info/v3/arb/pairs/${this.poolAddress})`;
-    const feePercent = this.poolInfo.fee ? (this.poolInfo.fee / 10000).toFixed(2) + '%' : 'Unknown';
+    const pair = `[${this.pool.info.token0.symbol}/${this.pool.info.token1.symbol}](https://pancakeswap.finance/info/v3/arb/pairs/${this.pool.address})`;
+    const feePercent = this.pool.info.fee ? (this.pool.info.fee / 10000).toFixed(2) + '%' : 'Unknown';
     const pairWithFee = `${pair} (${feePercent})`;
 
-    let messageText = `📊 ${this.currentPrice}
+    let messageText = `📊 ${this.price.toFixed(4)}
 💰 **${pairWithFee}**`;
 
     // Add TVL if available
-    if (this.tvlText) {
-      messageText += `\n${this.tvlText}`;
+    if (this.pool.tvl) {
+      const tvlText = `💎 TVL: $${this.pool.info.tvl.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+      messageText += `\n${tvlText}`;
     }
 
-    // Add timestamp if requested
-    if (this.options.includeTimestamp) {
-      const { getTimeInTimezone } = require('../../../utils/time');
-      const updateTime = getTimeInTimezone();
-      messageText += `
+    const { getTimeInTimezone } = require('../../../utils/time');
+    const updateTime = getTimeInTimezone();
+    messageText += `
 ⏰ ${updateTime}`;
-    }
 
     return messageText;
+  }
+
+  getOptions() {
+    return {
+      parse_mode: 'Markdown',
+      reply_markup: this.getKeyboard(),
+      disable_web_page_preview: true
+    };
   }
 
   /**
@@ -77,11 +71,12 @@ class PoolInfoMessage {
    * @returns {Object} Inline keyboard object
    */
   getKeyboard() {
+    const isMonitored = this.pool.getMonitoringStatus();
     return {
       inline_keyboard: [[
         {
-          text: this.isMonitored ? '🔴 Stop Monitoring' : '🟢 Start Monitoring',
-          callback_data: `pool_${this.isMonitored ? 'stop' : 'start'}_${this.poolAddress}`
+          text: isMonitored ? '🔴 Stop Monitoring' : '🟢 Start Monitoring',
+          callback_data: `pool_${isMonitored ? 'stop' : 'start'}_${this.pool.address}`
         }
       ]]
     };
@@ -113,26 +108,75 @@ class PoolHandler {
   /**
    * Create a new PoolHandler instance
    * @param {TelegramBot} bot - The bot instance
-   * @param {Object} monitoredPools - Object containing monitored pools
+   * @param db
+   * @param poolsConfig
    */
-  constructor(bot, monitoredPools) {
+  constructor(bot, db, poolsConfig) {
     this.bot = bot;
-    this.monitoredPools = monitoredPools;
+    this.db = db;
 
-    /**
-     * Store active pool monitors for cleanup
-     * @type {Map<string, {chatId: number, messageId: number}>} Map of poolAddress -> message info
-     */
-    this.activeMonitors = new Map();
+    // just load deps, no requests are made here
+    this.pools = new Map();
+    const configuredPools = poolsConfig.getPools('pancakeswap', 'arbitrum');
+    for (const address of configuredPools) {
+      this.pools[address] = new Pool(address);
+    }
 
     /**
      * Store event listener reference for cleanup
-     * @type {Function|null}
+     * @type {Function}
      */
-    this.swapEventListener = null;
+    this.swapEventListener = (swapInfo, poolData) => {
+      this.handleSwapEvent(swapInfo, poolData);
+    };;
 
     // Register handlers on instantiation
     this.registerHandlers();
+
+    // Restore monitored pools on startup
+    this.restoreMonitoredPools();
+  }
+
+  /**
+   * Restore monitoring for pools that were previously monitored
+   * Called automatically during constructor
+   */
+  async restoreMonitoredPools() {
+    try {
+      console.log('Restoring monitored pools from database...');
+
+      // Get all monitored pool messages
+      const monitoredPoolMessages = await this.db.getMonitoredPoolMessages();
+
+      console.log(`Found ${monitoredPoolMessages.length} pool messages to restore monitoring for`);
+
+      // Restore monitoring for each pool
+      for (const poolMessage of monitoredPoolMessages) {
+        try {
+          const pool = this.pools[poolMessage.poolAddress];
+          if (pool) {
+            // Set the chat and message IDs from database
+            if (poolMessage.chatId && poolMessage.messageId) {
+              await pool.getPoolInfo();
+              pool.info.chatId = poolMessage.chatId;
+              pool.info.messageId = poolMessage.messageId;
+            }
+
+            // Start monitoring
+            await this.startPoolMonitoring(pool.address);
+            console.log(`Restored monitoring for pool ${pool.address}`);
+          } else {
+            console.warn(`Pool ${poolMessage.poolAddress} not found in configuration, skipping restore`);
+          }
+        } catch (error) {
+          console.error(`Error restoring monitoring for pool ${poolMessage.poolAddress}:`, error.message);
+        }
+      }
+
+      console.log('Pool monitoring restoration completed');
+    } catch (error) {
+      console.error('Error restoring monitored pools:', error);
+    }
   }
 
   /**
@@ -148,9 +192,6 @@ class PoolHandler {
     this.bot.on('callback_query', (callbackQuery) => {
       this.handleCallback(callbackQuery);
     });
-
-    // Initialize event listener for swap events
-    this.initializeSwapEventListener();
   }
 
   /**
@@ -161,20 +202,23 @@ class PoolHandler {
     const chatId = msg.chat.id;
 
     try {
-      // Get all configured pools
-      const configuredPools = poolsConfig.getEnabledPools();
-
-      if (configuredPools.length === 0) {
+      if (Object.keys(this.pools).length === 0) {
         const noPoolsMessage = new NoPoolsMessage();
         await this.bot.sendMessage(chatId, noPoolsMessage.toString());
         return;
       }
 
       // Send a message for each configured pool
-      for (const poolConfig of configuredPools) {
-        await this.sendOrUpdatePoolMessage(chatId, null, poolConfig.address);
-      }
+      for (const pool of Object.values(this.pools)) {
+        await pool.getPoolInfo(); // fetch from db or blockchain
+        const price = await pool.getCurrentPrice(); // fetch fresh on list
 
+        // On /pool command always send new list
+          pool.info.messageId = null;
+
+        // defer request (order is not important)
+        this.sendOrUpdatePoolMessage(chatId, pool, price);
+      }
     } catch (error) {
       console.error('Error listing pools:', error);
       const errorMessage = new PoolErrorMessage('Error loading pools. Please try again.');
@@ -206,14 +250,35 @@ class PoolHandler {
     const poolAddress = parts[2];
 
     try {
+      const pool = this.pools[poolAddress];
+      if (!pool) {
+        await this.bot.answerCallbackQuery(callbackQuery.id, { text: 'Pool not found' });
+        return;
+      }
+
       switch (action) {
         case 'start':
-          await this.startPoolMonitoring(chatId, messageId, poolAddress);
+          // Set the message ID before starting monitoring so it updates the existing message
+          if (!pool.info) {
+            await pool.getPoolInfo();
+          }
+          pool.info.messageId = messageId;
+          pool.info.chatId = chatId;
+
+          await this.startPoolMonitoring(poolAddress);
+
+          // Save pool message to database
+          await this.db.savePoolMessage(poolAddress, chatId, messageId, true);
+
           await this.bot.answerCallbackQuery(callbackQuery.id, { text: 'Monitoring started!' });
           break;
         case 'stop':
           await this.stopPoolMonitoring(poolAddress, chatId, messageId);
-          await this.sendOrUpdatePoolMessage(chatId, messageId, poolAddress);
+
+          // Remove pool message from database
+          await this.db.removePoolMessage(poolAddress, chatId);
+
+          await this.sendOrUpdatePoolMessage(chatId, pool, await pool.getCurrentPrice());
           await this.bot.answerCallbackQuery(callbackQuery.id, { text: 'Monitoring stopped!' });
           break;
         default:
@@ -227,29 +292,26 @@ class PoolHandler {
 
   /**
    * Start monitoring a pool from callback
-   * @param {number} chatId - Chat ID
-   * @param {number} messageId - Message ID to update
-   * @param {string} poolAddress - Pool address
+   * @param address
    */
-  async startPoolMonitoring(chatId, messageId, poolAddress) {
-    try {
-      const result = await poolService.startPoolMonitoring(this.bot, poolAddress, chatId, messageId);
+  async startPoolMonitoring(address) {
+    const pool = this.pools[address];
+    if (!pool) {
+      throw new Error(`Pool ${address} not configured.`);
+    }
 
-      // Store monitor info for event handling
-      this.activeMonitors.set(poolAddress, {
-        chatId: chatId,
-        messageId: messageId
-      });
+    try {
+      // start listening blockchain for swaps
+      const { info, price } = await pool.startMonitoring();
 
       // Immediately update the pool message with current price and timestamp
-      await this.sendOrUpdatePoolMessage(chatId, messageId, poolAddress, {
-        preCalculatedPrice: result.currentPrice,
-        includeTimestamp: true
-      });
+      await this.sendOrUpdatePoolMessage(pool.info.chatId, pool, price);
 
-      console.log(`Started monitoring pool ${poolAddress} in chat ${chatId}`);
+      this.initializeSwapEventListener(pool);
+
+      console.log(`Started monitoring pool ${address} in chat ${pool.info.chatId}`);
     } catch (error) {
-      console.error(`Error starting pool monitoring for ${poolAddress}:`, error.message);
+      console.error(`Error starting pool monitoring for ${address}:`, error.message);
       throw error;
     }
   }
@@ -261,11 +323,12 @@ class PoolHandler {
    * @param {number} messageId - Message ID
    */
   async stopPoolMonitoring(poolAddress, chatId, messageId) {
-    try {
-      await poolService.stopMonitoring(poolAddress);
+    const pool = this.pools[poolAddress];
 
-      // Remove from active monitors
-      this.activeMonitors.delete(poolAddress);
+    try {
+      await pool.stopMonitoring();
+
+      pool.removeListener('swap', this.swapEventListener);
 
       console.log(`Stopped monitoring pool ${poolAddress} in chat ${chatId}`);
     } catch (error) {
@@ -277,16 +340,9 @@ class PoolHandler {
   /**
    * Initialize event listener for swap events from PoolService
    */
-  initializeSwapEventListener() {
-    if (this.swapEventListener) {
-      poolService.removeListener('swap', this.swapEventListener);
-    }
-
-    this.swapEventListener = (swapInfo, poolData) => {
-      this.handleSwapEvent(swapInfo, poolData);
-    };
-
-    poolService.on('swap', this.swapEventListener);
+  initializeSwapEventListener(pool) {
+    pool.removeListener('swap', this.swapEventListener);
+    pool.on('swap', this.swapEventListener);
     console.log('Initialized swap event listener for pool command');
   }
 
@@ -296,146 +352,87 @@ class PoolHandler {
    * @param {Object} poolData - Pool data
    */
   async handleSwapEvent(swapInfo, poolData) {
-    const { poolAddress, newPrice, timestamp } = swapInfo;
-    const monitorInfo = this.activeMonitors.get(poolAddress);
+    const { address, newPrice, timestamp } = swapInfo;
 
-    if (!monitorInfo) {
-      return; // No active monitor for this pool
-    }
+    // get chat and message ids from pool messages collection
+    const pool = this.pools[poolData.address];
+    await pool.getPoolInfo();
+
+    // Find all pool messages for this pool
+    const monitoredPoolMessages = await this.db.getMonitoredPoolMessages();
+    const poolMessages = monitoredPoolMessages.filter(msg => msg.poolAddress === address);
 
     try {
-      // Update the pool message with new price and timestamp
-      await this.sendOrUpdatePoolMessage(monitorInfo.chatId, monitorInfo.messageId, poolAddress, {
-        preCalculatedPrice: newPrice,
-        includeTimestamp: true
-      });
-
-      console.log(`Updated pool message for ${poolAddress} in chat ${monitorInfo.chatId} via swap event - new price: ${newPrice}`);
+      // Update all pool messages for this pool
+      for (const poolMessage of poolMessages) {
+        pool.info.chatId = poolMessage.chatId;
+        pool.info.messageId = poolMessage.messageId;
+        await this.sendOrUpdatePoolMessage(poolMessage.chatId, pool, newPrice);
+      }
     } catch (error) {
-      console.error(`Error handling swap event for pool ${poolAddress}:`, error.message);
+      console.error(`Error handling swap event for pool ${address}:`, error.message);
     }
   }
 
   /**
    * Send or update a pool message with current price, TVL and toggle button
    * @param {number} chatId - Chat ID
-   * @param {number|null} messageId - Message ID to update (null for new message)
-   * @param {string} poolAddress - Pool address
-   * @param {Object} options - Additional options
-   * @param {number} [options.preCalculatedPrice] - Pre-calculated price to use instead of fetching
-   * @param {boolean} [options.includeTimestamp] - Whether to include timestamp in message
+   * @param pool
+   * @param price From swap event or slot0
    */
-  async sendOrUpdatePoolMessage(chatId, messageId, poolAddress, options = {}) {
+  async sendOrUpdatePoolMessage(chatId, pool, price) {
     try {
-      // Find pool config
-      const poolConfig = poolsConfig.getPoolByAddress(poolAddress);
-      if (!poolConfig) {
-        console.error(`Pool config not found for ${poolAddress}`);
+      if (!pool.info || !pool.info.token0 || !pool.info.token1) {
+        console.error(`Pool info not available for ${pool.address}`);
         return;
       }
 
-      // Get pool information from cache/database
-      const poolInfo = await poolService.getPool(poolAddress);
+      const msg = new PoolInfoMessage(pool, price);
 
-      if (!poolInfo || !poolInfo.token0 || !poolInfo.token1) {
-        console.error(`Pool info not available for ${poolAddress}`);
-        return;
-      }
+      const messageOptions = msg.getOptions();
 
-      // Get current price (use pre-calculated if provided)
-      let currentPrice = 'N/A';
-      if (options.preCalculatedPrice !== undefined) {
-        currentPrice = options.preCalculatedPrice.toFixed(5);
-      } else {
-        try {
-          const price = await poolService.getPoolPrice(poolAddress);
-          currentPrice = price !== null ? price.toFixed(5) : 'N/A';
-        } catch (error) {
-          console.error(`Error getting price for pool ${poolAddress}:`, error.message);
-        }
-      }
-
-      // Calculate TVL
-      let tvlText = '';
-      try {
-        const tvl = await poolService.getPoolTVL(poolInfo, poolAddress);
-        if (tvl !== null && tvl > 0) {
-          tvlText = `💎 TVL: $${tvl.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-        }
-      } catch (error) {
-        console.error(`Error calculating TVL for pool ${poolAddress}:`, error.message);
-      }
-
-      // Check if pool is currently being monitored
-      const isMonitored = poolService.isMonitoring(poolAddress);
-
-      // Create pool info message
-      const poolInfoMessage = new PoolInfoMessage(
-        poolInfo,
-        poolAddress,
-        currentPrice,
-        tvlText,
-        isMonitored,
-        {
-          includeTimestamp: options.includeTimestamp
-        }
-      );
-
-      const messageOptions = {
-        parse_mode: 'Markdown',
-        reply_markup: poolInfoMessage.getKeyboard(),
-        disable_web_page_preview: true
-      };
-
-      let resultMessage;
-      // Update message if messageId is provided, otherwise send new message
-      if (messageId) {
-        resultMessage = await this.bot.editMessageText(poolInfoMessage.toString(), {
+      let result;
+      // Update message if pool.info.messageId is provided, otherwise send new message
+      if (pool.info.messageId) {
+        result = await this.bot.editMessageText(msg.toString(), {
           chat_id: chatId,
-          message_id: messageId,
+          message_id: pool.info.messageId,
           ...messageOptions
         });
       } else {
-        resultMessage = await this.bot.sendMessage(chatId, poolInfoMessage.toString(), messageOptions);
+        result = await this.bot.sendMessage(chatId, msg.toString(), messageOptions);
 
-        // Update message ID in MongoDB for this pool
-        if (resultMessage && resultMessage.message_id) {
-          await this.updatePoolMessageId(poolAddress, chatId, resultMessage.message_id);
+        // Update message ID in pool messages collection
+        if (result && result.message_id) {
+          await this.updatePoolMessageId(pool.address, chatId, result.message_id);
         }
       }
-
     } catch (error) {
-      console.error(`Error ${messageId ? 'updating' : 'sending'} pool message for ${poolAddress}:`, error.message);
+      console.error(`Error ${pool.info.messageId ? 'updating' : 'sending'} pool message for ${pool.address}:`, error.message);
     }
   }
 
   /**
-   * Update the message ID for a pool in MongoDB
+   * Update the message ID for a pool message
    * @param {string} poolAddress - Pool address
    * @param {number} chatId - Chat ID
    * @param {number} messageId - New message ID
    */
   async updatePoolMessageId(poolAddress, chatId, messageId) {
     try {
-      // Get existing pool data
-      const existingPoolData = await poolService.stateManager.getCachedPoolInfo(poolAddress);
+      // Update the pool message with new message ID
+      await this.db.updatePoolMessageId(poolAddress, chatId, messageId);
 
-      if (existingPoolData) {
-        // Update the pool data with new message ID and chat ID
-        const updatedPoolData = {
-          ...existingPoolData,
-          chatId: chatId,
-          messageId: messageId
-        };
-
-        // Save the updated pool data
-        await poolService.stateManager.savePoolState(poolAddress, updatedPoolData);
-        console.log(`Updated message ID for pool ${poolAddress}: chatId=${chatId}, messageId=${messageId}`);
-      } else {
-        console.warn(`No existing pool data found for ${poolAddress} when trying to update message ID`);
+      // Also update the pool info for consistency
+      const pool = this.pools[poolAddress];
+      if (pool && pool.info) {
+        pool.info.messageId = messageId;
+        pool.info.chatId = chatId;
       }
+
+      console.debug(`Updated message ID for pool message ${poolAddress}: chatId=${chatId}, messageId=${messageId}`);
     } catch (error) {
-      console.error(`Error updating message ID for pool ${poolAddress}:`, error.message);
+      console.error(`Error updating message ID for pool message ${poolAddress}:`, error.message);
     }
   }
 

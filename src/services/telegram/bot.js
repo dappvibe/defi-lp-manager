@@ -16,18 +16,18 @@ class Bot extends TelegramBot {
    * Initialize the bot
    * @param {string} token - Telegram bot token
    * @param {object} provider - Ethereum provider instance
-   * @param {object} monitoredPools - Object to store monitored pools
    * @param {object} positionMonitor - Position monitor instance
+   * @param mongoStateManager
    * @param {object} options - Additional bot options
    */
-  constructor(token, provider, monitoredPools, positionMonitor, options = {}) {
+  constructor(token, provider, positionMonitor, mongoStateManager, options = {}) {
     // Initialize parent TelegramBot with polling enabled
-    super(token, { polling: true, ...options });
+    super(token, {polling: true, ...options});
 
     // Store dependencies
     this.provider = provider;
-    this.monitoredPools = monitoredPools;
     this.positionMonitor = positionMonitor;
+    this.mongo = mongoStateManager;
 
     // Initialize throttling
     this.rateLimit = environment.telegram.rateLimit;
@@ -49,6 +49,15 @@ class Bot extends TelegramBot {
   init() {
     this.setupEventHandlers();
     this.registerCommandHandlers();
+  }
+
+  registerCommandHandlers() {
+    this.startHandler = new StartHandler(this, poolsConfig, this.positionMonitor);
+    //this.helpHandler = new HelpHandler(this);
+    //this.notifyHandler = new NotifyHandler(this, this.monitoredPools);
+    this.poolHandler = new PoolHandler(this, this.mongo, poolsConfig);
+    //this.walletHandler = new WalletHandler(this, this.positionMonitor);
+    //this.lpHandler = new LpHandler(this, this.positionMonitor);
   }
 
   /**
@@ -123,19 +132,6 @@ class Bot extends TelegramBot {
   setupEventHandlers() {
     this.on('polling_start', () => console.log('Telegram Bot started polling'));
     this.on('polling_error', (error) => console.error('Telegram Bot polling error:', error));
-  }
-
-  /**
-   * Register all command handlers
-   */
-  registerCommandHandlers() {
-    // Create all handler instances and store them as properties
-    this.startHandler = new StartHandler(this, this.monitoredPools, this.positionMonitor);
-    this.helpHandler = new HelpHandler(this);
-    this.notifyHandler = new NotifyHandler(this, this.monitoredPools);
-    this.poolHandler = new PoolHandler(this, this.monitoredPools);
-    this.walletHandler = new WalletHandler(this, this.positionMonitor);
-    this.lpHandler = new LpHandler(this, this.positionMonitor);
   }
 
   /**
