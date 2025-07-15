@@ -4,9 +4,11 @@
  */
 const TelegramBot = require('node-telegram-bot-api');
 const { environment } = require('../../config');
-const { StartHandler, HelpHandler, NotifyHandler, PoolHandler, WalletHandler, LpHandler } = require('./commands');
+const { StartHandler, HelpHandler, NotifyHandler, WalletHandler, LpHandler } = require('./commands');
 const Throttler = require('./throttler');
 const poolsConfig = require('../../config/pools');
+const TelegramMessage = require("./message");
+const { PoolInfoMessage, PoolHandler } = require("./commands/pool");
 
 /**
  * Bot class extending TelegramBot with throttling and command handling
@@ -60,6 +62,35 @@ class Bot extends TelegramBot {
     //this.lpHandler = new LpHandler(this, this.positionMonitor);
   }
 
+  send(message) {
+    if (!message instanceof TelegramMessage) throw new Error('Invalid message type');
+
+    if (!message.id) {
+      return this.sendMessage(message.chatId, message.toString(), message.getOptions()).then(reply => {
+        message.id = reply.message_id;
+        message.metadata = reply;
+        return message;
+      });
+    } else {
+      // price is updated often, we must not let API to rate limit requests
+      if (message instanceof PoolInfoMessage) {
+        const messageKey = `${message.chatId}_${message.id}`;
+        const lastEdit = this.lastEditTimes[messageKey] || 0;
+        const timeSinceLastEdit = Date.now() - lastEdit;
+        const delayNeeded = Math.max(0, this.rateLimit.messageEditDelay - timeSinceLastEdit);
+        if (delayNeeded > 0) {
+          // Return a resolved promise to maintain interface consistency
+          return Promise.resolve(message);
+        }
+      }
+
+      return this.editMessageText(message.toString(), message.getOptions()).then(reply => {
+        message.metadata = reply;
+        return message;
+      });
+    }
+  }
+
   /**
    * Throttled version of sendMessage
    * @param {number} chatId - Chat ID
@@ -79,18 +110,10 @@ class Bot extends TelegramBot {
    */
   async editMessageText(text, options = {}) {
     const messageKey = `${options.chat_id || ''}_${options.message_id || ''}`;
-    const now = Date.now();
     const lastEdit = this.lastEditTimes[messageKey] || 0;
-
-    // Calculate delay needed to respect minimum time between edits
-    const timeSinceLastEdit = now - lastEdit;
+    const timeSinceLastEdit = Date.now() - lastEdit;
     const delayNeeded = Math.max(0, this.rateLimit.messageEditDelay - timeSinceLastEdit);
-
-    // Check if this is a price update message by looking for specific patterns
-    const isPriceUpdate = text.includes('📊 Price:') && text.includes('⏰ Updated:');
-
-    // If this is a price update that would be throttled, discard it
-    if (isPriceUpdate && delayNeeded > 0) {
+    if (delayNeeded > 0) {
       // Return a resolved promise to maintain interface consistency
       return Promise.resolve({ message_id: options.message_id });
     }
@@ -113,17 +136,6 @@ class Bot extends TelegramBot {
    */
   async answerCallbackQuery(callbackQueryId, options = {}) {
     return this.throttler.throttle(() => super.answerCallbackQuery(callbackQueryId, options));
-  }
-
-  /**
-   * Throttled version of sendPhoto
-   * @param {number} chatId - Chat ID
-   * @param {string|Buffer} photo - Photo to send
-   * @param {object} options - Photo options
-   * @returns {Promise} - Promise resolving to sent photo
-   */
-  async sendPhoto(chatId, photo, options = {}) {
-    return this.throttler.throttle(() => super.sendPhoto(chatId, photo, options));
   }
 
   /**

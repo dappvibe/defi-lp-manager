@@ -4,11 +4,12 @@
  * Usage: /pool
  */
 const { Pool } = require('../../uniswap/pool');
+const TelegramMessage = require("../message");
 
 /**
  * Represents a no pools configured message
  */
-class NoPoolsMessage {
+class NoPoolsMessage extends TelegramMessage {
   /**
    * Get the formatted message content
    * @returns {string} The no pools message
@@ -21,13 +22,14 @@ class NoPoolsMessage {
 /**
  * Represents a pool information message with current price, TVL and toggle button
  */
-class PoolInfoMessage {
+class PoolInfoMessage extends TelegramMessage {
   /**
    * Create a pool info message instance
    * @param pool
    * @param price
    */
   constructor(pool, price) {
+    super();
     this.pool = pool;
     this.price = price;
   }
@@ -86,12 +88,13 @@ class PoolInfoMessage {
 /**
  * Represents an error message for pool operations
  */
-class PoolErrorMessage {
+class PoolErrorMessage extends TelegramMessage {
   /**
    * Create a pool error message instance
    * @param {string} errorText - Error message text
    */
   constructor(errorText) {
+    super();
     this.errorText = errorText;
   }
 
@@ -204,8 +207,8 @@ class PoolHandler {
     try {
       if (Object.keys(this.pools).length === 0) {
         const noPoolsMessage = new NoPoolsMessage();
-        await this.bot.sendMessage(chatId, noPoolsMessage.toString());
-        return;
+        noPoolsMessage.chatId = chatId;
+        return this.bot.send(noPoolsMessage);
       }
 
       // Send a message for each configured pool
@@ -214,15 +217,19 @@ class PoolHandler {
         const price = await pool.getCurrentPrice(); // fetch fresh on list
 
         // On /pool command always send new list
-          pool.info.messageId = null;
+        const poolMsg = new PoolInfoMessage(pool, price);
+        poolMsg.chatId = chatId;
 
         // defer request (order is not important)
-        this.sendOrUpdatePoolMessage(chatId, pool, price);
+        this.bot.send(poolMsg).then(msg => {
+          this.updatePoolMessageId(pool.address, msg.chatId, msg.id);
+        });
       }
     } catch (error) {
       console.error('Error listing pools:', error);
       const errorMessage = new PoolErrorMessage('Error loading pools. Please try again.');
-      await this.bot.sendMessage(chatId, errorMessage.toString());
+      errorMessage.chatId = chatId;
+      await this.bot.send(errorMessage);
     }
   }
 
@@ -278,7 +285,6 @@ class PoolHandler {
           // Remove pool message from database
           await this.db.removePoolMessage(poolAddress, chatId);
 
-          await this.sendOrUpdatePoolMessage(chatId, pool, await pool.getCurrentPrice());
           await this.bot.answerCallbackQuery(callbackQuery.id, { text: 'Monitoring stopped!' });
           break;
         default:
@@ -490,4 +496,9 @@ Shows all pre-configured pools as individual messages, each displaying:
   }
 }
 
-module.exports = PoolHandler;
+module.exports = {
+  PoolHandler,
+  PoolInfoMessage,
+  NoPoolsMessage,
+  PoolErrorMessage,
+};
