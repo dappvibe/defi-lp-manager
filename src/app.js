@@ -4,7 +4,6 @@
  */
 const { environment } = require('./config');
 const { getProvider } = require('./services/blockchain/provider');
-const poolService = require('./services/uniswap/pool');
 const Bot = require('./services/telegram/bot');
 const PositionMonitor = require('./services/uniswap/position-monitor');
 const { mongo } = require('./services/database/mongo');
@@ -19,13 +18,6 @@ async function initializeApp() {
     // Initialize services
     const provider = getProvider();
 
-    // Initialize MongoDB state manager
-    const mongoStateManager = new MongoStateManager();
-    await mongoStateManager.connect();
-
-    // Initialize pool service
-    await poolService.initialize();
-
     // Initialize position monitor for wallet tracking with state manager
     const positionMonitor = new PositionMonitor(provider, mongo);
 
@@ -33,18 +25,13 @@ async function initializeApp() {
     const bot = new Bot(
         environment.telegram.botToken,
         provider,
-        poolService.getMonitoredPools(),
-        positionMonitor
+        positionMonitor,
+        mongo
     );
-
-    // Initialize pool service with monitoring functionality
-    // This must be done after the bot is initialized since it needs the bot instance
-    await poolService.initialize(bot, provider);
 
     return {
         provider,
         bot,
-        poolService,
         positionMonitor,
         mongo,
     };
