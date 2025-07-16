@@ -252,7 +252,7 @@ class PoolHandler {
     try {
       message.pool.removeListener('swap', this.swapEventListener);
       await message.pool.stopMonitoring();
-      this.db.savePoolMessage(message.pool.info.address, message.chatId, message.id, false);
+      this.db.savePoolMessage(message.pool.address, message.chatId, message.id, false);
     } catch (error) {
       console.error(`Error stopping pool monitoring ${message.pool.info.token0.symbol}/${message.pool.info.token1.symbol} (${message.pool.info.fee}%)`, error.message);
       throw error;
