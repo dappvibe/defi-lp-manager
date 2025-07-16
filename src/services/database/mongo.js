@@ -195,8 +195,6 @@ class Mongo {
         poolMessage,
         { upsert: true }
       );
-
-      console.log(`Saved pool message for ${poolAddress} in chat ${chatId}`);
     } catch (error) {
       console.error(`Error saving pool message for ${poolAddress}:`, error.message);
     }
