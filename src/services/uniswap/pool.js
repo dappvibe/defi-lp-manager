@@ -165,7 +165,7 @@ class Pool extends EventEmitter {
     await this._attachSwapListener();
     this.isMonitoring = true;
 
-    console.log(`Started monitoring pool ${this.address}`);
+    console.log(`Started monitoring pool ${this.info.token0.symbol}/${this.info.token1.symbol} (${this.info.fee}%)`);
 
     // Save monitoring state
     await this._saveMonitoringState();
@@ -204,8 +204,7 @@ class Pool extends EventEmitter {
         }
       }
     );
-
-    console.log(`Stopped monitoring pool ${this.address}`);
+    console.log(`Stopped monitoring pool ${this.info.token0.symbol}/${this.info.token1.symbol} (${this.info.fee}%)`);
   }
 
   /**
