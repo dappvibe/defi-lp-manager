@@ -135,10 +135,7 @@ class Pool extends EventEmitter {
       }
 
       // Calculate TVL (assuming token1 is stablecoin like USDC)
-      const token0ValueInToken1 = token0Amount * currentPrice;
-      const totalTVL = token0ValueInToken1 + token1Amount;
-
-      return totalTVL;
+      return token0Amount * currentPrice + token1Amount;
     } catch (error) {
       console.error(`Error calculating TVL for pool ${this.address}:`, error);
       return null;
