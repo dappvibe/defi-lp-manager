@@ -67,7 +67,7 @@ class Pool extends EventEmitter {
       this.info = {
         token0: token0Info,
         token1: token1Info,
-        fee,
+        fee: fee / 10000,
         tickSpacing,
         sqrtPriceX96: slot0[0],
         tick: slot0[1],
