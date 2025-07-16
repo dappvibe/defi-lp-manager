@@ -240,7 +240,6 @@ class PoolHandler {
       return price;
     } catch (error) {
       console.error(`Error starting pool monitoring  ${message.pool.info.token0.symbol}/${message.pool.info.token1.symbol} (${message.pool.info.fee}%)`, error.message);
-      throw error;
     }
   }
 
@@ -255,7 +254,6 @@ class PoolHandler {
       this.db.savePoolMessage(message.pool.address, message.chatId, message.id, false);
     } catch (error) {
       console.error(`Error stopping pool monitoring ${message.pool.info.token0.symbol}/${message.pool.info.token1.symbol} (${message.pool.info.fee}%)`, error.message);
-      throw error;
     }
   }
 
