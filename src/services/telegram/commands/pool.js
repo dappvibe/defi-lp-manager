@@ -163,7 +163,12 @@ class PoolHandler {
       // Send a message for each configured pool
       for (const message of Object.values(this.messages)) {
         await message.pool.getPoolInfo(); // fetch from db or blockchain
-        message.price = await message.pool.getCurrentPrice(); // fetch fresh on list
+        const [price, tvl] = await Promise.all([
+          message.pool.getCurrentPrice(),
+          message.pool.getTVL()
+        ]);
+        message.price = price;
+        message.pool.info.tvl = tvl;
 
         // On /pool command always send new list
         if (message.id) this.bot.deleteMessage(chatId, message.id).catch(console.debug);
@@ -287,6 +292,8 @@ class PoolHandler {
       const oldText = msg.toString();
       msg.price = newPrice;
       if (oldText === msg.toString()) return;
+
+      msg.pool.info.tvl = await msg.pool.getTVL();
 
       return await this.bot.send(msg).then(msg => {msg.lastUpdate = Date.now()});
     } catch (error) {
