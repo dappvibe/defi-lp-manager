@@ -173,6 +173,7 @@ class PoolHandler {
         // defer request (order is not important)
         this.bot.send(message).then(msg => {
           this.messages[message.pool.address] = msg;
+          this.db.savePoolMessage(message.pool.address, chatId, msg.id, msg.pool.getMonitoringStatus());
         });
       }
     } catch (error) {
