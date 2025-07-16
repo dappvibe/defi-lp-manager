@@ -63,31 +63,28 @@ class Bot extends TelegramBot {
   }
 
   send(message) {
-    if (!message instanceof TelegramMessage) throw new Error('Invalid message type');
+    try {
+      if (!message instanceof TelegramMessage) throw new Error('Invalid message type');
 
-    if (!message.id) {
-      return this.sendMessage(message.chatId, message.toString(), message.getOptions()).then(reply => {
-        message.id = reply.message_id;
-        message.metadata = reply;
-        return message;
-      });
-    } else {
-      // price is updated often, we must not let API to rate limit requests
-      if (message instanceof PoolInfoMessage) {
-        const messageKey = `${message.chatId}_${message.id}`;
-        const lastEdit = this.lastEditTimes[messageKey] || 0;
-        const timeSinceLastEdit = Date.now() - lastEdit;
-        const delayNeeded = Math.max(0, this.rateLimit.messageEditDelay - timeSinceLastEdit);
-        if (delayNeeded > 0) {
-          // Return a resolved promise to maintain interface consistency
-          return Promise.resolve(message);
-        }
+      if (!message.id) {
+        return this.sendMessage(message.chatId, message.toString(), message.getOptions()).then(reply => {
+          message.id = reply.message_id;
+          message.metadata = reply;
+          return message;
+        });
+      } else {
+        const options = {
+          ...message.getOptions(),
+          message_id: message.id,
+          chat_id: message.chatId,
+        };
+        return this.editMessageText(message.toString(), options).then(reply => {
+          message.metadata = reply;
+          return message;
+        });
       }
-
-      return this.editMessageText(message.toString(), message.getOptions()).then(reply => {
-        message.metadata = reply;
-        return message;
-      });
+    } catch (error) {
+      console.error('Error sending message:', error);
     }
   }
 
