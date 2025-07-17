@@ -9,6 +9,8 @@ const { uniswapV3Pool: poolAbi } = require('./abis');
 const { getTimeInTimezone } = require('../../utils/time');
 const { mongo } = require('../database/mongo');
 const { getProvider } = require('../blockchain/provider');
+const {getContract} = require("viem");
+const {contracts} = require("../../config");
 
 class Pool extends EventEmitter {
   static #poolInstances = new Map();
@@ -26,6 +28,34 @@ class Pool extends EventEmitter {
       Pool.#poolInstances.set(address, new Pool(address, provider, mongoOverride));
     }
     return Pool.#poolInstances.get(address);
+  }
+
+  /**
+   * Get pool data from factory
+   * @param {string} token0Address - Token0 address
+   * @param {string} token1Address - Token1 address
+   * @param {number} fee - Pool fee
+   * @returns {Promise<Pool>} Pool
+   */
+  static async getPoolOfTokens(token0Address, token1Address, fee) {
+    try {
+      const factoryContract = getContract({
+        address: contracts.getContractAddress('pancakeswap', 'arbitrum', 'V3Factory'),
+        abi: require('./abis/v3-factory.json'),
+        client: getProvider()
+      });
+
+      const poolAddress = await factoryContract.read.getPool([token0Address, token1Address, fee]);
+
+      if (poolAddress && poolAddress !== '0x0000000000000000000000000000000000000000') {
+        return this.getPool(poolAddress);
+      } else {
+        throw new Error('Pool not found');
+      }
+    } catch (error) {
+      console.error('Error getting pool data:', error);
+      return null;
+    }
   }
 
   constructor(address, provider = null, mongoOverride = null) {

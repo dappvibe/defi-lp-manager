@@ -1,13 +1,12 @@
 const { getContract } = require('viem');
 const { contracts } = require('../../config');
-const { Pool } = require('@uniswap/v3-sdk');
 const { Token } = require('@uniswap/sdk-core');
 const {EventEmitter} = require('events');
-
+const { getPool, Pool} = require('./pool');
 const { tickToHumanPrice, isPositionInRange } = require('./helpers');
 const TokenService = require('./token');
 const { getProvider } = require('../blockchain/provider');
-const { Position: UniswapPosition } = require('@uniswap/v3-sdk');
+const { Position: UniswapPosition, Pool: UniswapPool } = require('@uniswap/v3-sdk');
 
 class Position extends EventEmitter {
   /**
@@ -40,7 +39,8 @@ class Position extends EventEmitter {
     this.token0Instance = positionData.token0Instance;
     this.token1Instance = positionData.token1Instance;
     this.walletAddress = positionData.walletAddress;
-    this.poolAddress = positionData.poolAddress;
+
+    this.pool = getPool(positionData.poolAddress, provider);
 
     // Provider for refreshing data
     this.provider = provider || getProvider();
@@ -118,7 +118,7 @@ class Position extends EventEmitter {
   }
 
   /**
-   * Fetch all positions for a wallet (static method)
+   * Fetch all positions for a wallet
    * @param {string} walletAddress - Wallet address
    * @returns {Promise<Array<Position>>} Array of Position instances
    */
@@ -187,7 +187,6 @@ class Position extends EventEmitter {
   static async fetchStakedPositions(walletAddress) {
     try {
       const stakingContract = Position.getStakingContract();
-
       if (!stakingContract) {
         console.warn('Staking contract not available');
         return [];
@@ -195,14 +194,11 @@ class Position extends EventEmitter {
 
       // Get balance of staked positions
       const balance = await stakingContract.read.balanceOf([walletAddress]);
-
       if (balance === 0n) {
         return [];
       }
 
       const stakedPositions = [];
-
-      // Iterate through staked positions
       for (let i = 0; i < Number(balance); i++) {
         try {
           // Get the token ID from the staking contract
@@ -237,7 +233,7 @@ class Position extends EventEmitter {
    * Fetch position details from blockchain
    * @param {bigint} tokenId - Token ID
    * @param {boolean} isStaked - Whether position is staked
-   * @param {string} walletAddress - Wallet address
+   * @param {string|null} walletAddress - Wallet address
    * @returns {Promise<Object>} Position details
    */
   static async fetchPositionDetails(tokenId, isStaked = false, walletAddress = null) {
@@ -260,26 +256,23 @@ class Position extends EventEmitter {
       ]);
 
       // Get pool data
-      const poolData = await Position.getPoolData(token0Address, token1Address, fee);
+      const pool = await Pool.getPoolOfTokens(token0Address, token1Address, fee);
+      await pool.getPoolInfo();
+      // FIXME hide this complexity - info must NOT come from cache, must be fresh
+      const slot0 = (await pool.contract.read.slot0());
+      const sqrtPriceX96 = slot0[0];
+      const currentTick = slot0[1];
 
-      let tokenAmounts = { amount0: '0', amount1: '0' };
-      let currentTick = 0;
-
-      if (poolData.address && poolData.sqrtPriceX96) {
-        currentTick = poolData.tick;
-
-        // Use SDK for precise calculations
-        tokenAmounts = await Position.calculateTokenAmounts(
-            liquidity,
-            Number(tickLower),
-            Number(tickUpper),
-            currentTick,
-            token0,
-            token1,
-            Number(fee),
-            poolData.sqrtPriceX96
+      const tokenAmounts = await Position.calculateTokenAmounts(
+          liquidity,
+          tickLower,
+          tickUpper,
+          currentTick,
+          token0,
+          token1,
+          Number(fee),
+          sqrtPriceX96
         );
-      }
 
       const lowerPrice = tickToHumanPrice(Number(tickLower), token0, token1);
       const upperPrice = tickToHumanPrice(Number(tickUpper), token0, token1);
@@ -309,7 +302,8 @@ class Position extends EventEmitter {
         token0Instance: token0,
         token1Instance: token1,
         walletAddress,
-        poolAddress: poolData.address
+        poolAddress: pool.address,
+        pool
       };
     } catch (error) {
       console.error(`Error getting position details for token ID ${tokenId}:`, error);
@@ -352,7 +346,7 @@ class Position extends EventEmitter {
    */
   static async calculateTokenAmounts(liquidity, tickLower, tickUpper, tickCurrent, token0, token1, feeTier, sqrtPriceX96) {
     try {
-      const pool = new Pool(
+      const pool = new UniswapPool(
           token0,
           token1,
           feeTier,
@@ -375,52 +369,6 @@ class Position extends EventEmitter {
     } catch (error) {
       console.error('Error calculating token amounts with SDK:', error);
       return { amount0: '0', amount1: '0' };
-    }
-  }
-
-  /**
-   * Get pool data from factory
-   * @param {string} token0Address - Token0 address
-   * @param {string} token1Address - Token1 address
-   * @param {number} fee - Pool fee
-   * @returns {Promise<Object>} Pool data
-   */
-  static async getPoolData(token0Address, token1Address, fee) {
-    try {
-      const positionManagerContract = Position.getPositionManagerContract();
-      const factoryAddress = await positionManagerContract.read.factory();
-      const factoryAbi = require('./abis/v3-factory.json');
-
-      const factoryContract = getContract({
-        address: factoryAddress,
-        abi: factoryAbi,
-        client: Position.getProvider()
-      });
-
-      const poolAddress = await factoryContract.read.getPool([token0Address, token1Address, fee]);
-
-      if (poolAddress && poolAddress !== '0x0000000000000000000000000000000000000000') {
-        const poolAbi = require('./abis/v3-pool.json');
-        const poolContract = getContract({
-          address: poolAddress,
-          abi: poolAbi,
-          client: Position.getProvider()
-        });
-
-        const slot0 = await poolContract.read.slot0();
-
-        return {
-          address: poolAddress,
-          sqrtPriceX96: slot0[0],
-          tick: Number(slot0[1]),
-          contract: poolContract
-        };
-      }
-
-      return { address: null, sqrtPriceX96: null, tick: 0 };
-    } catch (error) {
-      console.error('Error getting pool data:', error);
-      return { address: null, sqrtPriceX96: null, tick: 0 };
     }
   }
 
@@ -465,7 +413,7 @@ class Position extends EventEmitter {
    * @returns {string} Pool address
    */
   getPoolAddress() {
-    return this.poolAddress;
+    return this.pool.address;
   }
 
   /**
@@ -494,7 +442,7 @@ class Position extends EventEmitter {
       inRange: this.inRange,
       isStaked: this.isStaked,
       walletAddress: this.walletAddress,
-      poolAddress: this.poolAddress
+      poolAddress: this.getPoolAddress()
     };
   }
 }
