@@ -1,10 +1,16 @@
 const Position = require('../../uniswap/position');
 const { getPool } = require('../../uniswap/pool');
+const TelegramMessage = require("../message");
 
 /**
  * Represents a no wallets message
  */
-class NoWalletsMessage {
+class NoWalletsMessage extends TelegramMessage {
+  constructor(chatId) {
+    super();
+    this.chatId = chatId;
+  }
+
   /**
    * Get the formatted message content
    * @returns {string} The no wallets message
@@ -17,13 +23,16 @@ class NoWalletsMessage {
 /**
  * Represents a loading message for a wallet
  */
-class WalletLoadingMessage {
+class WalletLoadingMessage extends TelegramMessage {
   /**
    * Create a wallet loading message instance
+   * @param {number} chatId - Chat ID
    * @param {number} walletIndex - Index of the wallet being processed
    * @param {string} walletAddress - Wallet address
    */
-  constructor(walletIndex, walletAddress) {
+  constructor(chatId, walletIndex, walletAddress) {
+    super();
+    this.chatId = chatId;
     this.walletIndex = walletIndex;
     this.walletAddress = walletAddress;
   }
@@ -35,12 +44,22 @@ class WalletLoadingMessage {
   toString() {
     return `💼 **Wallet ${this.walletIndex + 1}:** \`${this.walletAddress}\`\n⏳ Loading positions...`;
   }
+
+  getOptions() {
+    return { parse_mode: 'Markdown' };
+  }
 }
 
 /**
  * Represents a no positions message
  */
-class NoPositionsMessage {
+class NoPositionsMessage extends TelegramMessage {
+  constructor(chatId, messageId) {
+    super();
+    this.chatId = chatId;
+    this.id = messageId;
+  }
+
   /**
    * Get the formatted message content
    * @returns {string} The no positions message
@@ -48,18 +67,30 @@ class NoPositionsMessage {
   toString() {
     return "No active positions found in this wallet.";
   }
+
+  getOptions() {
+    return {
+      parse_mode: 'Markdown',
+      disable_web_page_preview: true
+    };
+  }
 }
 
 /**
  * Represents a position error message
  */
-class PositionErrorMessage {
+class PositionErrorMessage extends TelegramMessage {
   /**
    * Create a position error message instance
+   * @param {number} chatId - Chat ID
+   * @param {number} messageId - Message ID (optional for edit)
    * @param {number} positionIndex - Index of the position
    * @param {string} error - Error message
    */
-  constructor(positionIndex, error) {
+  constructor(chatId, messageId, positionIndex, error) {
+    super();
+    this.chatId = chatId;
+    this.id = messageId;
     this.positionIndex = positionIndex;
     this.error = error;
   }
@@ -71,18 +102,26 @@ class PositionErrorMessage {
   toString() {
     return `❌ **Position #${this.positionIndex + 1}:** Error - ${this.error}`;
   }
+
+  getOptions() {
+    return {
+      parse_mode: 'Markdown',
+      disable_web_page_preview: true
+    };
+  }
 }
 
 /**
  * Represents a position message
  */
-class PositionMessage {
+class PositionMessage extends TelegramMessage {
   /**
    * Create a position message instance
    * @param {Object} position - Position object
    * @param {boolean} isUpdate - Whether this is an update message
    */
   constructor(position, isUpdate = false) {
+    super();
     this.position = position;
     this.isUpdate = isUpdate;
   }
@@ -127,17 +166,27 @@ class PositionMessage {
 
     return message;
   }
+
+  getOptions() {
+    return {
+      parse_mode: 'Markdown',
+      disable_web_page_preview: true
+    };
+  }
 }
 
 /**
  * Represents a general error message
  */
-class GeneralErrorMessage {
+class GeneralErrorMessage extends TelegramMessage {
   /**
    * Create a general error message instance
+   * @param {number} chatId - Chat ID
    * @param {string} error - Error message
    */
-  constructor(error) {
+  constructor(chatId, error) {
+    super();
+    this.chatId = chatId;
     this.error = error;
   }
 
@@ -159,6 +208,7 @@ class LpHandler {
   /**
    * Create a new LpHandler instance
    * @param {TelegramBot} bot - The bot instance
+   * @param mongo
    * @param {object} walletService - Wallet service instance
    */
   constructor(bot, mongo, walletService) {
@@ -170,13 +220,15 @@ class LpHandler {
      * Store for tracking active position monitors by pool address
      * @type {Map<string, Set<Object>>} Map of poolAddress -> Set of {tokenId, chatId, messageId}
      */
-    this.activePositions = new Map();
+    this.positions = new Map();
 
     /**
      * Store event listener reference for cleanup
      * @type {Function|null}
      */
-    this.swapEventListener = null;
+    this.swapEventListener = (swapInfo, poolData) => {
+      this.onSwap(swapInfo, poolData);
+    };
 
     // Register handlers on instantiation
     this.registerHandlers();
@@ -189,9 +241,6 @@ class LpHandler {
     this.bot.onText(/\/lp/, (msg) => {
       this.handle(msg);
     });
-
-    // Initialize event listener for swap events
-    this.initializeSwapEventListener();
   }
 
   /**
@@ -205,8 +254,8 @@ class LpHandler {
     const monitoredWallets = this.walletService.getWalletsForChat(chatId);
 
     if (monitoredWallets.length === 0) {
-      const noWalletsMessage = new NoWalletsMessage();
-      await this.bot.sendMessage(chatId, noWalletsMessage.toString());
+      const noWalletsMessage = new NoWalletsMessage(chatId);
+      await this.bot.send(noWalletsMessage);
       return;
     }
 
@@ -216,73 +265,43 @@ class LpHandler {
         const walletAddress = monitoredWallets[walletIndex];
 
         // Send initial wallet message with loading status
-        const loadingMessage = new WalletLoadingMessage(walletIndex, walletAddress);
-        const loadingMessageSent = await this.bot.sendMessage(
-            chatId,
-            loadingMessage.toString(),
-            { parse_mode: 'Markdown' }
-        );
+        const loadingMessage = new WalletLoadingMessage(chatId, walletIndex, walletAddress);
+        const loadingMessageSent = await this.bot.send(loadingMessage);
 
         // Get positions for this wallet
         const positions = await Position.fetchPositions(walletAddress);
 
         if (positions.length === 0) {
           // Replace loading message with "no positions" message
-          const noPositionsMessage = new NoPositionsMessage();
-          await this.bot.editMessageText(
-              noPositionsMessage.toString(),
-              {
-                chat_id: chatId,
-                message_id: loadingMessageSent.message_id,
-                parse_mode: 'Markdown',
-                disable_web_page_preview: true
-              }
-          );
+          const noPositionsMessage = new NoPositionsMessage(chatId, loadingMessageSent.id);
+          await this.bot.send(noPositionsMessage);
         } else {
           // Process each position
           for (let positionIndex = 0; positionIndex < positions.length; positionIndex++) {
             const position = positions[positionIndex];
 
             if (position.error) {
-              const errorMessage = new PositionErrorMessage(positionIndex, position.error);
+              const errorMessage = new PositionErrorMessage(chatId,
+                positionIndex === 0 ? loadingMessageSent.id : null,
+                positionIndex,
+                position.error);
 
-              if (positionIndex === 0) {
-                // Replace loading message with first position error
-                await this.bot.editMessageText(
-                    errorMessage.toString(),
-                    {
-                      chat_id: chatId,
-                      message_id: loadingMessageSent.message_id,
-                      parse_mode: 'Markdown',
-                      disable_web_page_preview: true
-                    }
-                );
-              } else {
-                // Send as separate message
-                await this.bot.sendMessage(chatId, errorMessage.toString(), { parse_mode: 'Markdown' });
-              }
+              await this.bot.send(errorMessage);
               continue;
             }
 
             // Create position message
             const positionMessage = new PositionMessage(position, false);
+            positionMessage.chatId = chatId;
 
             let sentMessage;
             if (positionIndex === 0) {
               // Replace loading message with first position
-              await this.bot.editMessageText(
-                  positionMessage.toString(),
-                  {
-                    chat_id: chatId,
-                    message_id: loadingMessageSent.message_id,
-                    parse_mode: 'Markdown',
-                    disable_web_page_preview: true
-                  }
-              );
-              sentMessage = { message_id: loadingMessageSent.message_id };
+              positionMessage.id = loadingMessageSent.id;
+              sentMessage = await this.bot.send(positionMessage);
             } else {
               // Send additional positions as separate messages
-              sentMessage = await this.bot.sendMessage(chatId, positionMessage.toString(), { parse_mode: 'Markdown' });
+              sentMessage = await this.bot.send(positionMessage);
             }
 
             // Save position to MongoDB with message ID
@@ -296,7 +315,7 @@ class LpHandler {
 
               // Register position for event monitoring if it's in range
               if (position.inRange && position.poolAddress) {
-                await this.registerPositionForEventMonitoring(position.poolAddress, position.tokenId, chatId, sentMessage.message_id);
+                await this.registerPositionForEventMonitoring(position.poolAddress, position.tokenId, chatId, sentMessage.id);
               }
             } catch (saveError) {
               console.error(`Error saving position ${position.tokenId} from /lp command:`, saveError);
@@ -307,8 +326,8 @@ class LpHandler {
 
     } catch (error) {
       console.error('Error fetching liquidity positions:', error);
-      const generalErrorMessage = new GeneralErrorMessage(error.message);
-      await this.bot.sendMessage(chatId, generalErrorMessage.toString());
+      const generalErrorMessage = new GeneralErrorMessage(chatId, error.message);
+      await this.bot.send(generalErrorMessage);
     }
   }
 
@@ -317,9 +336,9 @@ class LpHandler {
    * @param {Object} swapInfo - Swap information
    * @param {Object} poolData - Pool data
    */
-  async handleSwapEvent(swapInfo, poolData) {
+  async onSwap(swapInfo, poolData) {
     const { poolAddress, newPrice, timestamp } = swapInfo;
-    const activePositions = this.activePositions.get(poolAddress);
+    const activePositions = this.positions.get(poolAddress);
 
     if (!activePositions || activePositions.size === 0) {
       return; // No active positions for this pool
@@ -348,14 +367,11 @@ class LpHandler {
 
           // Create updated position message
           const positionMessage = new PositionMessage(updatedPosition, true);
+          positionMessage.chatId = positionData.chatId;
+          positionMessage.id = positionData.messageId;
 
           // Update the message in Telegram
-          await this.bot.editMessageText(positionMessage.toString(), {
-            chat_id: positionData.chatId,
-            message_id: positionData.messageId,
-            parse_mode: 'Markdown',
-            disable_web_page_preview: true
-          });
+          await this.bot.send(positionMessage);
 
           // Update position data in MongoDB
           await this.mongo.savePosition(
@@ -380,7 +396,7 @@ class LpHandler {
 
       // Remove the pool from active positions if no positions remain
       if (activePositions.size === 0) {
-        this.activePositions.delete(poolAddress);
+        this.positions.delete(poolAddress);
         console.log(`Removed pool ${poolAddress} from active positions - no more positions in range`);
       }
 
@@ -400,10 +416,6 @@ class LpHandler {
       Pool.removeListener('swap', this.swapEventListener);
     }
 
-    this.swapEventListener = (swapInfo, poolData) => {
-      this.handleSwapEvent(swapInfo, poolData);
-    };
-
     Pool.on('swap', this.swapEventListener);
     console.log('Initialized swap event listener for LP command');
   }
@@ -418,12 +430,12 @@ class LpHandler {
   async registerPositionForEventMonitoring(poolAddress, tokenId, chatId, messageId) {
     try {
       // Create or get the position set for this pool
-      if (!this.activePositions.has(poolAddress)) {
-        this.activePositions.set(poolAddress, new Set());
+      if (!this.positions.has(poolAddress)) {
+        this.positions.set(poolAddress, new Set());
       }
 
       // Add this position to the active positions set
-      const positionSet = this.activePositions.get(poolAddress);
+      const positionSet = this.positions.get(poolAddress);
       const positionData = {
         tokenId: tokenId,
         chatId: chatId,
@@ -445,7 +457,7 @@ class LpHandler {
    * @param {number} chatId - Chat ID
    */
   unregisterPositionFromEventMonitoring(poolAddress, tokenId, chatId) {
-    const positions = this.activePositions.get(poolAddress);
+    const positions = this.positions.get(poolAddress);
     if (positions) {
       // Find and remove the position
       for (const position of positions) {
@@ -458,7 +470,7 @@ class LpHandler {
 
       // If no more positions for this pool, remove the pool entirely
       if (positions.size === 0) {
-        this.activePositions.delete(poolAddress);
+        this.positions.delete(poolAddress);
         console.log(`Removed pool ${poolAddress} from active positions - no more positions tracking`);
       }
     }
@@ -473,13 +485,10 @@ class LpHandler {
   async updatePositionMessage(chatId, messageId, position) {
     try {
       const positionMessage = new PositionMessage(position, true);
+      positionMessage.chatId = chatId;
+      positionMessage.id = messageId;
 
-      await this.bot.editMessageText(positionMessage.toString(), {
-        chat_id: chatId,
-        message_id: messageId,
-        parse_mode: 'Markdown',
-        disable_web_page_preview: true
-      });
+      await this.bot.send(positionMessage);
 
       console.log(`Updated individual position message for token ID ${position.tokenId} in chat ${chatId}`);
     } catch (error) {
@@ -492,7 +501,7 @@ class LpHandler {
    * @param {number} chatId - Chat ID to clean up
    */
   cleanupPositionsForChat(chatId) {
-    for (const [poolAddress, positions] of this.activePositions.entries()) {
+    for (const [poolAddress, positions] of this.positions.entries()) {
       const toRemove = [];
 
       for (const position of positions) {
@@ -509,7 +518,7 @@ class LpHandler {
 
       // If no more positions for this pool, remove the pool entirely
       if (positions.size === 0) {
-        this.activePositions.delete(poolAddress);
+        this.positions.delete(poolAddress);
         console.log(`Removed pool ${poolAddress} from active positions - no more positions tracking`);
       }
     }
@@ -520,7 +529,7 @@ class LpHandler {
    * @returns {Map} Map of active positions
    */
   getActivePositions() {
-    return this.activePositions;
+    return this.positions;
   }
 
   /**
@@ -532,7 +541,7 @@ class LpHandler {
       poolService.removeListener('swap', this.swapEventListener);
       this.swapEventListener = null;
     }
-    this.activePositions.clear();
+    this.positions.clear();
     console.log('Cleaned up LP handler resources');
   }
 
