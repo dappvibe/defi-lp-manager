@@ -175,8 +175,7 @@ class PoolHandler {
         message.chatId = chatId;
         message.id = null;
 
-        // defer request (order is not important)
-        this.bot.send(message).then(msg => {
+        await this.bot.send(message).then(msg => {
           this.messages[message.pool.address] = msg;
           this.db.savePoolMessage(message.pool.address, chatId, msg.id, msg.pool.getMonitoringStatus());
         });
@@ -219,11 +218,11 @@ class PoolHandler {
       switch (action) {
         case 'start':
           message.price = await this.startPoolMonitoring(message);
-          this.bot.send(message); // update callback button
+          await this.bot.send(message); // update callback button
           return this.bot.answerCallbackQuery(callbackQuery.id, { text: 'Monitoring started!' });
         case 'stop':
           await this.stopPoolMonitoring(message);
-          this.bot.send(message); // update callback button
+          await this.bot.send(message); // update callback button
           return this.bot.answerCallbackQuery(callbackQuery.id, { text: 'Monitoring stopped!' });
         default:
           await this.bot.answerCallbackQuery(callbackQuery.id, { text: 'Unknown action' });
