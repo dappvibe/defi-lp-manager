@@ -1,3 +1,6 @@
+const Position = require('../../uniswap/position');
+const { getPool } = require('../../uniswap/pool');
+
 /**
  * Represents a no wallets message
  */
@@ -156,11 +159,12 @@ class LpHandler {
   /**
    * Create a new LpHandler instance
    * @param {TelegramBot} bot - The bot instance
-   * @param {Object} positionMonitor - Position monitor instance
+   * @param {object} walletService - Wallet service instance
    */
-  constructor(bot, positionMonitor) {
+  constructor(bot, mongo, walletService) {
     this.bot = bot;
-    this.positionMonitor = positionMonitor;
+    this.mongo = mongo;
+    this.walletService = walletService;
 
     /**
      * Store for tracking active position monitors by pool address
@@ -198,7 +202,7 @@ class LpHandler {
     const chatId = msg.chat.id;
 
     // Get monitored wallets
-    const monitoredWallets = this.positionMonitor.getMonitoredWallets();
+    const monitoredWallets = this.walletService.getWalletsForChat(chatId);
 
     if (monitoredWallets.length === 0) {
       const noWalletsMessage = new NoWalletsMessage();
@@ -220,7 +224,7 @@ class LpHandler {
         );
 
         // Get positions for this wallet
-        const positions = await this.positionMonitor.getPositions(walletAddress);
+        const positions = await Position.fetchPositions(walletAddress);
 
         if (positions.length === 0) {
           // Replace loading message with "no positions" message
@@ -283,17 +287,16 @@ class LpHandler {
 
             // Save position to MongoDB with message ID
             try {
-              const poolAddress = await this.positionMonitor.getPoolAddressForPosition(position);
               const positionData = {
                 ...position,
                 walletAddress: walletAddress,
-                poolAddress: poolAddress
+                poolAddress: position.poolAddress
               };
-              await this.positionMonitor.mongoStateManager.savePosition(positionData, chatId, sentMessage.message_id);
+              await this.mongo.savePosition(position);
 
               // Register position for event monitoring if it's in range
-              if (position.inRange && poolAddress) {
-                await this.registerPositionForEventMonitoring(poolAddress, position.tokenId, chatId, sentMessage.message_id);
+              if (position.inRange && position.poolAddress) {
+                await this.registerPositionForEventMonitoring(position.poolAddress, position.tokenId, chatId, sentMessage.message_id);
               }
             } catch (saveError) {
               console.error(`Error saving position ${position.tokenId} from /lp command:`, saveError);
@@ -323,21 +326,12 @@ class LpHandler {
     }
 
     try {
-      // Import necessary modules
-      const PositionMonitor = require('../../uniswap/position-monitor');
-      const MongoStateManager = require('../../database/mongo');
-
-      // Create temporary instances to get updated position data
-      const stateManager = new MongoStateManager();
-      await stateManager.connect();
-
-      const tempMonitor = new PositionMonitor(poolData.client || swapInfo.client, stateManager);
-
       // Process each active position for this pool
       for (const positionData of activePositions) {
         try {
           // Get fresh position details with updated token amounts
-          const updatedPosition = await tempMonitor.getPositionDetails(BigInt(positionData.tokenId), false);
+          const updatedPositionData = await Position.fetchPositionDetails(BigInt(positionData.tokenId), false);
+          const updatedPosition = new Position(updatedPositionData);
 
           if (updatedPosition.error) {
             console.warn(`Error getting updated position details for token ID ${positionData.tokenId}:`, updatedPosition.error);
@@ -364,7 +358,7 @@ class LpHandler {
           });
 
           // Update position data in MongoDB
-          await stateManager.updatePosition(
+          await this.mongo.savePosition(
               positionData.tokenId,
               updatedPosition.walletAddress || 'unknown',
               positionData.chatId,
@@ -390,7 +384,7 @@ class LpHandler {
         console.log(`Removed pool ${poolAddress} from active positions - no more positions in range`);
       }
 
-      await stateManager.close();
+      await this.mongo.close();
 
     } catch (error) {
       console.error(`Error handling swap event for LP positions in pool ${poolAddress}:`, error.message);
@@ -401,17 +395,16 @@ class LpHandler {
    * Initialize event listener for swap events from PoolService
    */
   initializeSwapEventListener() {
+    return;
     if (this.swapEventListener) {
-      const poolService = require('../../uniswap/pool');
-      poolService.removeListener('swap', this.swapEventListener);
+      Pool.removeListener('swap', this.swapEventListener);
     }
 
     this.swapEventListener = (swapInfo, poolData) => {
       this.handleSwapEvent(swapInfo, poolData);
     };
 
-    const poolService = require('../../uniswap/pool');
-    poolService.on('swap', this.swapEventListener);
+    Pool.on('swap', this.swapEventListener);
     console.log('Initialized swap event listener for LP command');
   }
 
