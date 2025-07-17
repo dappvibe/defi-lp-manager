@@ -133,7 +133,7 @@ class PoolHandler {
     const configuredPools = poolsConfig.getPools('pancakeswap', 'arbitrum');
     this.db.getMonitoredPoolMessages().then(monitoredPools => {
       for (const address of configuredPools) {
-        const msg = this.messages[address] = new PoolInfoMessage(new Pool(address), null);
+        const msg = this.messages[address] = new PoolInfoMessage(Pool.getPool(address), null);
         const storedMessage = monitoredPools.find(p => p.poolAddress === address);
         if (storedMessage) {
           msg.chatId = storedMessage.chatId;

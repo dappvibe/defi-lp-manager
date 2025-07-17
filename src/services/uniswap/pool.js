@@ -11,6 +11,23 @@ const { mongo } = require('../database/mongo');
 const { getProvider } = require('../blockchain/provider');
 
 class Pool extends EventEmitter {
+  static #poolInstances = new Map();
+
+  /**
+   * Gets singleton instance of Pool. Each pool must be a single instance because
+   * they listen to blockchain events and all events must be handled by one object for efficiency
+   * @param {string} address - Pool contract address
+   * @param {*} provider - Optional custom provider
+   * @param {*} mongoOverride - Optional MongoDB instance override
+   * @returns {Pool} Singleton pool instance
+   */
+  static getPool(address, provider = null, mongoOverride = null) {
+    if (!Pool.#poolInstances.has(address)) {
+      Pool.#poolInstances.set(address, new Pool(address, provider, mongoOverride));
+    }
+    return Pool.#poolInstances.get(address);
+  }
+
   constructor(address, provider = null, mongoOverride = null) {
     super();
 
@@ -379,4 +396,5 @@ class Pool extends EventEmitter {
 
 module.exports = {
   Pool,
+  getPool: Pool.getPool,
 };
