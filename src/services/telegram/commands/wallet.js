@@ -208,11 +208,11 @@ class WalletHandler {
   /**
    * Create a new WalletHandler instance
    * @param {TelegramBot} bot - The bot instance
-   * @param {object} positionMonitor - Position monitor service
+   * @param {object} walletService - Wallet service instance
    */
-  constructor(bot, positionMonitor) {
+  constructor(bot, walletService) {
     this.bot = bot;
-    this.positionMonitor = positionMonitor;
+    this.walletService = walletService;
 
     // Register handlers on instantiation
     this.registerHandlers();
@@ -284,14 +284,11 @@ class WalletHandler {
     const statusMsg = await this.bot.sendMessage(chatId, processingMessage.toString());
 
     try {
-      // Check if already monitoring
-      const isAlreadyMonitored = this.positionMonitor.monitoredWallets.has(walletAddress.toLowerCase());
-
-      // Start monitoring the wallet
-      this.positionMonitor.startMonitoring(walletAddress, chatId);
+      // Check if already monitoring and add wallet
+      const wasAdded = await this.walletService.addWallet(walletAddress, chatId);
 
       // Create and send monitoring status message
-      const statusMessage = new MonitoringStatusMessage(isAlreadyMonitored);
+      const statusMessage = new MonitoringStatusMessage(!wasAdded);
       await this.bot.editMessageText(statusMessage.toString(), {
         chat_id: chatId,
         message_id: statusMsg.message_id
@@ -323,7 +320,7 @@ class WalletHandler {
     }
 
     // If user has only one monitored wallet, stop that one
-    const monitoredWallets = this.positionMonitor.getMonitoredWallets();
+    const monitoredWallets = this.walletService.getWalletsForChat(chatId);
     if (monitoredWallets.length === 1) {
       await this.processStopMonitoring(chatId, monitoredWallets[0]);
       return;
@@ -352,7 +349,7 @@ class WalletHandler {
     }
 
     // Stop monitoring
-    const success = this.positionMonitor.stopMonitoring(walletAddress);
+    const success = await this.walletService.removeWallet(walletAddress, chatId);
 
     if (success) {
       const successMessage = new StopMonitoringSuccessMessage(walletAddress);
@@ -369,7 +366,7 @@ class WalletHandler {
    */
   async handleListWallets(msg) {
     const chatId = msg.chat.id;
-    const monitoredWallets = this.positionMonitor.getMonitoredWallets();
+    const monitoredWallets = this.walletService.getWalletsForChat(chatId);
 
     if (monitoredWallets.length === 0) {
       const noWalletsMessage = new NoWalletsMonitoredMessage();
