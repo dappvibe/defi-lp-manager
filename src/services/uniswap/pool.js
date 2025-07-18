@@ -11,6 +11,7 @@ const { mongo } = require('../database/mongo');
 const { getProvider } = require('../blockchain/provider');
 const {getContract} = require("viem");
 const {contracts} = require("../../config");
+const TokenService = require('./token');
 
 class Pool extends EventEmitter {
   static #poolInstances = new Map();
@@ -187,18 +188,20 @@ class Pool extends EventEmitter {
    */
   async getTVL() {
     try {
-      if (!this.info) {
-        await this._loadPoolInfo();
-      }
+      await this.getPoolInfo();
 
-      const { createErc20Contract } = require('./contracts');
-      const token0Contract = createErc20Contract(this.info.token0.address);
-      const token1Contract = createErc20Contract(this.info.token1.address);
+      const tokenService = new TokenService(this.provider);
+
+      // Get token information from TokenService
+      const [token0Info, token1Info] = await Promise.all([
+        tokenService.getToken(this.info.token0.address),
+        tokenService.getToken(this.info.token1.address)
+      ]);
 
       // Get token balances in the pool
       const [token0Balance, token1Balance] = await Promise.all([
-        token0Contract.read.balanceOf([this.address]),
-        token1Contract.read.balanceOf([this.address])
+        token0Info.contract.read.balanceOf([this.address]),
+        token1Info.contract.read.balanceOf([this.address])
       ]);
 
       // Convert to human readable amounts
