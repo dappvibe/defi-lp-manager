@@ -169,15 +169,6 @@ class Bot extends TelegramBot {
     // Clear any pending timeouts
     this.lastEditTimes = {};
 
-    // Clean up handler resources if they have cleanup methods
-    if (this.lpHandler && typeof this.lpHandler.cleanup === 'function') {
-      this.lpHandler.cleanup();
-    }
-
-    if (this.poolHandler && typeof this.poolHandler.cleanup === 'function') {
-      this.poolHandler.cleanup();
-    }
-
     console.log('Bot shutdown complete.');
   }
 }
