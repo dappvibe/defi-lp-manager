@@ -579,11 +579,9 @@ class Mongo {
     }
 
     try {
-      const positions = await this.positionsCollection.find({
+      return await this.positionsCollection.find({
         walletAddress
       }).toArray();
-
-      return positions;
     } catch (error) {
       console.error(`Error getting positions for wallet ${walletAddress}:`, error.message);
       return [];

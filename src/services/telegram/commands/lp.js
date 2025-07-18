@@ -1,5 +1,4 @@
 const Position = require('../../uniswap/position');
-const { getPool } = require('../../uniswap/pool');
 const TelegramMessage = require("../message");
 
 /**
@@ -224,6 +223,9 @@ class LpHandler {
     };
 
     this.registerHandlers();
+
+    // Restore monitored positions on startup
+    this.restoreMonitoredPositions();
   }
 
   /**
@@ -272,14 +274,17 @@ class LpHandler {
 
             // Replace loading message with first position
             if (p === 0) positionMessage.id = loadingMessage.id;
-            this.messages[position.tokenId] = positionMessage = await this.bot.send(positionMessage);
+            this.messages.set(position.tokenId, positionMessage = await this.bot.send(positionMessage));
 
-            // Save position to MongoDB with message ID
+            // Save position to MongoDB with message ID and monitoring status
             try {
               await this.mongo.savePosition({
                 ...position.toObject(),
                 walletAddress: walletAddress,
-                poolAddress: position.pool.address
+                poolAddress: position.pool.address,
+                chatId: chatId,
+                messageId: positionMessage.id,
+                isMonitored: true
               });
 
               this.listenSwaps(position.tokenId);
@@ -298,7 +303,7 @@ class LpHandler {
   }
 
   listenSwaps(tokenId) {
-    const message = this.messages[tokenId];
+    const message = this.messages.get(tokenId);
     if (!message) throw new Error(`No position message found for token ID ${tokenId}`);
 
     const pool = message.position.pool;
@@ -313,7 +318,9 @@ class LpHandler {
    * @param {Object} poolData - Pool data
    */
   async onSwap(swapInfo, poolData) {
-    const activePositions = Object.values(this.messages).filter(message => message.position.pool.address === poolData.address);
+    const activePositions = Array.from(this.messages.values()).filter(message =>
+      message.position.pool.address === poolData.address
+    );
 
     try {
       // Process each active position for this pool
@@ -341,11 +348,58 @@ class LpHandler {
               }
           );
         } catch (error) {
-          console.error(`Error updating position message for token ID ${message.tokenId}:`, error.message);
+          console.error(`Error updating position message for token ID ${position.tokenId}:`, error.message);
         }
       }
     } catch (error) {
       console.error(`Error handling swap event for LP positions in pool ${poolData.address}:`, error.message);
+    }
+  }
+
+  /**
+   * Restore previously monitored position messages from MongoDB
+   */
+  async restoreMonitoredPositions() {
+    try {
+      console.log('Restoring monitored position messages...');
+
+      const allWallets = this.walletService.getAllMonitoredWallets();
+
+      let restoredCount = 0;
+
+      for (const walletAddress of allWallets) {
+        try {
+          const storedPositions = await this.mongo.getPositionsByWallet(walletAddress);
+
+          for (const positionData of storedPositions) {
+            try {
+              // Only restore positions that have message IDs (were being monitored)
+              if (positionData.messageId && positionData.chatId) {
+                const position = new Position(positionData);
+
+                const positionMessage = new PositionMessage(position);
+                positionMessage.chatId = positionData.chatId;
+                positionMessage.id = positionData.messageId;
+
+                this.messages.set(positionData.tokenId, positionMessage);
+
+                this.listenSwaps(positionData.tokenId);
+
+                restoredCount++;
+              }
+            } catch (error) {
+              console.error(`Error restoring position ${positionData.tokenId}:`, error.message);
+            }
+          }
+        } catch (error) {
+          console.error(`Error getting positions for wallet ${walletAddress}:`, error.message);
+        }
+      }
+
+      console.log(`Restored monitoring for ${restoredCount} position messages`);
+
+    } catch (error) {
+      console.error('Error restoring monitored position messages:', error.message);
     }
   }
 
