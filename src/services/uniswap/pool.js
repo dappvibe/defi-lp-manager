@@ -188,8 +188,6 @@ class Pool extends EventEmitter {
    */
   async getTVL() {
     try {
-      await this.getPoolInfo();
-
       const tokenService = new TokenService(this.provider);
 
       // Get token information from TokenService
