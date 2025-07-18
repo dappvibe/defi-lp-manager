@@ -104,7 +104,7 @@ class LpHandler {
     this.mongo = mongo;
     this.walletService = walletService;
     this.positionMessages = new Map(); // tokenId => PositionMessage
-    this.swapEventListener = (swapInfo, poolData) => this.handleSwap(swapInfo, poolData);
+    this.swapEventListener = (swapInfo, poolData) => this.onSwap(swapInfo, poolData);
 
     this.registerHandlers();
     this.restoreMonitoredPositions();
@@ -201,7 +201,7 @@ class LpHandler {
     });
   }
 
-  async handleSwap(swapInfo, poolData) {
+  async onSwap(swapInfo, poolData) {
     const affectedPositions = Array.from(this.positionMessages.values())
       .filter(message => message.position.pool.address === poolData.address);
 
@@ -235,26 +235,19 @@ class LpHandler {
         return; // Exit early, don't update the message
       }
 
-      // Update the position with new data
+      updatedPosition.walletAddress = position.walletAddress; // FIXME
       message.position = updatedPosition;
 
-      // Update Telegram message
       await this.bot.send(message);
 
-      // Update database
-      await this.mongo.savePosition(
-        updatedData.tokenId,
-        position.walletAddress || 'unknown',
-        message.chatId,
-        {
-          token0Amount: updatedData.token0Amount,
-          token1Amount: updatedData.token1Amount,
-          currentPrice: updatedData.currentPrice,
-          inRange: updatedData.inRange,
-          liquidity: updatedData.liquidity?.toString()
-        }
-      );
-
+      await this.mongo.savePosition({
+        ...position.toObject(),
+        walletAddress: position.walletAddress,
+        poolAddress: position.pool.address,
+        chatId: message.chatId,
+        messageId: message.id,
+        isMonitored: true
+      });
     } catch (error) {
       console.error(`Error updating position message for ${position.tokenId}:`, error);
       throw error;
