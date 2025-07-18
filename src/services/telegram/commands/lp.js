@@ -99,9 +99,9 @@ class GeneralErrorMessage extends TelegramMessage {
  * Handler for /lp command - Lists liquidity positions for monitored wallets
  */
 class LpHandler {
-  constructor(bot, mongoose, walletService) {
+  constructor(bot, db, walletService) {
     this.bot = bot;
-    this.mongoose = mongoose;
+    this.db = db;
     this.walletService = walletService;
     this.positionMessages = new Map(); // tokenId => PositionMessage
     this.swapEventListener = (swapInfo, poolData) => this.onSwap(swapInfo, poolData);
@@ -175,7 +175,7 @@ class LpHandler {
 
   async savePositionData(position, walletAddress, chatId, messageId) {
     try {
-      await this.mongoose.savePosition({
+      await this.db.savePosition({
         ...position.toObject(),
         walletAddress,
         poolAddress: position.pool.address,
@@ -233,7 +233,7 @@ class LpHandler {
         // Stop monitoring this position
         await this.stopMonitoringPosition(position.tokenId);
         this.positionMessages.delete(position.tokenId);
-        await this.mongoose.removePosition(position.tokenId, position.walletAddress);
+        await this.db.removePosition(position.tokenId, position.walletAddress);
 
         return; // Exit early, don't update the message
       }
@@ -243,7 +243,7 @@ class LpHandler {
 
       await this.bot.send(message);
 
-      await this.mongoose.savePosition({
+      await this.db.savePosition({
         ...position.toObject(),
         walletAddress: position.walletAddress,
         poolAddress: position.pool.address,
@@ -287,7 +287,7 @@ class LpHandler {
 
       for (const walletAddress of wallets) {
         try {
-          const positions = await this.mongoose.getPositionsByWallet(walletAddress);
+          const positions = await this.db.getPositionsByWallet(walletAddress);
 
           for (const positionData of positions) {
             if (positionData.messageId && positionData.chatId) {
