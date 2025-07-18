@@ -120,10 +120,9 @@ class PositionMessage extends TelegramMessage {
    * @param {Object} position - Position object
    * @param {boolean} isUpdate - Whether this is an update message
    */
-  constructor(position, isUpdate = false) {
+  constructor(position) {
     super();
     this.position = position;
-    this.isUpdate = isUpdate;
   }
 
   /**
@@ -158,11 +157,8 @@ class PositionMessage extends TelegramMessage {
     // Build the message
     let message = `${tokenPairLine}\n${amountsLine}\n${priceRangeLine}\n${statusLine}`;
 
-    // Add timestamp if this is an update
-    if (this.isUpdate) {
-      const { getTimeInTimezone } = require('../../../utils/time');
-      message += `\n🕐 Updated: ${getTimeInTimezone()}`;
-    }
+    const { getTimeInTimezone } = require('../../../utils/time');
+    message += `\n🕐 Updated: ${getTimeInTimezone()}`;
 
     return message;
   }
@@ -216,21 +212,17 @@ class LpHandler {
     this.mongo = mongo;
     this.walletService = walletService;
 
-    /**
-     * Store for tracking active position monitors by pool address
-     * @type {Map<string, Set<Object>>} Map of poolAddress -> Set of {tokenId, chatId, messageId}
-     */
-    this.positions = new Map();
+    // Store position messages for updating (tokenId => PositionMessage)
+    this.messages = new Map();
 
     /**
      * Store event listener reference for cleanup
      * @type {Function|null}
      */
     this.swapEventListener = (swapInfo, poolData) => {
-      this.onSwap(swapInfo, poolData);
+      return this.onSwap(swapInfo, poolData);
     };
 
-    // Register handlers on instantiation
     this.registerHandlers();
   }
 
@@ -239,7 +231,7 @@ class LpHandler {
    */
   registerHandlers() {
     this.bot.onText(/\/lp/, (msg) => {
-      this.handle(msg);
+      return this.handle(msg);
     });
   }
 
@@ -250,73 +242,47 @@ class LpHandler {
   async handle(msg) {
     const chatId = msg.chat.id;
 
-    // Get monitored wallets
     const monitoredWallets = this.walletService.getWalletsForChat(chatId);
-
     if (monitoredWallets.length === 0) {
-      const noWalletsMessage = new NoWalletsMessage(chatId);
-      await this.bot.send(noWalletsMessage);
+      await this.bot.send(new NoWalletsMessage(chatId));
       return;
     }
 
     try {
       // Process each wallet
-      for (let walletIndex = 0; walletIndex < monitoredWallets.length; walletIndex++) {
-        const walletAddress = monitoredWallets[walletIndex];
+      for (let i = 0; i < monitoredWallets.length; i++) {
+        const walletAddress = monitoredWallets[i];
 
         // Send initial wallet message with loading status
-        const loadingMessage = new WalletLoadingMessage(chatId, walletIndex, walletAddress);
-        const loadingMessageSent = await this.bot.send(loadingMessage);
+        const loadingMessage = await this.bot.send(new WalletLoadingMessage(chatId, i, walletAddress));
 
         // Get positions for this wallet
         const positions = await Position.fetchPositions(walletAddress);
-
         if (positions.length === 0) {
           // Replace loading message with "no positions" message
-          const noPositionsMessage = new NoPositionsMessage(chatId, loadingMessageSent.id);
-          await this.bot.send(noPositionsMessage);
+          await this.bot.send(new NoPositionsMessage(chatId, loadingMessage.id));
         } else {
           // Process each position
-          for (let positionIndex = 0; positionIndex < positions.length; positionIndex++) {
-            const position = positions[positionIndex];
-
-            if (position.error) {
-              const errorMessage = new PositionErrorMessage(chatId,
-                positionIndex === 0 ? loadingMessageSent.id : null,
-                positionIndex,
-                position.error);
-
-              await this.bot.send(errorMessage);
-              continue;
-            }
+          for (let p = 0; p < positions.length; p++) {
+            const position = positions[p];
 
             // Create position message
-            const positionMessage = new PositionMessage(position, false);
+            let positionMessage = new PositionMessage(position, false);
             positionMessage.chatId = chatId;
 
-            let sentMessage;
-            if (positionIndex === 0) {
-              // Replace loading message with first position
-              positionMessage.id = loadingMessageSent.id;
-              sentMessage = await this.bot.send(positionMessage);
-            } else {
-              // Send additional positions as separate messages
-              sentMessage = await this.bot.send(positionMessage);
-            }
+            // Replace loading message with first position
+            if (p === 0) positionMessage.id = loadingMessage.id;
+            this.messages[position.tokenId] = positionMessage = await this.bot.send(positionMessage);
 
             // Save position to MongoDB with message ID
             try {
-              const positionData = {
-                ...position,
+              await this.mongo.savePosition({
+                ...position.toObject(),
                 walletAddress: walletAddress,
-                poolAddress: position.poolAddress
-              };
-              await this.mongo.savePosition(position);
+                poolAddress: position.pool.address
+              });
 
-              // Register position for event monitoring if it's in range
-              if (position.inRange && position.poolAddress) {
-                await this.registerPositionForEventMonitoring(position.poolAddress, position.tokenId, chatId, sentMessage.id);
-              }
+              this.listenSwaps(position.tokenId);
             } catch (saveError) {
               console.error(`Error saving position ${position.tokenId} from /lp command:`, saveError);
             }
@@ -331,218 +297,56 @@ class LpHandler {
     }
   }
 
+  listenSwaps(tokenId) {
+    const message = this.messages[tokenId];
+    if (!message) throw new Error(`No position message found for token ID ${tokenId}`);
+
+    const pool = message.position.pool;
+    pool.startMonitoring().then();
+    pool.removeListener('swap', this.swapEventListener);
+    pool.on('swap', this.swapEventListener);
+  }
+
   /**
    * Handle swap event from PoolService
    * @param {Object} swapInfo - Swap information
    * @param {Object} poolData - Pool data
    */
   async onSwap(swapInfo, poolData) {
-    const { poolAddress, newPrice, timestamp } = swapInfo;
-    const activePositions = this.positions.get(poolAddress);
-
-    if (!activePositions || activePositions.size === 0) {
-      return; // No active positions for this pool
-    }
+    const activePositions = Object.values(this.messages).filter(message => message.position.pool.address === poolData.address);
 
     try {
       // Process each active position for this pool
-      for (const positionData of activePositions) {
+      for (const message of activePositions) {
+        const position = message.position;
         try {
           // Get fresh position details with updated token amounts
-          const updatedPositionData = await Position.fetchPositionDetails(BigInt(positionData.tokenId), false);
-          const updatedPosition = new Position(updatedPositionData);
-
-          if (updatedPosition.error) {
-            console.warn(`Error getting updated position details for token ID ${positionData.tokenId}:`, updatedPosition.error);
-            continue;
-          }
-
-          // Check if position is still in range
-          if (!updatedPosition.inRange) {
-            // Position went out of range, remove from active positions
-            activePositions.delete(positionData);
-            console.log(`Position ${positionData.tokenId} went out of range, removed from active monitoring`);
-            continue;
-          }
-
-          // Create updated position message
-          const positionMessage = new PositionMessage(updatedPosition, true);
-          positionMessage.chatId = positionData.chatId;
-          positionMessage.id = positionData.messageId;
+          const updatedPositionData = await Position.fetchPositionDetails(position.tokenId, position.isStaked);
+          message.position = new Position(updatedPositionData);
 
           // Update the message in Telegram
-          await this.bot.send(positionMessage);
+          await this.bot.send(message);
 
           // Update position data in MongoDB
           await this.mongo.savePosition(
-              positionData.tokenId,
-              updatedPosition.walletAddress || 'unknown',
-              positionData.chatId,
+              updatedPositionData.tokenId,
+              position.walletAddress || 'unknown',
+              message.chatId,
               {
-                token0Amount: updatedPosition.token0Amount,
-                token1Amount: updatedPosition.token1Amount,
-                currentPrice: updatedPosition.currentPrice,
-                inRange: updatedPosition.inRange,
-                liquidity: updatedPosition.liquidity?.toString()
+                token0Amount: updatedPositionData.token0Amount,
+                token1Amount: updatedPositionData.token1Amount,
+                currentPrice: updatedPositionData.currentPrice,
+                inRange: updatedPositionData.inRange,
+                liquidity: updatedPositionData.liquidity?.toString()
               }
           );
-
-          console.log(`Updated position message for token ID ${positionData.tokenId} in chat ${positionData.chatId} via swap event`);
-
         } catch (error) {
-          console.error(`Error updating position message for token ID ${positionData.tokenId}:`, error.message);
+          console.error(`Error updating position message for token ID ${message.tokenId}:`, error.message);
         }
       }
-
-      // Remove the pool from active positions if no positions remain
-      if (activePositions.size === 0) {
-        this.positions.delete(poolAddress);
-        console.log(`Removed pool ${poolAddress} from active positions - no more positions in range`);
-      }
-
-      await this.mongo.close();
-
     } catch (error) {
-      console.error(`Error handling swap event for LP positions in pool ${poolAddress}:`, error.message);
+      console.error(`Error handling swap event for LP positions in pool ${poolData.address}:`, error.message);
     }
-  }
-
-  /**
-   * Initialize event listener for swap events from PoolService
-   */
-  initializeSwapEventListener() {
-    return;
-    if (this.swapEventListener) {
-      Pool.removeListener('swap', this.swapEventListener);
-    }
-
-    Pool.on('swap', this.swapEventListener);
-    console.log('Initialized swap event listener for LP command');
-  }
-
-  /**
-   * Register a position for event monitoring when pool swaps occur
-   * @param {string} poolAddress - Pool address
-   * @param {string} tokenId - Position token ID
-   * @param {number} chatId - Chat ID
-   * @param {number} messageId - Message ID
-   */
-  async registerPositionForEventMonitoring(poolAddress, tokenId, chatId, messageId) {
-    try {
-      // Create or get the position set for this pool
-      if (!this.positions.has(poolAddress)) {
-        this.positions.set(poolAddress, new Set());
-      }
-
-      // Add this position to the active positions set
-      const positionSet = this.positions.get(poolAddress);
-      const positionData = {
-        tokenId: tokenId,
-        chatId: chatId,
-        messageId: messageId
-      };
-
-      positionSet.add(positionData);
-
-      console.log(`Registered position for event monitoring: pool ${poolAddress}, tokenId ${tokenId}, chat ${chatId}`);
-    } catch (error) {
-      console.error(`Error registering position for event monitoring for pool ${poolAddress}:`, error.message);
-    }
-  }
-
-  /**
-   * Unregister a position from event monitoring
-   * @param {string} poolAddress - Pool address
-   * @param {string} tokenId - Position token ID
-   * @param {number} chatId - Chat ID
-   */
-  unregisterPositionFromEventMonitoring(poolAddress, tokenId, chatId) {
-    const positions = this.positions.get(poolAddress);
-    if (positions) {
-      // Find and remove the position
-      for (const position of positions) {
-        if (position.tokenId === tokenId && position.chatId === chatId) {
-          positions.delete(position);
-          console.log(`Unregistered position from event monitoring: pool ${poolAddress}, tokenId ${tokenId}, chat ${chatId}`);
-          break;
-        }
-      }
-
-      // If no more positions for this pool, remove the pool entirely
-      if (positions.size === 0) {
-        this.positions.delete(poolAddress);
-        console.log(`Removed pool ${poolAddress} from active positions - no more positions tracking`);
-      }
-    }
-  }
-
-  /**
-   * Update a specific position message
-   * @param {number} chatId - Chat ID
-   * @param {number} messageId - Message ID
-   * @param {Object} position - Updated position data
-   */
-  async updatePositionMessage(chatId, messageId, position) {
-    try {
-      const positionMessage = new PositionMessage(position, true);
-      positionMessage.chatId = chatId;
-      positionMessage.id = messageId;
-
-      await this.bot.send(positionMessage);
-
-      console.log(`Updated individual position message for token ID ${position.tokenId} in chat ${chatId}`);
-    } catch (error) {
-      console.error(`Error updating individual position message:`, error.message);
-    }
-  }
-
-  /**
-   * Clean up positions for a specific chat (e.g., when user stops monitoring)
-   * @param {number} chatId - Chat ID to clean up
-   */
-  cleanupPositionsForChat(chatId) {
-    for (const [poolAddress, positions] of this.positions.entries()) {
-      const toRemove = [];
-
-      for (const position of positions) {
-        if (position.chatId === chatId) {
-          toRemove.push(position);
-        }
-      }
-
-      // Remove positions for this chat
-      for (const position of toRemove) {
-        positions.delete(position);
-        console.log(`Removed position for chat ${chatId}, pool ${poolAddress}, tokenId ${position.tokenId}`);
-      }
-
-      // If no more positions for this pool, remove the pool entirely
-      if (positions.size === 0) {
-        this.positions.delete(poolAddress);
-        console.log(`Removed pool ${poolAddress} from active positions - no more positions tracking`);
-      }
-    }
-  }
-
-  /**
-   * Get all active positions (for debugging)
-   * @returns {Map} Map of active positions
-   */
-  getActivePositions() {
-    return this.positions;
-  }
-
-  /**
-   * Clean up event listeners and active positions
-   */
-  cleanup() {
-    if (this.swapEventListener) {
-      const poolService = require('../../uniswap/pool');
-      poolService.removeListener('swap', this.swapEventListener);
-      this.swapEventListener = null;
-    }
-    this.positions.clear();
-    console.log('Cleaned up LP handler resources');
   }
 
   /**
