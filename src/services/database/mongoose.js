@@ -1,0 +1,468 @@
+const mongoose = require('mongoose');
+const Pool = require('./models/Pool');
+const Position = require('./models/Position');
+const PoolMessage = require('./models/PoolMessage');
+const Wallet = require('./models/Wallet');
+const Token = require('./models/Token');
+
+class MongooseService {
+  static #instance = null;
+
+  static getInstance() {
+    if (!MongooseService.#instance) {
+      MongooseService.#instance = new MongooseService();
+    }
+    return MongooseService.#instance;
+  }
+
+  constructor() {
+    if (MongooseService.#instance) {
+      throw new Error('Use MongooseService.getInstance() instead of new operator');
+    }
+    this.isConnected = false;
+  }
+
+  /**
+   * Connect to MongoDB using Mongoose
+   */
+  async connect() {
+    if (this.isConnected) return;
+
+    try {
+      const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/defi-lp-manager';
+      await mongoose.connect(uri);
+      this.isConnected = true;
+      console.log('Connected to MongoDB via Mongoose');
+    } catch (error) {
+      console.error('Failed to connect to MongoDB via Mongoose:', error.message);
+      this.isConnected = false;
+    }
+  }
+
+  /**
+   * Disconnect from MongoDB
+   */
+  async disconnect() {
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.disconnect();
+      this.isConnected = false;
+      console.log('Disconnected from MongoDB');
+    }
+  }
+
+  // Pool methods
+  async savePoolState(poolAddress, poolData) {
+    try {
+      const updateData = {
+        poolAddress,
+        ...poolData,
+        updatedAt: new Date()
+      };
+
+      await Pool.findOneAndUpdate(
+        { poolAddress },
+        updateData,
+        { upsert: true, new: true }
+      );
+    } catch (error) {
+      console.error(`Error saving pool data for ${poolAddress}:`, error.message);
+    }
+  }
+
+  async loadAllPools() {
+    try {
+      const pools = await Pool.find({}).lean();
+      const result = {};
+
+      pools.forEach(pool => {
+        const { poolAddress, ...poolData } = pool;
+        result[poolAddress] = poolData;
+      });
+
+      console.log(`Loaded ${pools.length} pools from database`);
+      return result;
+    } catch (error) {
+      console.error('Error loading pools:', error.message);
+      return {};
+    }
+  }
+
+  async removePool(poolAddress) {
+    try {
+      await Pool.deleteOne({ poolAddress });
+      console.log(`Removed pool ${poolAddress} from database`);
+    } catch (error) {
+      console.error(`Error removing pool ${poolAddress}:`, error.message);
+    }
+  }
+
+  async cachePoolInfo(poolAddress, poolInfo) {
+    await this.savePoolState(poolAddress, poolInfo);
+    console.log(`Cached static info for pool ${poolAddress}`);
+  }
+
+  async getCachedPoolInfo(poolAddress) {
+    try {
+      const poolInfo = await Pool.findOne({ poolAddress }).lean();
+      if (poolInfo) {
+        console.log(`Retrieved pool info for ${poolAddress}`);
+        return poolInfo;
+      }
+      return null;
+    } catch (error) {
+      console.error(`Error retrieving pool info for ${poolAddress}:`, error.message);
+      return null;
+    }
+  }
+
+  async getAllCachedPools() {
+    try {
+      const pools = await Pool.find({}).lean();
+      console.log(`Retrieved ${pools.length} pools`);
+      return pools;
+    } catch (error) {
+      console.error('Error retrieving all pools:', error.message);
+      return [];
+    }
+  }
+
+  async findPoolsByTokenAddress(tokenAddress) {
+    try {
+      const query = {
+        $or: [
+          { 'token0.address': tokenAddress.toLowerCase() },
+          { 'token1.address': tokenAddress.toLowerCase() }
+        ]
+      };
+
+      const pools = await Pool.find(query).lean();
+      console.log(`Found ${pools.length} pools containing token ${tokenAddress}`);
+      return pools;
+    } catch (error) {
+      console.error(`Error finding pools by token ${tokenAddress}:`, error.message);
+      return [];
+    }
+  }
+
+  async findPoolsByTokenSymbol(tokenSymbol) {
+    try {
+      const query = {
+        $or: [
+          { 'token0.symbol': { $regex: new RegExp(tokenSymbol, 'i') } },
+          { 'token1.symbol': { $regex: new RegExp(tokenSymbol, 'i') } }
+        ]
+      };
+
+      const pools = await Pool.find(query).lean();
+      console.log(`Found ${pools.length} pools containing token symbol ${tokenSymbol}`);
+      return pools;
+    } catch (error) {
+      console.error(`Error finding pools by token symbol ${tokenSymbol}:`, error.message);
+      return [];
+    }
+  }
+
+  async findPoolsByPlatformAndBlockchain(platform, blockchain) {
+    try {
+      const query = {
+        platform: platform.toLowerCase(),
+        blockchain: blockchain.toLowerCase()
+      };
+
+      const pools = await Pool.find(query).lean();
+      console.log(`Found ${pools.length} pools on ${platform} ${blockchain}`);
+      return pools;
+    } catch (error) {
+      console.error(`Error finding pools by platform and blockchain:`, error.message);
+      return [];
+    }
+  }
+
+  // Pool Message methods
+  async savePoolMessage(poolAddress, chatId, messageId, isMonitored = true) {
+    try {
+      const poolMessage = {
+        poolAddress,
+        chatId,
+        messageId,
+        isMonitored,
+        updatedAt: new Date()
+      };
+
+      await PoolMessage.findOneAndUpdate(
+        { poolAddress, chatId },
+        poolMessage,
+        { upsert: true, new: true }
+      );
+    } catch (error) {
+      console.error(`Error saving pool message for ${poolAddress}:`, error.message);
+    }
+  }
+
+  async getPoolMessage(poolAddress, chatId) {
+    try {
+      const poolMessage = await PoolMessage.findOne({
+        poolAddress,
+        chatId
+      }).lean();
+
+      return poolMessage;
+    } catch (error) {
+      console.error(`Error getting pool message for ${poolAddress}:`, error.message);
+      return null;
+    }
+  }
+
+  async getMonitoredPoolMessages() {
+    try {
+      const monitoredPools = await PoolMessage.find({
+        isMonitored: true
+      }).lean();
+
+      return monitoredPools;
+    } catch (error) {
+      console.error('Error getting monitored pool messages:', error.message);
+      return [];
+    }
+  }
+
+  async removePoolMessage(poolAddress, chatId) {
+    try {
+      await PoolMessage.deleteOne({
+        poolAddress,
+        chatId
+      });
+
+      console.log(`Removed pool message for ${poolAddress} in chat ${chatId}`);
+    } catch (error) {
+      console.error(`Error removing pool message for ${poolAddress}:`, error.message);
+    }
+  }
+
+  async updatePoolMessageId(poolAddress, chatId, messageId) {
+    try {
+      await PoolMessage.findOneAndUpdate(
+        { poolAddress, chatId },
+        {
+          messageId,
+          updatedAt: new Date()
+        }
+      );
+
+      console.log(`Updated message ID for pool message ${poolAddress} in chat ${chatId}`);
+    } catch (error) {
+      console.error(`Error updating pool message ID for ${poolAddress}:`, error.message);
+    }
+  }
+
+  // Position methods
+  async savePosition(position) {
+    try {
+      const { tokenId, walletAddress, ...positionData } = position;
+      const positionDoc = {
+        tokenId,
+        walletAddress,
+        ...positionData,
+        updatedAt: new Date()
+      };
+
+      await Position.findOneAndUpdate(
+        { tokenId, walletAddress },
+        positionDoc,
+        { upsert: true, new: true }
+      );
+
+      console.log(`Saved position ${tokenId} for wallet ${walletAddress}`);
+    } catch (error) {
+      console.error(`Error saving position ${position.tokenId}:`, error.message);
+    }
+  }
+
+  async getPosition(tokenId, walletAddress) {
+    try {
+      const position = await Position.findOne({
+        tokenId,
+        walletAddress
+      }).lean();
+
+      return position;
+    } catch (error) {
+      console.error(`Error getting position ${tokenId}:`, error.message);
+      return null;
+    }
+  }
+
+  async getPositionsByWallet(walletAddress) {
+    try {
+      return await Position.find({
+        walletAddress
+      }).lean();
+    } catch (error) {
+      console.error(`Error getting positions for wallet ${walletAddress}:`, error.message);
+      return [];
+    }
+  }
+
+  async removePosition(tokenId, walletAddress) {
+    try {
+      await Position.deleteOne({
+        tokenId,
+        walletAddress
+      });
+
+      console.log(`Removed position ${tokenId} for wallet ${walletAddress}`);
+    } catch (error) {
+      console.error(`Error removing position ${tokenId}:`, error.message);
+    }
+  }
+
+  // Token methods
+  async getCachedToken(address, chainId) {
+    try {
+      const tokenData = await Token.findOne({
+        address: address.toLowerCase(),
+        chainId
+      }).lean();
+
+      if (tokenData) {
+        console.log(`Retrieved cached token ${tokenData.symbol} (${address})`);
+        return tokenData;
+      }
+      return null;
+    } catch (error) {
+      console.error(`Error getting cached token for ${address}:`, error);
+      return null;
+    }
+  }
+
+  async cacheToken(address, chainId, tokenData) {
+    try {
+      const tokenDoc = {
+        address: address.toLowerCase(),
+        chainId,
+        ...tokenData,
+        cachedAt: new Date()
+      };
+
+      await Token.findOneAndUpdate(
+        { address: address.toLowerCase(), chainId },
+        tokenDoc,
+        { upsert: true, new: true }
+      );
+
+      console.log(`Cached token ${tokenData.symbol} (${address})`);
+    } catch (error) {
+      console.error(`Error caching token for ${address}:`, error);
+    }
+  }
+
+  async getAllCachedTokens() {
+    try {
+      const tokens = await Token.find({}).lean();
+      return tokens;
+    } catch (error) {
+      console.error('Error getting all cached tokens:', error);
+      return [];
+    }
+  }
+
+  async clearTokenCache() {
+    try {
+      await Token.deleteMany({});
+      console.log('Cleared token cache');
+    } catch (error) {
+      console.error('Error clearing token cache:', error);
+    }
+  }
+
+  async removeTokenFromCache(address, chainId) {
+    try {
+      await Token.deleteOne({
+        address: address.toLowerCase(),
+        chainId
+      });
+      console.log(`Removed token ${address} from cache`);
+    } catch (error) {
+      console.error(`Error removing token ${address} from cache:`, error);
+    }
+  }
+
+  // Wallet methods
+  async getAllMonitoredWallets() {
+    try {
+      const wallets = await Wallet.find({}).lean();
+      return wallets;
+    } catch (error) {
+      console.error('Error getting monitored wallets:', error);
+      return [];
+    }
+  }
+
+  async saveMonitoredWallet(address, chatId) {
+    try {
+      await Wallet.findOneAndUpdate(
+        { address, chatId },
+        {
+          address,
+          chatId,
+          lastUpdated: new Date()
+        },
+        { upsert: true, new: true }
+      );
+    } catch (error) {
+      console.error('Error saving monitored wallet:', error);
+      throw error;
+    }
+  }
+
+  async removeMonitoredWallet(address, chatId) {
+    try {
+      await Wallet.deleteOne({
+        address,
+        chatId
+      });
+    } catch (error) {
+      console.error('Error removing monitored wallet:', error);
+      throw error;
+    }
+  }
+
+  // Legacy compatibility methods
+  get walletsCollection() {
+    return {
+      find: (query) => ({
+        toArray: () => Wallet.find(query).lean()
+      }),
+      updateOne: (filter, update, options) =>
+        Wallet.findOneAndUpdate(filter, update.$set, { upsert: options?.upsert }),
+      deleteOne: (filter) => Wallet.deleteOne(filter)
+    };
+  }
+
+  get db() {
+    return {
+      collection: (name) => {
+        switch (name) {
+          case 'tokens':
+            return {
+              findOne: (query) => Token.findOne(query).lean(),
+              replaceOne: (filter, doc, options) =>
+                Token.findOneAndUpdate(filter, doc, { upsert: options?.upsert, new: true }),
+              deleteMany: (query) => Token.deleteMany(query),
+              deleteOne: (query) => Token.deleteOne(query),
+              find: (query) => ({
+                toArray: () => Token.find(query).lean()
+              }),
+              createIndex: () => Promise.resolve() // Indexes are handled in schema
+            };
+          default:
+            throw new Error(`Collection ${name} not supported in legacy compatibility mode`);
+        }
+      }
+    };
+  }
+}
+
+module.exports = {
+  mongoose: MongooseService.getInstance()
+};

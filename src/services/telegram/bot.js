@@ -18,17 +18,17 @@ class Bot extends TelegramBot {
    * Initialize the bot
    * @param {string} token - Telegram bot token
    * @param {object} provider - Ethereum provider instance
-   * @param {object} mongo - MongoDB instance
+   * @param {object} mongoose - Mongoose instance
    * @param {object} walletService - Wallet service instance
    * @param {object} options - Additional bot options
    */
-  constructor(token, provider, mongo, walletService, options = {}) {
+  constructor(token, provider, mongoose, walletService, options = {}) {
     // Initialize parent TelegramBot with polling enabled
     super(token, {polling: true, ...options});
 
     // Store dependencies
     this.provider = provider;
-    this.mongo = mongo;
+    this.mongoose = mongoose;
     this.walletService = walletService;
 
     // Initialize throttling
@@ -57,9 +57,9 @@ class Bot extends TelegramBot {
     this.startHandler = new StartHandler(this, poolsConfig, this.walletService);
     //this.helpHandler = new HelpHandler(this);
     //this.notifyHandler = new NotifyHandler(this, this.monitoredPools);
-    this.poolHandler = new PoolHandler(this, this.mongo, poolsConfig);
+    this.poolHandler = new PoolHandler(this, this.mongoose, poolsConfig);
     this.walletHandler = new WalletHandler(this, this.walletService);
-    this.lpHandler = new LpHandler(this, this.mongo, this.walletService);
+    this.lpHandler = new LpHandler(this, this.mongoose, this.walletService);
   }
 
   send(message) {

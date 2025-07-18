@@ -5,7 +5,7 @@
 const { environment } = require('./config');
 const { getProvider } = require('./services/blockchain/provider');
 const Bot = require('./services/telegram/bot');
-const { mongo } = require('./services/database/mongo');
+const { mongoose } = require('./services/database/mongoose');
 const { WalletService } = require('./services/wallet');
 
 /**
@@ -13,27 +13,27 @@ const { WalletService } = require('./services/wallet');
  * @returns {Object} Application context with initialized services
  */
 async function initializeApp() {
-    await mongo.connect();
+    await mongoose.connect();
 
     // Initialize services
     const provider = getProvider();
 
     // Initialize wallet service
-    const walletService = new WalletService(mongo);
+    const walletService = new WalletService(mongoose);
     await walletService.loadWalletsFromDatabase();
 
     // Initialize the Bot with the wallet service
     const bot = new Bot(
         environment.telegram.botToken,
         provider,
-        mongo,
+        mongoose,
         walletService
     );
 
     return {
         provider,
         bot,
-        mongo,
+        mongoose,
         walletService,
     };
 }
@@ -43,7 +43,7 @@ async function initializeApp() {
  * @param {Object} appContext - The application context with services to clean up
  */
 async function cleanupApp(appContext) {
-    const { bot, poolService, mongoStateManager } = appContext;
+    const { bot, poolService, mongoose } = appContext;
 
     // Close pool service (includes stopping all monitoring)
     if (poolService) {
@@ -51,8 +51,8 @@ async function cleanupApp(appContext) {
     }
 
     // Close MongoDB connection if available
-    if (mongoStateManager) {
-        await mongoStateManager.close();
+    if (mongoose) {
+        await mongoose.disconnect();
     }
 
     // Bot shutdown

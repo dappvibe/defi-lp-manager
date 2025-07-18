@@ -1,13 +1,13 @@
 const { Token } = require('@uniswap/sdk-core');
 const { getContract } = require('viem');
-const { mongo } = require('../database/mongo');
+const { mongoose } = require('../database/mongoose');
 
 class TokenService {
     constructor(provider) {
         this.provider = provider;
         this.tokenCache = new Map(); // Keep in-memory cache for performance
         this.erc20Abi = require('./abis/erc20.json');
-        this.mongo = mongo;
+        this.mongoose = mongoose;
     }
 
     /**
@@ -45,7 +45,7 @@ class TokenService {
         }
 
         // Check MongoDB cache
-        const cachedToken = await this.getCachedTokenFromMongo(address, chainId);
+        const cachedToken = await this.getCachedTokenFromMongoose(address, chainId);
         if (cachedToken) {
             // Add contract property to cached token
             const tokenWithContract = this.addContractToToken(cachedToken);
@@ -69,7 +69,7 @@ class TokenService {
 
             // Cache in both memory and MongoDB
             this.tokenCache.set(cacheKey, token);
-            await this.cacheTokenInMongo(address, chainId, { symbol, decimals, name });
+            await this.cacheTokenInMongoose(address, chainId, { symbol, decimals, name });
 
             return token;
         } catch (error) {
@@ -81,7 +81,7 @@ class TokenService {
 
             // Cache fallback token as well to avoid repeated failures
             this.tokenCache.set(cacheKey, fallbackToken);
-            await this.cacheTokenInMongo(address, chainId, {
+            await this.cacheTokenInMongoose(address, chainId, {
                 symbol: 'UNKNOWN',
                 decimals: 18,
                 name: 'Unknown Token'
@@ -97,16 +97,9 @@ class TokenService {
      * @param {number} chainId - Chain ID
      * @returns {Token|null} Cached token or null if not found
      */
-    async getCachedTokenFromMongo(address, chainId) {
+    async getCachedTokenFromMongoose(address, chainId) {
         try {
-            if (!this.mongo.isConnected) {
-                await this.mongo.connect();
-            }
-
-            const tokenData = await this.mongo.db.collection('tokens').findOne({
-                address: address.toLowerCase(),
-                chainId
-            });
+            const tokenData = await this.mongoose.getCachedToken(address, chainId);
 
             if (tokenData) {
                 return new Token(
@@ -131,29 +124,9 @@ class TokenService {
      * @param {number} chainId - Chain ID
      * @param {Object} tokenData - Token data to cache
      */
-    async cacheTokenInMongo(address, chainId, tokenData) {
+    async cacheTokenInMongoose(address, chainId, tokenData) {
         try {
-            if (!this.mongo.isConnected) {
-                await this.mongo.connect();
-            }
-
-            const tokenDoc = {
-                address: address.toLowerCase(),
-                chainId,
-                symbol: tokenData.symbol,
-                decimals: tokenData.decimals,
-                name: tokenData.name,
-                cachedAt: new Date(),
-                updatedAt: new Date()
-            };
-
-            await this.mongo.db.collection('tokens').replaceOne(
-                { address: address.toLowerCase(), chainId },
-                tokenDoc,
-                { upsert: true }
-            );
-
-            console.log(`Cached token ${tokenData.symbol} (${address}) in MongoDB`);
+            await this.mongoose.cacheToken(address, chainId, tokenData);
         } catch (error) {
             console.error(`Error caching token in MongoDB for ${address}:`, error);
         }
@@ -166,11 +139,7 @@ class TokenService {
         this.tokenCache.clear();
 
         try {
-            if (!this.mongo.isConnected) {
-                await this.mongo.connect();
-            }
-
-            await this.mongo.db.collection('tokens').deleteMany({});
+            await this.mongoose.clearTokenCache();
             console.log('Cleared all token caches');
         } catch (error) {
             console.error('Error clearing token cache from MongoDB:', error);
@@ -187,15 +156,7 @@ class TokenService {
         this.tokenCache.delete(cacheKey);
 
         try {
-            if (!this.mongo.isConnected) {
-                await this.mongo.connect();
-            }
-
-            await this.mongo.db.collection('tokens').deleteOne({
-                address: address.toLowerCase(),
-                chainId
-            });
-
+            await this.mongoose.removeTokenFromCache(address, chainId);
             console.log(`Cleared cache for token ${address} on chain ${chainId}`);
         } catch (error) {
             console.error(`Error clearing token cache from MongoDB for ${address}:`, error);
@@ -208,11 +169,7 @@ class TokenService {
      */
     async getAllCachedTokens() {
         try {
-            if (!this.mongo.isConnected) {
-                await this.mongo.connect();
-            }
-
-            const tokens = await this.mongo.db.collection('tokens').find({}).toArray();
+            const tokens = await this.mongoose.getAllCachedTokens();
             return tokens;
         } catch (error) {
             console.error('Error getting all cached tokens from MongoDB:', error);
@@ -222,25 +179,11 @@ class TokenService {
 
     /**
      * Create database indexes for efficient token queries
+     * Note: Indexes are now handled automatically by Mongoose schemas
      */
     async createTokenIndexes() {
-        try {
-            if (!this.mongo.isConnected) {
-                await this.mongo.connect();
-            }
-
-            const tokensCollection = this.mongo.db.collection('tokens');
-
-            // Create indexes for efficient queries
-            await tokensCollection.createIndex({ address: 1, chainId: 1 }, { unique: true });
-            await tokensCollection.createIndex({ symbol: 1 });
-            await tokensCollection.createIndex({ chainId: 1 });
-            await tokensCollection.createIndex({ cachedAt: 1 });
-
-            console.log('Created token collection indexes');
-        } catch (error) {
-            console.error('Error creating token indexes:', error);
-        }
+        // Indexes are now handled automatically by Mongoose schemas
+        console.log('Token indexes are handled automatically by Mongoose schemas');
     }
 }
 

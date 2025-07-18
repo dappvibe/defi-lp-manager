@@ -7,7 +7,7 @@ const { getTokenInfo, createPoolContract } = require('./contracts');
 const { isValidEthereumAddress, calculatePrice } = require('./utils');
 const { uniswapV3Pool: poolAbi } = require('./abis');
 const { getTimeInTimezone } = require('../../utils/time');
-const { mongo } = require('../database/mongo');
+const { mongoose } = require('../database/mongoose');
 const { getProvider } = require('../blockchain/provider');
 const {getContract} = require("viem");
 const {contracts} = require("../../config");
@@ -41,9 +41,9 @@ class Pool extends EventEmitter {
   static async getPoolOfTokens(token0Address, token1Address, fee) {
     try {
       // First, query MongoDB for already stored pool with these tokens and fee
-      const mongoInstance = mongo;
-      if (!mongoInstance.isConnected) {
-        await mongoInstance.connect();
+      const mongooseInstance = mongoose;
+      if (!mongooseInstance.isConnected) {
+        await mongooseInstance.connect();
       }
 
       // Check both token order combinations since pools can be stored with either order
@@ -62,7 +62,14 @@ class Pool extends EventEmitter {
         ]
       };
 
-      const existingPool = await mongoInstance.poolsCollection.findOne(poolQuery);
+      const pools = await mongooseInstance.getAllCachedPools();
+      const existingPool = pools.find(pool => {
+        return poolQuery.$or.some(condition =>
+          pool.token0.address === condition['token0.address'] &&
+          pool.token1.address === condition['token1.address'] &&
+          pool.fee === condition.fee
+        );
+      });
 
       if (existingPool) {
         console.log(`Found existing pool in database: ${existingPool.poolAddress}`);
@@ -98,7 +105,7 @@ class Pool extends EventEmitter {
       throw new Error('Invalid pool address');
     }
     this.provider = provider || getProvider();
-    this.mongo = mongoOverride || mongo;
+    this.mongoose = mongoOverride || mongoose;
 
     this.contract = createPoolContract(address);
 
@@ -115,7 +122,7 @@ class Pool extends EventEmitter {
   async getPoolInfo() {
     if (!this.info) {
       // Try to get from cache first
-      let cachedInfo = await this.mongo.getCachedPoolInfo(this.address);
+      let cachedInfo = await this.mongoose.getCachedPoolInfo(this.address);
 
       if (cachedInfo) {
         this.info = cachedInfo;
@@ -158,7 +165,7 @@ class Pool extends EventEmitter {
       };
 
       // Cache the information
-      await this.mongo.cachePoolInfo(this.address, this.info);
+      await this.mongoose.cachePoolInfo(this.address, this.info);
     }
     return this.info;
   }
@@ -273,15 +280,10 @@ class Pool extends EventEmitter {
     this.timezone = null;
 
     // Update monitoring state in database
-    await this.mongo.poolsCollection.updateOne(
-      { address: this.address },
-      {
-        $set: {
-          priceMonitoringEnabled: false,
-          updatedAt: new Date()
-        }
-      }
-    );
+    await this.mongoose.savePoolState(this.address, {
+      priceMonitoringEnabled: false,
+      updatedAt: new Date()
+    });
     console.log(`Stopped monitoring pool ${this.info.token0.symbol}/${this.info.token1.symbol} (${this.info.fee}%)`);
   }
 
@@ -328,8 +330,9 @@ class Pool extends EventEmitter {
   async close() {
     await this.stopMonitoring();
 
-    if (this.mongo) {
-      await this.mongo.close();
+    if (this.mongoose) {
+      // Note: mongoose connection is shared, so we don't close it here
+      // await this.mongoose.disconnect();
     }
   }
 
@@ -444,7 +447,7 @@ class Pool extends EventEmitter {
     }
 
     try {
-      await this.mongo.savePoolState(this.address, {
+      await this.mongoose.savePoolState(this.address, {
         ...this.info,
         ...this.monitoringData,
         priceMonitoringEnabled: this.isMonitoring
