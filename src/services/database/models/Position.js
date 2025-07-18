@@ -8,6 +8,7 @@ const positionSchema = new mongoose.Schema({
   messageId: { type: Number, index: true },
   token0Symbol: String,
   token1Symbol: String,
+  isStaked: { type: Boolean, default: false },
   updatedAt: { type: Date, default: Date.now }
 });
 

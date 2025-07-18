@@ -311,7 +311,7 @@ class LpHandler {
       // Fetch full position details from blockchain
       const fullPositionData = await Position.fetchPositionDetails(
         positionData.tokenId,
-        false, // Assume not staked initially, will be updated if needed
+        positionData.isStaked || false, // Use the stored isStaked value
         positionData.walletAddress
       );
 
