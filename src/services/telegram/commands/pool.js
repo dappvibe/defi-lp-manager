@@ -240,7 +240,7 @@ class PoolHandler {
     try {
       const { info, price } = await message.pool.startMonitoring();
       this.listenSwaps(message.pool);
-      this.db.savePoolMessage(info.address, message.chatId, message.id, true);
+      this.db.savePoolMessage(message.pool.address, message.chatId, message.id, true);
       return price;
     } catch (error) {
       console.error(`Error starting pool monitoring  ${message.pool.info.token0.symbol}/${message.pool.info.token1.symbol} (${message.pool.info.fee}%)`, error.message);
