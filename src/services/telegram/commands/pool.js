@@ -133,7 +133,8 @@ class PoolHandler {
     const configuredPools = poolsConfig.getPools('pancakeswap', 'arbitrum');
     this.db.getMonitoredPoolMessages().then(monitoredPools => {
       for (const address of configuredPools) {
-        const msg = this.messages[address] = new PoolInfoMessage(Pool.getPool(address), null);
+        const msg = new PoolInfoMessage(Pool.getPool(address), null);
+        this.messages.set(address, msg);
         const storedMessage = monitoredPools.find(p => p.poolAddress === address);
         if (storedMessage) {
           msg.chatId = storedMessage.chatId;
@@ -154,14 +155,14 @@ class PoolHandler {
     const chatId = msg.chat.id;
 
     try {
-      if (Object.keys(this.messages).length === 0) {
+      if (this.messages.size === 0) {
         const noPoolsMessage = new NoPoolsMessage();
         noPoolsMessage.chatId = chatId;
         return this.bot.send(noPoolsMessage);
       }
 
       // Send a message for each configured pool
-      for (const message of Object.values(this.messages)) {
+      for (const message of this.messages.values()) {
         await message.pool.getPoolInfo(); // fetch from db or blockchain
         const [price, tvl] = await Promise.all([
           message.pool.getCurrentPrice(),
@@ -176,7 +177,7 @@ class PoolHandler {
         message.id = null;
 
         await this.bot.send(message).then(msg => {
-          this.messages[message.pool.address] = msg;
+          this.messages.set(message.pool.address, msg);
           this.db.savePoolMessage(message.pool.address, chatId, msg.id, msg.pool.getMonitoringStatus());
         });
       }
@@ -210,7 +211,7 @@ class PoolHandler {
     const poolAddress = parts[2];
 
     try {
-      const message = this.messages[poolAddress];
+      const message = this.messages.get(poolAddress);
       if (!message) { // noinspection ExceptionCaughtLocallyJS
         throw new Error('Pool message not found: ' + poolAddress);
       }
@@ -278,7 +279,7 @@ class PoolHandler {
     const { address, newPrice, timestamp } = swapInfo;
 
     try {
-      const msg = this.messages[address];
+      const msg = this.messages.get(address);
 
       // price is updated often, we must not let API to rate limit requests
       if (msg.lastUpdate !== null) {

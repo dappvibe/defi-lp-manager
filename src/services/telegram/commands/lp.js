@@ -107,7 +107,10 @@ class LpHandler {
     this.swapEventListener = (swapInfo, poolData) => this.onSwap(swapInfo, poolData);
 
     this.registerHandlers();
-    this.restoreMonitoredPositions();
+    // Start restoration process asynchronously
+    this.restoreMonitoredPositions().catch(error => {
+      console.error('Error during position monitoring restoration:', error);
+    });
   }
 
   registerHandlers() {
@@ -287,7 +290,7 @@ class LpHandler {
           const positions = await this.mongoose.getPositionsByWallet(walletAddress);
 
           for (const positionData of positions) {
-            if (positionData.messageId && positionData.chatId && positionData.isMonitored) {
+            if (positionData.messageId && positionData.chatId) {
               await this.restorePosition(positionData);
               restoredCount++;
             }
@@ -304,13 +307,30 @@ class LpHandler {
   }
 
   async restorePosition(positionData) {
-    const position = new Position(positionData);
-    const positionMessage = new PositionMessage(position);
-    positionMessage.chatId = positionData.chatId;
-    positionMessage.id = positionData.messageId;
+    try {
+      // Fetch full position details from blockchain
+      const fullPositionData = await Position.fetchPositionDetails(
+        positionData.tokenId,
+        false, // Assume not staked initially, will be updated if needed
+        positionData.walletAddress
+      );
 
-    this.positionMessages.set(positionData.tokenId, positionMessage);
-    this.startMonitoringPosition(positionData.tokenId);
+      // Create Position object with full data
+      const position = new Position(fullPositionData);
+      position.walletAddress = positionData.walletAddress; // Ensure wallet address is set
+
+      const positionMessage = new PositionMessage(position);
+      positionMessage.chatId = positionData.chatId;
+      positionMessage.id = positionData.messageId;
+
+      this.positionMessages.set(positionData.tokenId, positionMessage);
+      this.startMonitoringPosition(positionData.tokenId);
+
+      console.log(`Restored position ${positionData.tokenId} for wallet ${positionData.walletAddress}`);
+    } catch (error) {
+      console.error(`Error restoring position ${positionData.tokenId}:`, error);
+      // Don't throw the error to prevent stopping the restoration of other positions
+    }
   }
 
   static help() {

@@ -47,33 +47,19 @@ class Pool extends EventEmitter {
       }
 
       // Check both token order combinations since pools can be stored with either order
-      const poolQuery = {
-        $or: [
-          {
-            'token0.address': token0Address.toLowerCase(),
-            'token1.address': token1Address.toLowerCase(),
-            fee: fee / 10000 // Convert to percentage format used in storage
-          },
-          {
-            'token0.address': token1Address.toLowerCase(),
-            'token1.address': token0Address.toLowerCase(),
-            fee: fee / 10000 // Convert to percentage format used in storage
-          }
-        ]
-      };
-
       const pools = await mongooseInstance.getAllCachedPools();
       const existingPool = pools.find(pool => {
-        return poolQuery.$or.some(condition =>
-          pool.token0.address === condition['token0.address'] &&
-          pool.token1.address === condition['token1.address'] &&
-          pool.fee === condition.fee
+        const feeMatch = pool.fee === fee / 10000; // Convert to percentage format used in storage
+        const tokensMatch = (
+          (pool.token0 === token0Address.toLowerCase() && pool.token1 === token1Address.toLowerCase()) ||
+          (pool.token0 === token1Address.toLowerCase() && pool.token1 === token0Address.toLowerCase())
         );
+        return feeMatch && tokensMatch;
       });
 
       if (existingPool) {
-        console.log(`Found existing pool in database: ${existingPool.poolAddress}`);
-        return this.getPool(existingPool.poolAddress);
+        console.log(`Found existing pool in database: ${existingPool.address}`);
+        return this.getPool(existingPool.address);
       }
 
       // If not found in database, query the factory contract
@@ -141,31 +127,50 @@ class Pool extends EventEmitter {
         this.contract.read.slot0()
       ]);
 
-      // Get token information
-      const [token0Info, token1Info, tvl] = await Promise.all([
+      // Get token information and ensure they are cached in database
+      const [token0Info, token1Info] = await Promise.all([
         getTokenInfo(token0Address),
-        getTokenInfo(token1Address),
-        this.getTVL()
+        getTokenInfo(token1Address)
       ]);
 
-      // Prepare pool info
+      // Cache tokens in database
+      await Promise.all([
+        this.mongoose.cacheToken(token0Address, 42161, {
+          symbol: token0Info.symbol,
+          decimals: token0Info.decimals,
+          name: token0Info.name
+        }),
+        this.mongoose.cacheToken(token1Address, 42161, {
+          symbol: token1Info.symbol,
+          decimals: token1Info.decimals,
+          name: token1Info.name
+        })
+      ]);
+
+      // Calculate TVL
+      const tvl = await this.getTVL();
+
+      // Prepare pool info for runtime use
       this.info = {
-        token0: token0Info,
-        token1: token1Info,
+        token0: token0Info, // Keep for runtime use
+        token1: token1Info, // Keep for runtime use
         fee: fee / 10000,
         tickSpacing,
-        sqrtPriceX96: slot0[0],
-        tick: slot0[1],
-        observationIndex: slot0[2],
-        observationCardinality: slot0[3],
-        observationCardinalityNext: slot0[4],
-        feeProtocol: slot0[5],
         unlocked: slot0[6],
         tvl: tvl
       };
 
+      // Prepare data for database storage with token addresses
+      const poolDataForStorage = {
+        token0: token0Address.toLowerCase(), // Store token address directly
+        token1: token1Address.toLowerCase(), // Store token address directly
+        fee: fee / 10000,
+        tickSpacing,
+        unlocked: slot0[6]
+      };
+
       // Cache the information
-      await this.mongoose.cachePoolInfo(this.address, this.info);
+      await this.mongoose.cachePoolInfo(this.address, poolDataForStorage);
     }
     return this.info;
   }
@@ -447,9 +452,11 @@ class Pool extends EventEmitter {
     }
 
     try {
+      // Prepare monitoring data for storage, excluding notifications
+      const { notifications, ...monitoringDataForStorage } = this.monitoringData;
+
       await this.mongoose.savePoolState(this.address, {
-        ...this.info,
-        ...this.monitoringData,
+        ...monitoringDataForStorage,
         priceMonitoringEnabled: this.isMonitoring
       });
     } catch (error) {

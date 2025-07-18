@@ -51,16 +51,61 @@ class MongooseService {
   }
 
   // Pool methods
+
+  /**
+   * Helper method to populate token data for pools
+   * @param {Array|Object} pools - Pool or array of pools to populate
+   * @returns {Array|Object} Pools with populated token data
+   */
+  async populatePoolTokens(pools) {
+    if (!pools) return pools;
+
+    const isArray = Array.isArray(pools);
+    const poolArray = isArray ? pools : [pools];
+
+    // Get all unique token addresses
+    const tokenAddresses = new Set();
+    poolArray.forEach(pool => {
+      if (pool.token0) tokenAddresses.add(pool.token0);
+      if (pool.token1) tokenAddresses.add(pool.token1);
+    });
+
+    // Fetch all tokens at once
+    const tokens = await Token.find({
+      address: { $in: Array.from(tokenAddresses) }
+    }).lean();
+
+    // Create a map for quick lookup
+    const tokenMap = new Map();
+    tokens.forEach(token => {
+      tokenMap.set(token.address, token);
+    });
+
+    // Populate pools with token data
+    const populatedPools = poolArray.map(pool => {
+      const populatedPool = { ...pool };
+      if (pool.token0) {
+        populatedPool.token0 = tokenMap.get(pool.token0) || { address: pool.token0, symbol: 'UNKNOWN', decimals: 18, name: 'Unknown Token' };
+      }
+      if (pool.token1) {
+        populatedPool.token1 = tokenMap.get(pool.token1) || { address: pool.token1, symbol: 'UNKNOWN', decimals: 18, name: 'Unknown Token' };
+      }
+      return populatedPool;
+    });
+
+    return isArray ? populatedPools : populatedPools[0];
+  }
+
   async savePoolState(poolAddress, poolData) {
     try {
       const updateData = {
-        poolAddress,
+        address: poolAddress,
         ...poolData,
         updatedAt: new Date()
       };
 
       await Pool.findOneAndUpdate(
-        { poolAddress },
+        { address: poolAddress },
         updateData,
         { upsert: true, new: true }
       );
@@ -72,11 +117,12 @@ class MongooseService {
   async loadAllPools() {
     try {
       const pools = await Pool.find({}).lean();
+      const populatedPools = await this.populatePoolTokens(pools);
       const result = {};
 
-      pools.forEach(pool => {
-        const { poolAddress, ...poolData } = pool;
-        result[poolAddress] = poolData;
+      populatedPools.forEach(pool => {
+        const { address, ...poolData } = pool;
+        result[address] = poolData;
       });
 
       console.log(`Loaded ${pools.length} pools from database`);
@@ -89,7 +135,7 @@ class MongooseService {
 
   async removePool(poolAddress) {
     try {
-      await Pool.deleteOne({ poolAddress });
+      await Pool.deleteOne({ address: poolAddress });
       console.log(`Removed pool ${poolAddress} from database`);
     } catch (error) {
       console.error(`Error removing pool ${poolAddress}:`, error.message);
@@ -103,10 +149,11 @@ class MongooseService {
 
   async getCachedPoolInfo(poolAddress) {
     try {
-      const poolInfo = await Pool.findOne({ poolAddress }).lean();
+      const poolInfo = await Pool.findOne({ address: poolAddress }).lean();
       if (poolInfo) {
+        const populatedPool = await this.populatePoolTokens(poolInfo);
         console.log(`Retrieved pool info for ${poolAddress}`);
-        return poolInfo;
+        return populatedPool;
       }
       return null;
     } catch (error) {
@@ -118,8 +165,9 @@ class MongooseService {
   async getAllCachedPools() {
     try {
       const pools = await Pool.find({}).lean();
+      const populatedPools = await this.populatePoolTokens(pools);
       console.log(`Retrieved ${pools.length} pools`);
-      return pools;
+      return populatedPools;
     } catch (error) {
       console.error('Error retrieving all pools:', error.message);
       return [];
@@ -128,16 +176,19 @@ class MongooseService {
 
   async findPoolsByTokenAddress(tokenAddress) {
     try {
-      const query = {
-        $or: [
-          { 'token0.address': tokenAddress.toLowerCase() },
-          { 'token1.address': tokenAddress.toLowerCase() }
-        ]
-      };
+      const normalizedAddress = tokenAddress.toLowerCase();
 
-      const pools = await Pool.find(query).lean();
+      // Find pools that contain this token address
+      const pools = await Pool.find({
+        $or: [
+          { token0: normalizedAddress },
+          { token1: normalizedAddress }
+        ]
+      }).lean();
+
+      const populatedPools = await this.populatePoolTokens(pools);
       console.log(`Found ${pools.length} pools containing token ${tokenAddress}`);
-      return pools;
+      return populatedPools;
     } catch (error) {
       console.error(`Error finding pools by token ${tokenAddress}:`, error.message);
       return [];
@@ -146,16 +197,29 @@ class MongooseService {
 
   async findPoolsByTokenSymbol(tokenSymbol) {
     try {
-      const query = {
-        $or: [
-          { 'token0.symbol': { $regex: new RegExp(tokenSymbol, 'i') } },
-          { 'token1.symbol': { $regex: new RegExp(tokenSymbol, 'i') } }
-        ]
-      };
+      // First find tokens by symbol
+      const tokens = await Token.find({
+        symbol: { $regex: new RegExp(tokenSymbol, 'i') }
+      });
 
-      const pools = await Pool.find(query).lean();
+      if (tokens.length === 0) {
+        console.log(`No tokens found with symbol matching ${tokenSymbol}`);
+        return [];
+      }
+
+      const tokenAddresses = tokens.map(token => token.address);
+
+      // Then find pools that reference these token addresses
+      const pools = await Pool.find({
+        $or: [
+          { token0: { $in: tokenAddresses } },
+          { token1: { $in: tokenAddresses } }
+        ]
+      }).lean();
+
+      const populatedPools = await this.populatePoolTokens(pools);
       console.log(`Found ${pools.length} pools containing token symbol ${tokenSymbol}`);
-      return pools;
+      return populatedPools;
     } catch (error) {
       console.error(`Error finding pools by token symbol ${tokenSymbol}:`, error.message);
       return [];
@@ -170,8 +234,9 @@ class MongooseService {
       };
 
       const pools = await Pool.find(query).lean();
+      const populatedPools = await this.populatePoolTokens(pools);
       console.log(`Found ${pools.length} pools on ${platform} ${blockchain}`);
-      return pools;
+      return populatedPools;
     } catch (error) {
       console.error(`Error finding pools by platform and blockchain:`, error.message);
       return [];
@@ -181,7 +246,9 @@ class MongooseService {
   // Pool Message methods
   async savePoolMessage(poolAddress, chatId, messageId, isMonitored = true) {
     try {
+      const compositeId = `${poolAddress}_${chatId}`;
       const poolMessage = {
+        _id: compositeId,
         poolAddress,
         chatId,
         messageId,
@@ -189,8 +256,8 @@ class MongooseService {
         updatedAt: new Date()
       };
 
-      await PoolMessage.findOneAndUpdate(
-        { poolAddress, chatId },
+      await PoolMessage.findByIdAndUpdate(
+        compositeId,
         poolMessage,
         { upsert: true, new: true }
       );
@@ -201,10 +268,8 @@ class MongooseService {
 
   async getPoolMessage(poolAddress, chatId) {
     try {
-      const poolMessage = await PoolMessage.findOne({
-        poolAddress,
-        chatId
-      }).lean();
+      const compositeId = `${poolAddress}_${chatId}`;
+      const poolMessage = await PoolMessage.findById(compositeId).lean();
 
       return poolMessage;
     } catch (error) {
@@ -228,10 +293,8 @@ class MongooseService {
 
   async removePoolMessage(poolAddress, chatId) {
     try {
-      await PoolMessage.deleteOne({
-        poolAddress,
-        chatId
-      });
+      const compositeId = `${poolAddress}_${chatId}`;
+      await PoolMessage.findByIdAndDelete(compositeId);
 
       console.log(`Removed pool message for ${poolAddress} in chat ${chatId}`);
     } catch (error) {
@@ -241,8 +304,9 @@ class MongooseService {
 
   async updatePoolMessageId(poolAddress, chatId, messageId) {
     try {
-      await PoolMessage.findOneAndUpdate(
-        { poolAddress, chatId },
+      const compositeId = `${poolAddress}_${chatId}`;
+      await PoolMessage.findByIdAndUpdate(
+        compositeId,
         {
           messageId,
           updatedAt: new Date()
@@ -319,10 +383,7 @@ class MongooseService {
   // Token methods
   async getCachedToken(address, chainId) {
     try {
-      const tokenData = await Token.findOne({
-        address: address.toLowerCase(),
-        chainId
-      }).lean();
+      const tokenData = await Token.findById(address.toLowerCase()).lean();
 
       if (tokenData) {
         console.log(`Retrieved cached token ${tokenData.symbol} (${address})`);
@@ -337,15 +398,17 @@ class MongooseService {
 
   async cacheToken(address, chainId, tokenData) {
     try {
+      const normalizedAddress = address.toLowerCase();
       const tokenDoc = {
-        address: address.toLowerCase(),
+        _id: normalizedAddress,
+        address: normalizedAddress,
         chainId,
         ...tokenData,
         cachedAt: new Date()
       };
 
-      await Token.findOneAndUpdate(
-        { address: address.toLowerCase(), chainId },
+      await Token.findByIdAndUpdate(
+        normalizedAddress,
         tokenDoc,
         { upsert: true, new: true }
       );
@@ -377,10 +440,7 @@ class MongooseService {
 
   async removeTokenFromCache(address, chainId) {
     try {
-      await Token.deleteOne({
-        address: address.toLowerCase(),
-        chainId
-      });
+      await Token.findByIdAndDelete(address.toLowerCase());
       console.log(`Removed token ${address} from cache`);
     } catch (error) {
       console.error(`Error removing token ${address} from cache:`, error);
