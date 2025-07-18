@@ -217,26 +217,70 @@ class LpHandler {
   async updatePositionMessage(message) {
     const { position } = message;
 
-    // Fetch updated position data
-    const updatedData = await Position.fetchPositionDetails(position.tokenId, position.isStaked);
-    message.position = new Position(updatedData);
+    try {
+      // Fetch updated position data
+      const updatedData = await Position.fetchPositionDetails(position.tokenId, position.isStaked);
+      const updatedPosition = new Position(updatedData);
 
-    // Update Telegram message
-    await this.bot.send(message);
+      // Calculate combined token1 value
+      const combinedToken1Value = await updatedPosition.getCombinedToken1Value();
+      if (combinedToken1Value < 0.1) {
+        console.log(`Position ${position.tokenId} liquidity dropped below 0.1 (${combinedToken1Value.toFixed(4)}). Stopping monitoring.`);
 
-    // Update database
-    await this.mongo.savePosition(
-      updatedData.tokenId,
-      position.walletAddress || 'unknown',
-      message.chatId,
-      {
-        token0Amount: updatedData.token0Amount,
-        token1Amount: updatedData.token1Amount,
-        currentPrice: updatedData.currentPrice,
-        inRange: updatedData.inRange,
-        liquidity: updatedData.liquidity?.toString()
+        // Stop monitoring this position
+        await this.stopMonitoringPosition(position.tokenId);
+        this.positionMessages.delete(position.tokenId);
+        await this.mongo.removePosition(position.tokenId, position.walletAddress);
+
+        return; // Exit early, don't update the message
       }
-    );
+
+      // Update the position with new data
+      message.position = updatedPosition;
+
+      // Update Telegram message
+      await this.bot.send(message);
+
+      // Update database
+      await this.mongo.savePosition(
+        updatedData.tokenId,
+        position.walletAddress || 'unknown',
+        message.chatId,
+        {
+          token0Amount: updatedData.token0Amount,
+          token1Amount: updatedData.token1Amount,
+          currentPrice: updatedData.currentPrice,
+          inRange: updatedData.inRange,
+          liquidity: updatedData.liquidity?.toString()
+        }
+      );
+
+    } catch (error) {
+      console.error(`Error updating position message for ${position.tokenId}:`, error);
+      throw error;
+    }
+  }
+
+  async stopMonitoringPosition(tokenId) {
+    const message = this.positionMessages.get(tokenId);
+    if (!message) {
+      console.warn(`No position message found for token ID ${tokenId} to stop monitoring`);
+      return;
+    }
+
+    try {
+      // Stop pool monitoring if this was the last position for this pool
+      const pool = message.position.pool;
+      const otherPositionsForPool = Array.from(this.positionMessages.values())
+        .filter(msg => msg.position.pool.address === pool.address && msg.position.tokenId !== tokenId);
+
+      if (otherPositionsForPool.length === 0) {
+        pool.removeListener('swap', this.swapEventListener);
+        console.log(`Stopped monitoring pool ${pool.address} as no more positions are being tracked`);
+      }
+    } catch (error) {
+      console.error(`Error stopping monitoring for position ${tokenId}:`, error);
+    }
   }
 
   async restoreMonitoredPositions() {
@@ -250,7 +294,7 @@ class LpHandler {
           const positions = await this.mongo.getPositionsByWallet(walletAddress);
 
           for (const positionData of positions) {
-            if (positionData.messageId && positionData.chatId) {
+            if (positionData.messageId && positionData.chatId && positionData.isMonitored) {
               await this.restorePosition(positionData);
               restoredCount++;
             }
