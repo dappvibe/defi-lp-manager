@@ -99,15 +99,18 @@ class GeneralErrorMessage extends TelegramMessage {
  * Handler for /lp command - Lists liquidity positions for monitored wallets
  */
 class LpHandler {
-  constructor(bot, mongo, walletService) {
+  constructor(bot, mongoose, walletService) {
     this.bot = bot;
-    this.mongo = mongo;
+    this.mongoose = mongoose;
     this.walletService = walletService;
     this.positionMessages = new Map(); // tokenId => PositionMessage
     this.swapEventListener = (swapInfo, poolData) => this.onSwap(swapInfo, poolData);
 
     this.registerHandlers();
-    this.restoreMonitoredPositions();
+    // Start restoration process asynchronously
+    this.restoreMonitoredPositions().catch(error => {
+      console.error('Error during position monitoring restoration:', error);
+    });
   }
 
   registerHandlers() {
@@ -172,7 +175,7 @@ class LpHandler {
 
   async savePositionData(position, walletAddress, chatId, messageId) {
     try {
-      await this.mongo.savePosition({
+      await this.mongoose.savePosition({
         ...position.toObject(),
         walletAddress,
         poolAddress: position.pool.address,
@@ -230,7 +233,7 @@ class LpHandler {
         // Stop monitoring this position
         await this.stopMonitoringPosition(position.tokenId);
         this.positionMessages.delete(position.tokenId);
-        await this.mongo.removePosition(position.tokenId, position.walletAddress);
+        await this.mongoose.removePosition(position.tokenId, position.walletAddress);
 
         return; // Exit early, don't update the message
       }
@@ -240,7 +243,7 @@ class LpHandler {
 
       await this.bot.send(message);
 
-      await this.mongo.savePosition({
+      await this.mongoose.savePosition({
         ...position.toObject(),
         walletAddress: position.walletAddress,
         poolAddress: position.pool.address,
@@ -284,10 +287,10 @@ class LpHandler {
 
       for (const walletAddress of wallets) {
         try {
-          const positions = await this.mongo.getPositionsByWallet(walletAddress);
+          const positions = await this.mongoose.getPositionsByWallet(walletAddress);
 
           for (const positionData of positions) {
-            if (positionData.messageId && positionData.chatId && positionData.isMonitored) {
+            if (positionData.messageId && positionData.chatId) {
               await this.restorePosition(positionData);
               restoredCount++;
             }
@@ -304,13 +307,30 @@ class LpHandler {
   }
 
   async restorePosition(positionData) {
-    const position = new Position(positionData);
-    const positionMessage = new PositionMessage(position);
-    positionMessage.chatId = positionData.chatId;
-    positionMessage.id = positionData.messageId;
+    try {
+      // Fetch full position details from blockchain
+      const fullPositionData = await Position.fetchPositionDetails(
+        positionData.tokenId,
+        positionData.isStaked || false, // Use the stored isStaked value
+        positionData.walletAddress
+      );
 
-    this.positionMessages.set(positionData.tokenId, positionMessage);
-    this.startMonitoringPosition(positionData.tokenId);
+      // Create Position object with full data
+      const position = new Position(fullPositionData);
+      position.walletAddress = positionData.walletAddress; // Ensure wallet address is set
+
+      const positionMessage = new PositionMessage(position);
+      positionMessage.chatId = positionData.chatId;
+      positionMessage.id = positionData.messageId;
+
+      this.positionMessages.set(positionData.tokenId, positionMessage);
+      this.startMonitoringPosition(positionData.tokenId);
+
+      console.log(`Restored position ${positionData.tokenId} for wallet ${positionData.walletAddress}`);
+    } catch (error) {
+      console.error(`Error restoring position ${positionData.tokenId}:`, error);
+      // Don't throw the error to prevent stopping the restoration of other positions
+    }
   }
 
   static help() {

@@ -7,7 +7,7 @@ const { getTokenInfo, createPoolContract } = require('./contracts');
 const { isValidEthereumAddress, calculatePrice } = require('./utils');
 const { uniswapV3Pool: poolAbi } = require('./abis');
 const { getTimeInTimezone } = require('../../utils/time');
-const { mongo } = require('../database/mongo');
+const { mongoose } = require('../database/mongoose');
 const { getProvider } = require('../blockchain/provider');
 const {getContract} = require("viem");
 const {contracts} = require("../../config");
@@ -41,32 +41,25 @@ class Pool extends EventEmitter {
   static async getPoolOfTokens(token0Address, token1Address, fee) {
     try {
       // First, query MongoDB for already stored pool with these tokens and fee
-      const mongoInstance = mongo;
-      if (!mongoInstance.isConnected) {
-        await mongoInstance.connect();
+      const mongooseInstance = mongoose;
+      if (!mongooseInstance.isConnected) {
+        await mongooseInstance.connect();
       }
 
       // Check both token order combinations since pools can be stored with either order
-      const poolQuery = {
-        $or: [
-          {
-            'token0.address': token0Address.toLowerCase(),
-            'token1.address': token1Address.toLowerCase(),
-            fee: fee / 10000 // Convert to percentage format used in storage
-          },
-          {
-            'token0.address': token1Address.toLowerCase(),
-            'token1.address': token0Address.toLowerCase(),
-            fee: fee / 10000 // Convert to percentage format used in storage
-          }
-        ]
-      };
-
-      const existingPool = await mongoInstance.poolsCollection.findOne(poolQuery);
+      const pools = await mongooseInstance.getAllCachedPools();
+      const existingPool = pools.find(pool => {
+        const feeMatch = pool.fee === fee / 10000; // Convert to percentage format used in storage
+        const tokensMatch = (
+          (pool.token0 === token0Address.toLowerCase() && pool.token1 === token1Address.toLowerCase()) ||
+          (pool.token0 === token1Address.toLowerCase() && pool.token1 === token0Address.toLowerCase())
+        );
+        return feeMatch && tokensMatch;
+      });
 
       if (existingPool) {
-        console.log(`Found existing pool in database: ${existingPool.poolAddress}`);
-        return this.getPool(existingPool.poolAddress);
+        console.log(`Found existing pool in database: ${existingPool.address}`);
+        return this.getPool(existingPool.address);
       }
 
       // If not found in database, query the factory contract
@@ -98,7 +91,7 @@ class Pool extends EventEmitter {
       throw new Error('Invalid pool address');
     }
     this.provider = provider || getProvider();
-    this.mongo = mongoOverride || mongo;
+    this.mongoose = mongoOverride || mongoose;
 
     this.contract = createPoolContract(address);
 
@@ -115,7 +108,7 @@ class Pool extends EventEmitter {
   async getPoolInfo() {
     if (!this.info) {
       // Try to get from cache first
-      let cachedInfo = await this.mongo.getCachedPoolInfo(this.address);
+      let cachedInfo = await this.mongoose.getCachedPoolInfo(this.address);
 
       if (cachedInfo) {
         this.info = cachedInfo;
@@ -134,31 +127,50 @@ class Pool extends EventEmitter {
         this.contract.read.slot0()
       ]);
 
-      // Get token information
-      const [token0Info, token1Info, tvl] = await Promise.all([
+      // Get token information and ensure they are cached in database
+      const [token0Info, token1Info] = await Promise.all([
         getTokenInfo(token0Address),
-        getTokenInfo(token1Address),
-        this.getTVL()
+        getTokenInfo(token1Address)
       ]);
 
-      // Prepare pool info
+      // Cache tokens in database
+      await Promise.all([
+        this.mongoose.cacheToken(token0Address, 42161, {
+          symbol: token0Info.symbol,
+          decimals: token0Info.decimals,
+          name: token0Info.name
+        }),
+        this.mongoose.cacheToken(token1Address, 42161, {
+          symbol: token1Info.symbol,
+          decimals: token1Info.decimals,
+          name: token1Info.name
+        })
+      ]);
+
+      // Calculate TVL
+      const tvl = await this.getTVL();
+
+      // Prepare pool info for runtime use
       this.info = {
-        token0: token0Info,
-        token1: token1Info,
+        token0: token0Info, // Keep for runtime use
+        token1: token1Info, // Keep for runtime use
         fee: fee / 10000,
         tickSpacing,
-        sqrtPriceX96: slot0[0],
-        tick: slot0[1],
-        observationIndex: slot0[2],
-        observationCardinality: slot0[3],
-        observationCardinalityNext: slot0[4],
-        feeProtocol: slot0[5],
         unlocked: slot0[6],
         tvl: tvl
       };
 
+      // Prepare data for database storage with token addresses
+      const poolDataForStorage = {
+        token0: token0Address.toLowerCase(), // Store token address directly
+        token1: token1Address.toLowerCase(), // Store token address directly
+        fee: fee / 10000,
+        tickSpacing,
+        unlocked: slot0[6]
+      };
+
       // Cache the information
-      await this.mongo.cachePoolInfo(this.address, this.info);
+      await this.mongoose.cachePoolInfo(this.address, poolDataForStorage);
     }
     return this.info;
   }
@@ -273,15 +285,10 @@ class Pool extends EventEmitter {
     this.timezone = null;
 
     // Update monitoring state in database
-    await this.mongo.poolsCollection.updateOne(
-      { address: this.address },
-      {
-        $set: {
-          priceMonitoringEnabled: false,
-          updatedAt: new Date()
-        }
-      }
-    );
+    await this.mongoose.savePoolState(this.address, {
+      priceMonitoringEnabled: false,
+      updatedAt: new Date()
+    });
     console.log(`Stopped monitoring pool ${this.info.token0.symbol}/${this.info.token1.symbol} (${this.info.fee}%)`);
   }
 
@@ -328,8 +335,9 @@ class Pool extends EventEmitter {
   async close() {
     await this.stopMonitoring();
 
-    if (this.mongo) {
-      await this.mongo.close();
+    if (this.mongoose) {
+      // Note: mongoose connection is shared, so we don't close it here
+      // await this.mongoose.disconnect();
     }
   }
 
@@ -444,9 +452,11 @@ class Pool extends EventEmitter {
     }
 
     try {
-      await this.mongo.savePoolState(this.address, {
-        ...this.info,
-        ...this.monitoringData,
+      // Prepare monitoring data for storage, excluding notifications
+      const { notifications, ...monitoringDataForStorage } = this.monitoringData;
+
+      await this.mongoose.savePoolState(this.address, {
+        ...monitoringDataForStorage,
         priceMonitoringEnabled: this.isMonitoring
       });
     } catch (error) {

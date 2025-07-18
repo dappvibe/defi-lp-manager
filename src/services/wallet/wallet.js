@@ -6,10 +6,10 @@
 class WalletService {
   /**
    * Create a new WalletService instance
-   * @param {Object} mongo - MongoDB instance
+   * @param {Object} mongoose - Mongoose instance
    */
-  constructor(mongo) {
-    this.mongo = mongo;
+  constructor(mongoose) {
+    this.mongoose = mongoose;
     this.monitoredWallets = new Map(); // chatId -> Set of wallet addresses
   }
 
@@ -138,11 +138,11 @@ class WalletService {
    */
   async loadWalletsFromDatabase() {
     try {
-      if (!this.mongo.isConnected) {
-        await this.mongo.connect();
+      if (!this.mongoose.isConnected) {
+        await this.mongoose.connect();
       }
 
-      const wallets = await this.mongo.walletsCollection.find({}).toArray();
+      const wallets = await this.mongoose.getAllMonitoredWallets();
 
       for (const wallet of wallets) {
         if (!this.monitoredWallets.has(wallet.chatId)) {
@@ -167,22 +167,11 @@ class WalletService {
    */
   async saveWalletToDatabase(walletAddress, chatId) {
     try {
-      if (!this.mongo.isConnected) {
-        await this.mongo.connect();
+      if (!this.mongoose.isConnected) {
+        await this.mongoose.connect();
       }
 
-      await this.mongo.walletsCollection.updateOne(
-        { address: walletAddress, chatId: chatId },
-        {
-          $set: {
-            address: walletAddress,
-            chatId: chatId,
-            addedAt: new Date(),
-            lastUpdated: new Date()
-          }
-        },
-        { upsert: true }
-      );
+      await this.mongoose.saveMonitoredWallet(walletAddress, chatId);
     } catch (error) {
       console.error('Error saving wallet to database:', error);
       throw error;
@@ -198,14 +187,11 @@ class WalletService {
    */
   async removeWalletFromDatabase(walletAddress, chatId) {
     try {
-      if (!this.mongo.isConnected) {
-        await this.mongo.connect();
+      if (!this.mongoose.isConnected) {
+        await this.mongoose.connect();
       }
 
-      await this.mongo.walletsCollection.deleteOne({
-        address: walletAddress,
-        chatId: chatId
-      });
+      await this.mongoose.removeMonitoredWallet(walletAddress, chatId);
     } catch (error) {
       console.error('Error removing wallet from database:', error);
       throw error;
