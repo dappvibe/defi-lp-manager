@@ -39,6 +39,36 @@ class Pool extends EventEmitter {
    */
   static async getPoolOfTokens(token0Address, token1Address, fee) {
     try {
+      // First, query MongoDB for already stored pool with these tokens and fee
+      const mongoInstance = mongo;
+      if (!mongoInstance.isConnected) {
+        await mongoInstance.connect();
+      }
+
+      // Check both token order combinations since pools can be stored with either order
+      const poolQuery = {
+        $or: [
+          {
+            'token0.address': token0Address.toLowerCase(),
+            'token1.address': token1Address.toLowerCase(),
+            fee: fee / 10000 // Convert to percentage format used in storage
+          },
+          {
+            'token0.address': token1Address.toLowerCase(),
+            'token1.address': token0Address.toLowerCase(),
+            fee: fee / 10000 // Convert to percentage format used in storage
+          }
+        ]
+      };
+
+      const existingPool = await mongoInstance.poolsCollection.findOne(poolQuery);
+
+      if (existingPool) {
+        console.log(`Found existing pool in database: ${existingPool.poolAddress}`);
+        return this.getPool(existingPool.poolAddress);
+      }
+
+      // If not found in database, query the factory contract
       const factoryContract = getContract({
         address: contracts.getContractAddress('pancakeswap', 'arbitrum', 'V3Factory'),
         abi: require('./abis/v3-factory.json'),
