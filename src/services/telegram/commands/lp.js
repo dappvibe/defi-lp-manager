@@ -240,9 +240,8 @@ class LpHandler {
       }
 
       updatedPosition.walletAddress = position.walletAddress; // FIXME
+      updatedPosition.fees = await message.position.getAccumulatedFees();
       message.position = updatedPosition;
-
-      message.position.fees = await message.position.getAccumulatedFees();
 
       await this.bot.send(message);
 
