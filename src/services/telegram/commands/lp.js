@@ -69,13 +69,14 @@ class PositionMessage extends TelegramMessage {
     const timestamp = getTimeInTimezone();
 
     const header = `${rangeIcon} $${parseFloat(position.currentPrice).toFixed(2)}`;
+    const fees = position.fees ? `💸 +$${position.fees.totalValue.toFixed(2)}` : '';
     const amounts = `💰 ${parseFloat(position.token0Amount).toFixed(4)} ${position.token0Symbol} + ${parseFloat(position.token1Amount).toFixed(2)} ${position.token1Symbol}`;
     const time = `⏰ ${timestamp}`;
     const stakingStatus = position.isStaked ? '🥩 STAKED' : '💼 UNSTAKED';
     const priceRange = `${stakingStatus} | $${parseFloat(position.lowerPrice).toFixed(2)} - $${parseFloat(position.upperPrice).toFixed(2)}`;
     const poolInfo = `${position.token0Symbol}/${position.token1Symbol} (${feePercent}%) - [#${position.tokenId}](${positionLink})`;
 
-    return `${header}\n${amounts}\n${time}\n${priceRange}\n${poolInfo}`;
+    return `${header}\n${fees}\n${amounts}\n${time}\n${priceRange}\n${poolInfo}`;
   }
 
   getOptions() {
@@ -240,6 +241,8 @@ class LpHandler {
 
       updatedPosition.walletAddress = position.walletAddress; // FIXME
       message.position = updatedPosition;
+
+      message.position.fees = await message.position.getAccumulatedFees();
 
       await this.bot.send(message);
 

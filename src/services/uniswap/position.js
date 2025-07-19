@@ -312,6 +312,95 @@ class Position extends EventEmitter {
   }
 
   /**
+   * Fetch accumulated fees for a position
+   * @param {bigint} tokenId - Position token ID
+   * @returns {Promise<Object>} Accumulated fees
+   */
+  static async fetchAccumulatedFees(tokenId) {
+    try {
+      const positionManagerContract = Position.getPositionManagerContract();
+
+      // First get position data to check if it exists and has liquidity
+      const positionData = await positionManagerContract.read.positions([tokenId]);
+      const liquidity = positionData[7];
+
+      if (liquidity === 0n) {
+        return {
+          token0Fees: '0',
+          token1Fees: '0',
+          token0Symbol: '',
+          token1Symbol: '',
+          totalValue: 0
+        };
+      }
+
+      // Prepare collect call with max values to simulate fee collection without actually collecting
+      const collectParams = {
+        tokenId: tokenId,
+        recipient: '0x0000000000000000000000000000000000000000', // Zero address for simulation
+        amount0Max: BigInt('340282366920938463463374607431768211455'), // Max uint128
+        amount1Max: BigInt('340282366920938463463374607431768211455')  // Max uint128
+      };
+
+      // Simulate the collect call to get fees without actually collecting them
+      const feeAmounts = await positionManagerContract.simulate.collect([collectParams]);
+      const amount0Fees = feeAmounts.result[0];
+      const amount1Fees = feeAmounts.result[1];
+
+      // Get token information
+      const token0Address = positionData[2];
+      const token1Address = positionData[3];
+
+      const tokenService = Position.getTokenService();
+      const [token0, token1] = await Promise.all([
+        tokenService.getToken(token0Address),
+        tokenService.getToken(token1Address)
+      ]);
+
+      // Convert to human readable amounts
+      const token0FeesFormatted = (parseFloat(amount0Fees.toString()) / Math.pow(10, token0.decimals)).toFixed(token0.decimals);
+      const token1FeesFormatted = (parseFloat(amount1Fees.toString()) / Math.pow(10, token1.decimals)).toFixed(token1.decimals);
+
+      // Calculate total value assuming token1 is stablecoin (like USDC)
+      const pool = await Pool.getPoolOfTokens(token0Address, token1Address, positionData[4]);
+      const currentPrice = await pool.getCurrentPrice();
+
+      const token0Value = parseFloat(token0FeesFormatted) * (currentPrice || 0);
+      const token1Value = parseFloat(token1FeesFormatted);
+      const totalValue = token0Value + token1Value;
+
+      return {
+        token0Fees: token0FeesFormatted,
+        token1Fees: token1FeesFormatted,
+        token0Symbol: token0.symbol,
+        token1Symbol: token1.symbol,
+        token0Value,
+        token1Value,
+        totalValue,
+        currentPrice
+      };
+    } catch (error) {
+      console.error(`Error fetching accumulated fees for token ID ${tokenId}:`, error);
+      return {
+        token0Fees: '0',
+        token1Fees: '0',
+        token0Symbol: '',
+        token1Symbol: '',
+        totalValue: 0,
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Get accumulated fees for this position instance
+   * @returns {Promise<Object>} Accumulated fees
+   */
+  async getAccumulatedFees() {
+    return await Position.fetchAccumulatedFees(this.tokenId);
+  }
+
+  /**
    * Calculate combined token1 value for a position
    * @param {Object} positionData - Position data
    * @returns {Promise<number>} Combined value in token1 units
