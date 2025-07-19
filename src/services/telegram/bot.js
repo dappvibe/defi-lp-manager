@@ -55,7 +55,7 @@ class Bot extends TelegramBot {
 
   registerCommandHandlers() {
     this.startHandler = new StartHandler(this, poolsConfig, this.walletService);
-    //this.helpHandler = new HelpHandler(this);
+    this.helpHandler = new HelpHandler(this);
     //this.notifyHandler = new NotifyHandler(this, this.monitoredPools);
     this.poolHandler = new PoolHandler(this, this.mongoose, poolsConfig);
     this.walletHandler = new WalletHandler(this, this.walletService);

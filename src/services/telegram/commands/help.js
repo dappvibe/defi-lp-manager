@@ -1,8 +1,8 @@
 const StartHandler = require('./start');
-const PoolHandler = require('./pool');
+const { PoolHandler } = require('./pool');
 const WalletHandler = require('./wallet');
 const NotifyHandler = require('./notify');
-const LpHandler = require('./lp');
+const { LpHandler } = require('./lp');
 
 /**
  * Represents a help message with its content and formatting
@@ -11,7 +11,8 @@ class HelpMessage {
   /**
    * Create a help message instance
    */
-  constructor() {
+  constructor(chatId) {
+    this.chatId = chatId;
     this.allHandlers = [
       StartHandler,
       PoolHandler,
@@ -40,6 +41,13 @@ class HelpMessage {
     }
 
     return finalMessage;
+  }
+
+  getOptions() {
+    return {
+      parse_mode: 'Markdown',
+      disable_web_page_preview: true
+    }
   }
 
   /**
@@ -84,10 +92,8 @@ class HelpHandler {
      * @param {TelegramBot} bot - The bot instance
      */
     constructor(bot) {
-        this.bot = bot;
-
-        // Register handlers on instantiation
-        this.registerHandlers();
+      this.bot = bot;
+      this.registerHandlers();
     }
 
     /**
@@ -95,22 +101,18 @@ class HelpHandler {
      */
     registerHandlers() {
         this.bot.onText(/\/help/, (msg) => {
-            this.handle(msg);
+            return this.handle(msg);
         });
     }
 
     /**
      * Handle the help command
      * @param {Object} msg - Message object
-     * @param {Array} args - Command arguments
      */
-    async handle(msg, args) {
+    async handle(msg) {
         try {
-            const helpMessage = new HelpMessage();
-            await this.bot.sendMessage(msg.chat.id, helpMessage.toString(), {
-                parse_mode: 'Markdown',
-                disable_web_page_preview: true
-            });
+            const helpMessage = new HelpMessage(msg.chat.id);
+            await this.bot.send(helpMessage);
         } catch (error) {
             console.error('Error in help command:', error);
             await this.bot.sendMessage(msg.chat.id, 'Sorry, there was an error displaying help information.');
