@@ -43,12 +43,7 @@ async function initializeApp() {
  * @param {Object} appContext - The application context with services to clean up
  */
 async function cleanupApp(appContext) {
-    const { bot, poolService, mongoose } = appContext;
-
-    // Close pool service (includes stopping all monitoring)
-    if (poolService) {
-        await poolService.close();
-    }
+    const { bot, mongoose } = appContext;
 
     // Close MongoDB connection if available
     if (mongoose) {

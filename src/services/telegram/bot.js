@@ -154,23 +154,6 @@ class Bot extends TelegramBot {
       pendingRequests: this.throttler.getPendingCount ? this.throttler.getPendingCount() : 0
     };
   }
-
-  /**
-   * Clean shutdown of the bot
-   */
-  async shutdown() {
-    console.log('Shutting down Bot...');
-
-    // Stop polling
-    if (typeof this.stopPolling === 'function') {
-      this.stopPolling();
-    }
-
-    // Clear any pending timeouts
-    this.lastEditTimes = {};
-
-    console.log('Bot shutdown complete.');
-  }
 }
 
 module.exports = Bot;
