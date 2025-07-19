@@ -42,7 +42,7 @@ class PoolInfoMessage extends TelegramMessage {
    */
   toString() {
     const pair = `[${this.pool.info.token0.symbol}/${this.pool.info.token1.symbol}](https://pancakeswap.finance/info/v3/arb/pairs/${this.pool.address})`;
-    const feePercent = this.pool.info.fee ? (this.pool.info.fee / 10000).toFixed(2) + '%' : 'Unknown';
+    const feePercent = this.pool.info.fee ? (this.pool.info.fee).toFixed(2) + '%' : 'Unknown';
     const pairWithFee = `${pair} (${feePercent})`;
 
     let messageText = `📊 ${this._moneyFormat(this.price)}
