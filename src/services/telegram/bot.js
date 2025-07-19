@@ -8,7 +8,7 @@ const { StartHandler, HelpHandler, WalletHandler, LpHandler } = require('./comma
 const Throttler = require('./throttler');
 const poolsConfig = require('../../config/pools');
 const TelegramMessage = require("./message");
-const { PoolInfoMessage, PoolHandler } = require("./commands/pool");
+const { PoolHandler } = require("./commands/pool");
 
 /**
  * Bot class extending TelegramBot with throttling and command handling
@@ -54,11 +54,11 @@ class Bot extends TelegramBot {
   }
 
   registerCommandHandlers() {
-    this.startHandler = new StartHandler(this, poolsConfig, this.walletService);
-    this.helpHandler = new HelpHandler(this);
-    this.poolHandler = new PoolHandler(this, this.mongoose, poolsConfig);
-    this.walletHandler = new WalletHandler(this, this.walletService);
-    this.lpHandler = new LpHandler(this, this.mongoose, this.walletService);
+    new StartHandler(this, poolsConfig, this.walletService);
+    new HelpHandler(this);
+    new PoolHandler(this, this.mongoose, poolsConfig);
+    new WalletHandler(this, this.walletService);
+    new LpHandler(this, this.mongoose, this.walletService);
   }
 
   send(message) {
@@ -140,18 +140,6 @@ class Bot extends TelegramBot {
   setupEventHandlers() {
     this.on('polling_start', () => console.log('Telegram Bot started polling'));
     this.on('polling_error', (error) => console.error('Telegram Bot polling error:', error));
-  }
-
-  /**
-   * Get current throttling statistics
-   * @returns {object} - Throttling statistics
-   */
-  getThrottlingStats() {
-    return {
-      maxRequestsPerSecond: this.rateLimit.maxRequestsPerSecond,
-      messageEditDelay: this.rateLimit.messageEditDelay,
-      pendingRequests: this.throttler.getPendingCount ? this.throttler.getPendingCount() : 0
-    };
   }
 }
 

@@ -60,7 +60,6 @@ async function getTokenInfo(tokenAddress) {
 }
 
 module.exports = {
-  createErc20Contract,
   createPoolContract,
   getTokenInfo
 };

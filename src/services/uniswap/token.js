@@ -169,8 +169,7 @@ class TokenService {
      */
     async getAllCachedTokens() {
         try {
-            const tokens = await this.mongoose.getAllCachedTokens();
-            return tokens;
+            return await this.mongoose.getAllCachedTokens();
         } catch (error) {
             console.error('Error getting all cached tokens from MongoDB:', error);
             return [];

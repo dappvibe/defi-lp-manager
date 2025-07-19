@@ -269,9 +269,7 @@ class MongooseService {
   async getPoolMessage(poolAddress, chatId) {
     try {
       const compositeId = `${poolAddress}_${chatId}`;
-      const poolMessage = await PoolMessage.findById(compositeId).lean();
-
-      return poolMessage;
+      return await PoolMessage.findById(compositeId).lean();
     } catch (error) {
       console.error(`Error getting pool message for ${poolAddress}:`, error.message);
       return null;
@@ -280,11 +278,9 @@ class MongooseService {
 
   async getMonitoredPoolMessages() {
     try {
-      const monitoredPools = await PoolMessage.find({
+      return await PoolMessage.find({
         isMonitored: true
       }).lean();
-
-      return monitoredPools;
     } catch (error) {
       console.error('Error getting monitored pool messages:', error.message);
       return [];
@@ -344,12 +340,10 @@ class MongooseService {
 
   async getPosition(tokenId, walletAddress) {
     try {
-      const position = await Position.findOne({
+      return await Position.findOne({
         tokenId,
         walletAddress
       }).lean();
-
-      return position;
     } catch (error) {
       console.error(`Error getting position ${tokenId}:`, error.message);
       return null;
@@ -421,8 +415,7 @@ class MongooseService {
 
   async getAllCachedTokens() {
     try {
-      const tokens = await Token.find({}).lean();
-      return tokens;
+      return await Token.find({}).lean();
     } catch (error) {
       console.error('Error getting all cached tokens:', error);
       return [];
@@ -450,8 +443,7 @@ class MongooseService {
   // Wallet methods
   async getAllMonitoredWallets() {
     try {
-      const wallets = await Wallet.find({}).lean();
-      return wallets;
+      return await Wallet.find({}).lean();
     } catch (error) {
       console.error('Error getting monitored wallets:', error);
       return [];

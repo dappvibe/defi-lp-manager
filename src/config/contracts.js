@@ -84,7 +84,4 @@ function getAvailableContracts(platform, network) {
 module.exports = {
     contracts,
     getContractAddress,
-    getAvailablePlatforms,
-    getAvailableNetworks,
-    getAvailableContracts,
 };

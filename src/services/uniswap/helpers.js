@@ -134,16 +134,9 @@ function isPositionInRange(tickLower, tickUpper, tickCurrent) {
 }
 
 module.exports = {
-  // Enhanced SDK-based functions
-  createCurrencyAmount,
-  convertTokenAmount,
-  calculatePriceFromSqrtRatio,
-  formatTokenAmount,
-
   // Price calculation functions
   tickToHumanPrice,
 
   // Position and liquidity functions
-  calculateAmountsFromLiquidity,
   isPositionInRange
 };

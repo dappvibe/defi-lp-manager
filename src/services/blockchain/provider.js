@@ -28,7 +28,6 @@ const ALCHEMY_URL_MAP = {
 
 /**
  * Create a provider instance for interacting with the blockchain
- * @returns {PublicClient} The viem client instance
  */
 function createProvider() {
     const chain = CHAIN_MAP[config.blockchain.network] || mainnet;
@@ -46,7 +45,6 @@ let providerInstance = null;
 
 /**
  * Get the provider instance (creates it if it doesn't exist)
- * @returns {PublicClient} The viem client instance
  */
 function getProvider() {
     if (!providerInstance) {
