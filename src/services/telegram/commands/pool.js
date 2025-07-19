@@ -63,7 +63,7 @@ class PoolInfoMessage extends TelegramMessage {
   }
 
   _moneyFormat(price) {
-    return price.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 4 });
+    return price.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
   }
 
   getOptions() {
