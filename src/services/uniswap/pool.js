@@ -1,450 +1,419 @@
 /**
- * Pool Service
- * Unified service for pool operations and monitoring
- * Provides a clean interface hiding MongoDB implementation details
- * Handles caching, retrieval, and real-time monitoring of pool information
+ * Individual Pool Class
+ * Represents a single pool with its own address and operations
  */
+const { EventEmitter } = require('events');
 const { getTokenInfo, createPoolContract } = require('./contracts');
 const { isValidEthereumAddress, calculatePrice } = require('./utils');
 const { uniswapV3Pool: poolAbi } = require('./abis');
 const { getTimeInTimezone } = require('../../utils/time');
-const MongoStateManager = require('../database/mongo');
-const poolsConfig = require('../../config/pools');
+const { mongoose } = require('../database/mongoose');
+const { getProvider } = require('../blockchain/provider');
+const {getContract} = require("viem");
+const {contracts} = require("../../config");
+const TokenService = require('./token');
 
-class PoolService {
-  constructor() {
-    this.stateManager = new MongoStateManager();
-    // Monitoring-specific properties
-    this.monitoredPools = {};
-    this.watchUnsubscribers = {};
-    this.autoSaveInterval = null;
-  }
+class Pool extends EventEmitter {
+  static #poolInstances = new Map();
 
   /**
-   * Initialize the pool service
-   * @param {Object} botInstance - Telegram bot instance (optional, for monitoring)
-   * @param {Object} providerInstance - Viem client instance (optional, for monitoring)
-   * @param {string} timezone - Timezone for time display (optional, for monitoring)
+   * Gets singleton instance of Pool. Each pool must be a single instance because
+   * they listen to blockchain events and all events must be handled by one object for efficiency
+   * @param {string} address - Pool contract address
+   * @param {*} provider - Optional custom provider
+   * @param {*} mongoOverride - Optional MongoDB instance override
+   * @returns {Pool} Singleton pool instance
    */
-  async initialize(botInstance = null, providerInstance = null, timezone = null) {
-    console.log('Initializing PoolService...');
-    await this.stateManager.connect();
-
-    // Cache pre-configured pools on startup
-    await this._cachePreConfiguredPools();
-
-    // Initialize monitoring if bot instance is provided
-    if (botInstance && providerInstance && timezone) {
-      await this._initializeMonitoring(botInstance, providerInstance, timezone);
+  static getPool(address, provider = null, mongoOverride = null) {
+    if (!Pool.#poolInstances.has(address)) {
+      Pool.#poolInstances.set(address, new Pool(address, provider, mongoOverride));
     }
+    return Pool.#poolInstances.get(address);
   }
 
   /**
-   * Initialize monitoring functionality
-   * @private
-   * @param {Object} botInstance - Telegram bot instance
-   * @param {Object} providerInstance - Viem client instance
-   * @param {string} timezone - Timezone for time display
+   * Get pool data from factory
+   * @param {string} token0Address - Token0 address
+   * @param {string} token1Address - Token1 address
+   * @param {number} fee - Pool fee
+   * @returns {Promise<Pool>} Pool
    */
-  async _initializeMonitoring(botInstance, providerInstance, timezone) {
-    console.log('Initializing monitoring functionality...');
+  static async getPoolOfTokens(token0Address, token1Address, fee) {
+    try {
+      // Query MongoDB directly for pool with these specific tokens and fee
+      const existingPool = await mongoose.findPoolByTokensAndFee(
+        token0Address,
+        token1Address,
+        fee / 10000 // Convert to percentage format used in storage
+      );
+      if (existingPool) return this.getPool(existingPool.address);
 
-    // Start auto-save interval (every 30 seconds)
-    this._startAutoSave();
+      // If not found in database, query the factory contract
+      const factoryContract = getContract({
+        address: contracts.getContractAddress('pancakeswap', 'arbitrum', 'V3Factory'),
+        abi: require('./abis/v3-factory.json'),
+        client: getProvider()
+      });
 
-    // Load saved monitored pools state
-    const savedState = await this.stateManager.loadAllPools();
+      const poolAddress = await factoryContract.read.getPool([token0Address, token1Address, fee]);
 
-    // Restore monitoring only for pools that have monitoring enabled
-    for (const [poolAddress, poolData] of Object.entries(savedState)) {
-      try {
-        // Only restore monitoring for pools that have the monitoring flag enabled
-        if (poolData.priceMonitoringEnabled === true) {
-          await this.startMonitoring(
-            botInstance,
-            poolAddress,
-            poolData,
-            providerInstance,
-            timezone
-          );
-          console.log(`Restored monitoring for pool: ${poolAddress}`);
-        } else {
-          console.log(`Skipping pool ${poolAddress} - monitoring disabled (priceMonitoringEnabled: ${poolData.priceMonitoringEnabled})`);
-        }
-      } catch (error) {
-        console.error(`Failed to restore monitoring for pool ${poolAddress}:`, error);
+      if (poolAddress && poolAddress !== '0x0000000000000000000000000000000000000000') {
+        return this.getPool(poolAddress);
+      } else {
+        throw new Error('Pool not found');
       }
+    } catch (error) {
+      console.error('Error getting pool data:', error);
+      return null;
     }
   }
 
+  constructor(address, provider = null, mongoOverride = null) {
+    super();
+
+    if (isValidEthereumAddress(address)) {
+      this.address = address;
+    } else {
+      throw new Error('Invalid pool address');
+    }
+    this.provider = provider || getProvider();
+    this.mongoose = mongoOverride || mongoose;
+
+    this.contract = createPoolContract(address);
+
+    // Pool-specific properties
+    this.info = null;
+    this.isMonitoring = false;
+    this.watchUnsubscriber = null;
+  }
+
   /**
-   * Get pool information by address
-   * @param {string} poolAddress - Pool address
-   * @param {Object} provider - Ethereum provider (optional)
+   * Get pool information
    * @returns {Object} Pool information including tokens, fee, and other details
    */
-  async getPool(poolAddress, provider = null) {
-    // Try to get from cache first
-    let cachedInfo = await this.stateManager.getCachedPoolInfo(poolAddress);
+  async getPoolInfo() {
+    if (!this.info) {
+      // Try to get from cache first
+      let cachedInfo = await this.mongoose.getCachedPoolInfo(this.address);
 
-    if (cachedInfo) {
-      // Return cached info without database-specific fields
-      const { _id, poolAddress: addr, cachedAt, updatedAt, ...poolInfo } = cachedInfo;
-      return poolInfo;
+      if (cachedInfo) {
+        this.info = cachedInfo;
+        return;
+      }
+
+      // If not cached, fetch from blockchain
+      console.log(`Pool ${this.address} not cached, fetching from blockchain...`);
+
+      // Get pool static information
+      const [token0Address, token1Address, fee, tickSpacing, slot0] = await Promise.all([
+        this.contract.read.token0(),
+        this.contract.read.token1(),
+        this.contract.read.fee(),
+        this.contract.read.tickSpacing(),
+        this.contract.read.slot0()
+      ]);
+
+      // Get token information and ensure they are cached in database
+      const [token0Info, token1Info] = await Promise.all([
+        getTokenInfo(token0Address),
+        getTokenInfo(token1Address)
+      ]);
+
+      // Cache tokens in database
+      await Promise.all([
+        this.mongoose.cacheToken(token0Address, 42161, {
+          symbol: token0Info.symbol,
+          decimals: token0Info.decimals,
+          name: token0Info.name
+        }),
+        this.mongoose.cacheToken(token1Address, 42161, {
+          symbol: token1Info.symbol,
+          decimals: token1Info.decimals,
+          name: token1Info.name
+        })
+      ]);
+
+      // Calculate TVL
+      const tvl = await this.getTVL();
+
+      // Prepare pool info for runtime use
+      this.info = {
+        token0: token0Info, // Keep for runtime use
+        token1: token1Info, // Keep for runtime use
+        fee: fee / 10000,
+        tickSpacing,
+        unlocked: slot0[6],
+        tvl: tvl
+      };
+
+      // Prepare data for database storage with token addresses
+      const poolDataForStorage = {
+        token0: token0Address.toLowerCase(), // Store token address directly
+        token1: token1Address.toLowerCase(), // Store token address directly
+        fee: fee / 10000,
+        tickSpacing,
+        unlocked: slot0[6]
+      };
+
+      // Cache the information
+      await this.mongoose.cachePoolInfo(this.address, poolDataForStorage);
+    }
+    return this.info;
+  }
+
+  /**
+   * Get current price for this pool
+   * @returns {Promise<number|null>} Current price or null if failed
+   */
+  async getCurrentPrice() {
+    try {
+      const slot0 = await this.contract.read.slot0();
+      const sqrtPriceX96 = slot0[0];
+
+      // in case not yet loaded
+      await this.getPoolInfo();
+
+      return parseFloat(calculatePrice(sqrtPriceX96, this.info.token0.decimals, this.info.token1.decimals));
+    } catch (error) {
+      console.error(`Error getting price for pool ${this.address}:`, error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Calculate TVL for this pool
+   * @returns {Promise<number|null>} TVL value or null if calculation fails
+   */
+  async getTVL() {
+    try {
+      const tokenService = new TokenService(this.provider);
+
+      // Get token information from TokenService
+      const [token0Info, token1Info] = await Promise.all([
+        tokenService.getToken(this.info.token0.address),
+        tokenService.getToken(this.info.token1.address)
+      ]);
+
+      // Get token balances in the pool
+      const [token0Balance, token1Balance] = await Promise.all([
+        token0Info.contract.read.balanceOf([this.address]),
+        token1Info.contract.read.balanceOf([this.address])
+      ]);
+
+      // Convert to human readable amounts
+      const token0Amount = parseFloat(token0Balance) / Math.pow(10, this.info.token0.decimals);
+      const token1Amount = parseFloat(token1Balance) / Math.pow(10, this.info.token1.decimals);
+
+      // Get current price
+      const currentPrice = await this.getCurrentPrice();
+      if (!currentPrice) {
+        throw new Error('Failed to get current price');
+      }
+
+      // Calculate TVL (assuming token1 is stablecoin like USDC)
+      return token0Amount * currentPrice + token1Amount;
+    } catch (error) {
+      console.error(`Error calculating TVL for pool ${this.address}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Start monitoring this pool
+   */
+  async startMonitoring() {
+    if (this.isMonitoring) return;
+
+    await this.getPoolInfo();
+
+    const price = await this.getCurrentPrice();
+    if (!price) {
+      throw new Error('Failed to get current price for monitoring');
     }
 
-    // If not cached, fetch and cache
-    console.log(`Pool ${poolAddress} not cached, fetching and caching...`);
-    return await this._cachePoolInfo(poolAddress, {}, provider);
-  }
-
-  /**
-   * Get all available pools
-   * @returns {Array} Array of all pool information
-   */
-  async getAllPools() {
-    return await this.stateManager.getAllCachedPools();
-  }
-
-  /**
-   * Find pools containing a specific token
-   * @param {string} tokenAddress - Token contract address
-   * @returns {Array} Array of pools containing the specified token
-   */
-  async findPoolsWithToken(tokenAddress) {
-    return await this.stateManager.findPoolsByTokenAddress(tokenAddress);
-  }
-
-  /**
-   * Find pools containing a specific token symbol
-   * @param {string} tokenSymbol - Token symbol (e.g., 'ETH', 'USDC')
-   * @returns {Array} Array of pools containing the specified token symbol
-   */
-  async findPoolsWithTokenSymbol(tokenSymbol) {
-    return await this.stateManager.findPoolsByTokenSymbol(tokenSymbol);
-  }
-
-  /**
-   * Find pools for a specific token pair
-   * @param {string} token0Address - First token address
-   * @param {string} token1Address - Second token address
-   * @returns {Array} Array of pools for the specified token pair
-   */
-  async findPoolsForTokenPair(token0Address, token1Address) {
-    return await this.stateManager.findPoolsByTokenPair(token0Address, token1Address);
-  }
-
-  /**
-   * Find pools for a specific token symbol pair
-   * @param {string} symbol0 - First token symbol
-   * @param {string} symbol1 - Second token symbol
-   * @returns {Array} Array of pools for the specified token symbol pair
-   */
-  async findPoolsForTokenSymbolPair(symbol0, symbol1) {
-    return await this.stateManager.findPoolsByTokenSymbolPair(symbol0, symbol1);
-  }
-
-  /**
-   * Get all unique tokens from available pools
-   * @returns {Array} Array of unique token objects with address, symbol, and decimals
-   */
-  async getAvailableTokens() {
-    return await this.stateManager.getAllUniqueTokens();
-  }
-
-  /**
-   * Search pools by multiple criteria
-   * @param {Object} criteria - Search criteria
-   * @param {string} [criteria.tokenAddress] - Filter by specific token address
-   * @param {string} [criteria.tokenSymbol] - Filter by specific token symbol
-   * @param {Array<string>} [criteria.tokenAddresses] - Filter by multiple token addresses
-   * @param {Array<string>} [criteria.tokenSymbols] - Filter by multiple token symbols
-   * @param {string} [criteria.platform] - Filter by platform (uniswap, pancakeswap, etc.)
-   * @param {string} [criteria.blockchain] - Filter by blockchain (arbitrum, ethereum, etc.)
-   * @returns {Array} Array of pools matching the criteria
-   */
-  async searchPools(criteria = {}) {
-    let pools = await this.getAllPools();
-
-    // Filter by single token address
-    if (criteria.tokenAddress) {
-      pools = pools.filter(pool =>
-        pool.token0.address.toLowerCase() === criteria.tokenAddress.toLowerCase() ||
-        pool.token1.address.toLowerCase() === criteria.tokenAddress.toLowerCase()
-      );
-    }
-
-    // Filter by single token symbol
-    if (criteria.tokenSymbol) {
-      pools = pools.filter(pool =>
-        pool.token0.symbol.toLowerCase() === criteria.tokenSymbol.toLowerCase() ||
-        pool.token1.symbol.toLowerCase() === criteria.tokenSymbol.toLowerCase()
-      );
-    }
-
-    // Filter by multiple token addresses
-    if (criteria.tokenAddresses && criteria.tokenAddresses.length > 0) {
-      const lowerAddresses = criteria.tokenAddresses.map(addr => addr.toLowerCase());
-      pools = pools.filter(pool =>
-        lowerAddresses.includes(pool.token0.address.toLowerCase()) ||
-        lowerAddresses.includes(pool.token1.address.toLowerCase())
-      );
-    }
-
-    // Filter by multiple token symbols
-    if (criteria.tokenSymbols && criteria.tokenSymbols.length > 0) {
-      const lowerSymbols = criteria.tokenSymbols.map(symbol => symbol.toLowerCase());
-      pools = pools.filter(pool =>
-        lowerSymbols.includes(pool.token0.symbol.toLowerCase()) ||
-        lowerSymbols.includes(pool.token1.symbol.toLowerCase())
-      );
-    }
-
-    // Filter by platform
-    if (criteria.platform) {
-      pools = pools.filter(pool =>
-        pool.platform && pool.platform.toLowerCase() === criteria.platform.toLowerCase()
-      );
-    }
-
-    // Filter by blockchain
-    if (criteria.blockchain) {
-      pools = pools.filter(pool =>
-        pool.blockchain && pool.blockchain.toLowerCase() === criteria.blockchain.toLowerCase()
-      );
-    }
-
-    return pools;
-  }
-
-  // Monitoring Methods
-
-  /**
-   * Start monitoring a pool
-   * @param {Object} botInstance - Telegram bot instance
-   * @param {string} poolAddress - Pool contract address
-   * @param {Object} poolData - Pool data including tokens info
-   * @param {Object} providerInstance - Viem client instance
-   * @param {string} timezone - Timezone for time display
-   */
-  async startMonitoring(botInstance, poolAddress, poolData, providerInstance, timezone) {
-    console.log(`Starting monitoring for pool: ${poolAddress}`);
-
-    this.monitoredPools[poolAddress] = {
-      ...poolData,
-      client: providerInstance,
-      priceMonitoringEnabled: true, // Always set to true when starting monitoring
+    // Initialize monitoring data
+    this.monitoringData = {
+      lastPriceT1T0: price,
+      notifications: []
     };
 
-    // Attach swap listener for price monitoring
-    await this._attachSwapListener(botInstance, poolAddress, timezone);
-    console.log(`Successfully started monitoring for ${poolAddress}`);
+    // Start listening for swap events
+    await this._attachSwapListener();
+    this.isMonitoring = true;
 
-    // Save pool state to database
-    await this.stateManager.savePoolState(poolAddress, this.monitoredPools[poolAddress]);
+    console.log(`Started monitoring pool ${this.info.token0.symbol}/${this.info.token1.symbol} (${this.info.fee}%)`);
+
+    // Save monitoring state
+    await this._saveMonitoringState();
+
+    return {
+      info: this.info,
+      price
+    };
   }
 
   /**
-   * Stop monitoring a specific pool
-   * @param {string} poolAddress - Pool address to stop monitoring
+   * Stop monitoring this pool
    */
-  async stopMonitoring(poolAddress) {
-    if (this.watchUnsubscribers[poolAddress]) {
-      this.watchUnsubscribers[poolAddress]();
-      delete this.watchUnsubscribers[poolAddress];
-
-      // Remove from memory
-      delete this.monitoredPools[poolAddress];
-
-      // Set monitoring flag to false in database using MongoDB directly
-      await this.stateManager.poolsCollection.updateOne(
-        { poolAddress },
-        {
-          $set: {
-            priceMonitoringEnabled: false,
-            updatedAt: new Date()
-          }
-        }
-      );
-
-      console.log(`Stopped monitoring for ${poolAddress}`);
-    }
-  }
-
-  /**
-   * Stop monitoring all pools
-   */
-  async stopAllMonitoring() {
-    for (const poolAddress in this.watchUnsubscribers) {
-      if (this.watchUnsubscribers[poolAddress]) {
-        this.watchUnsubscribers[poolAddress]();
-        delete this.watchUnsubscribers[poolAddress];
-        console.log(`Removed listeners for ${poolAddress}`);
-      }
+  async stopMonitoring() {
+    if (!this.isMonitoring) {
+      return;
     }
 
-    // Clear memory state
-    this.monitoredPools = {};
+    if (this.watchUnsubscriber) {
+      this.watchUnsubscriber();
+      this.watchUnsubscriber = null;
+    }
 
-    // Stop auto-save
-    this._stopAutoSave();
+    this.isMonitoring = false;
+    this.monitoringData = null;
+    this.botInstance = null;
+    this.timezone = null;
+
+    // Update monitoring state in database
+    await this.mongoose.savePoolState(this.address, {
+      priceMonitoringEnabled: false,
+      updatedAt: new Date()
+    });
+    console.log(`Stopped monitoring pool ${this.info.token0.symbol}/${this.info.token1.symbol} (${this.info.fee}%)`);
   }
 
   /**
-   * Get all monitored pools
-   * @returns {Object} Object containing all monitored pools
+   * Add price alert for this pool
+   * @param {number} targetPrice - Target price for alert
+   * @param {number} originalChatId - Original chat ID for notification
    */
-  getMonitoredPools() {
-    return this.monitoredPools;
+  addPriceAlert(targetPrice, originalChatId) {
+    if (!this.isMonitoring || !this.monitoringData) {
+      throw new Error('Pool is not being monitored');
+    }
+
+    this.monitoringData.notifications.push({
+      targetPrice,
+      originalChatId,
+      triggered: false,
+      createdAt: new Date()
+    });
+
+    // Save updated state
+    this._saveMonitoringState();
   }
 
   /**
-   * Check if a pool is being monitored
-   * @param {string} poolAddress - Pool address
+   * Get monitoring status
    * @returns {boolean} True if pool is being monitored
    */
-  isMonitoring(poolAddress) {
-    return Boolean(this.monitoredPools[poolAddress]);
+  getMonitoringStatus() {
+    return this.isMonitoring;
   }
 
   /**
-   * Close the pool service and clean up resources
+   * Get monitoring data
+   * @returns {Object|null} Monitoring data or null if not monitoring
+   */
+  getMonitoringData() {
+    return this.monitoringData;
+  }
+
+  /**
+   * Close pool instance and clean up resources
    */
   async close() {
-    // Stop all monitoring
-    await this.stopAllMonitoring();
+    await this.stopMonitoring();
 
-    if (this.stateManager) {
-      await this.stateManager.close();
+    if (this.mongoose) {
+      // Note: mongoose connection is shared, so we don't close it here
+      // await this.mongoose.disconnect();
     }
   }
 
-  // Private methods for internal implementation
+  // Private methods
 
   /**
-   * Start auto-save interval
+   * Attach swap event listener
    * @private
    */
-  _startAutoSave() {
-    if (this.autoSaveInterval) {
-      clearInterval(this.autoSaveInterval);
-    }
-
-    this.autoSaveInterval = setInterval(async () => {
-      await this.stateManager.saveAllPools(this.monitoredPools);
-    }, 30000); // Save every 30 seconds
-
-    console.log('Started auto-save interval');
-  }
-
-  /**
-   * Stop auto-save interval
-   * @private
-   */
-  _stopAutoSave() {
-    if (this.autoSaveInterval) {
-      clearInterval(this.autoSaveInterval);
-      this.autoSaveInterval = null;
-      console.log('Stopped auto-save interval');
-    }
-  }
-
-  /**
-   * Attach a swap event listener to a pool
-   * @private
-   * @param {Object} botInstance - Telegram bot instance
-   * @param {string} poolAddress - Pool address
-   * @param {string} timezone - Timezone for time display
-   */
-  async _attachSwapListener(botInstance, poolAddress, timezone) {
-    const poolsCollection = this.monitoredPools;
-    const client = poolsCollection[poolAddress].client;
-
-    this.watchUnsubscribers[poolAddress] = await client.watchContractEvent({
-      address: poolAddress,
+  async _attachSwapListener() {
+    this.watchUnsubscriber = await this.provider.watchContractEvent({
+      address: this.address,
       abi: poolAbi,
       eventName: 'Swap',
       onLogs: (logs) => {
         logs.forEach((log) => {
-          const poolInfo = poolsCollection[poolAddress];
-          if (!poolInfo || !poolInfo.messageId || !poolInfo.token0 || !poolInfo.token1) {
-            console.warn(`Pool info incomplete for ${poolAddress} during Swap event. Skipping.`);
+          if (!this.monitoringData || !this.info) {
+            console.warn(`Pool info incomplete for ${this.address} during Swap event. Skipping.`);
             return;
           }
 
-          const {args} = log;
-          const {sqrtPriceX96, amount0, amount1, tick} = args;
+          const { args } = log;
+          const { sqrtPriceX96, amount0, amount1, tick } = args;
 
-          const newPriceT1T0 = parseFloat(calculatePrice(sqrtPriceX96, poolInfo.token0.decimals, poolInfo.token1.decimals));
+          const newPriceT1T0 = parseFloat(calculatePrice(sqrtPriceX96, this.info.token0.decimals, this.info.token1.decimals));
 
-          // Update the pool message with the same formatting but new price
-          this._updatePoolMessageWithPrice(botInstance, poolAddress, poolInfo, newPriceT1T0, timezone);
+          // Prepare swap information
+          const swapInfo = {
+            address: this.address,
+            transactionHash: log.transactionHash,
+            blockNumber: log.blockNumber,
+            logIndex: log.logIndex,
+            sender: args.sender,
+            recipient: args.recipient,
+            amount0: args.amount0,
+            amount1: args.amount1,
+            sqrtPriceX96: args.sqrtPriceX96,
+            liquidity: args.liquidity,
+            tick: args.tick,
+            newPrice: newPriceT1T0,
+            timestamp: getTimeInTimezone(this.timezone)
+          };
 
-          // Update position messages for positions in this pool that are in range
-          this._updatePositionMessages(botInstance, poolAddress, timezone);
+          // Prepare pool information
+          const poolData = {
+            address: this.address,
+            token0: this.info.token0,
+            token1: this.info.token1,
+            fee: this.info.fee,
+            platform: this.info.platform,
+            blockchain: this.info.blockchain,
+            currentPrice: newPriceT1T0,
+            lastPrice: this.monitoringData.lastPriceT1T0
+          };
 
-          this._checkPriceAlerts(botInstance, poolInfo, newPriceT1T0);
-          poolInfo.lastPriceT1T0 = newPriceT1T0;
+          // Emit swap event
+          this.emit('swap', swapInfo, poolData);
+
+          // Check price alerts
+          this._checkPriceAlerts(newPriceT1T0);
+          this.monitoringData.lastPriceT1T0 = newPriceT1T0;
         });
       }
     });
   }
 
   /**
-   * Update pool message with new price while keeping the same formatting
+   * Check price alerts
    * @private
-   * @param {Object} botInstance - Telegram bot instance
-   * @param {string} poolAddress - Pool address
-   * @param {Object} poolInfo - Pool information
-   * @param {number} newPrice - New price
-   * @param {string} timezone - Timezone for time display
-   */
-  async _updatePoolMessageWithPrice(botInstance, poolAddress, poolInfo, newPrice, timezone) {
-    try {
-      // Reuse the existing message updating logic from pool command handler
-      const PoolHandler = require('../telegram/commands/pool');
-
-      await PoolHandler.sendOrUpdatePoolMessage(
-        botInstance,
-        poolInfo.chatId,
-        poolInfo.messageId,
-        poolAddress,
-        null, // provider not needed when using pre-calculated price
-        timezone,
-        'edit',
-        {
-          preCalculatedPrice: newPrice,
-          includeTimestamp: true
-        }
-      );
-
-    } catch (error) {
-      console.error(`Error updating pool message for ${poolAddress} in chat ${poolInfo.chatId}: ${error.message}`);
-    }
-  }
-
-  /**
-   * Check price alerts for a pool
-   * @private
-   * @param {Object} botInstance - Telegram bot instance
-   * @param {Object} poolInfo - Pool information
    * @param {number} newPriceT1T0 - New price
    */
-  _checkPriceAlerts(botInstance, poolInfo, newPriceT1T0) {
-    const lastPrice = poolInfo.lastPriceT1T0;
+  _checkPriceAlerts(newPriceT1T0) {
+    if (!this.monitoringData || !this.botInstance) {
+      return;
+    }
+
+    const lastPrice = this.monitoringData.lastPriceT1T0;
     let notificationsChanged = false;
 
-    poolInfo.notifications = (poolInfo.notifications || []).filter(notification => {
+    this.monitoringData.notifications = this.monitoringData.notifications.filter(notification => {
       if (!notification.triggered) {
         const crossesUp = lastPrice < notification.targetPrice && newPriceT1T0 >= notification.targetPrice;
         const crossesDown = lastPrice > notification.targetPrice && newPriceT1T0 <= notification.targetPrice;
 
         if (crossesUp || crossesDown) {
           const direction = crossesUp ? "rose above" : "fell below";
-          const alertMessage = `🔔 Price Alert! 🔔\nPool: ${poolInfo.token1.symbol}/${poolInfo.token0.symbol}\nPrice ${direction} ${notification.targetPrice.toFixed(8)}.\nCurrent Price: ${newPriceT1T0.toFixed(8)}`;
+          const alertMessage = ` Price Alert! \nPool: ${this.info.token1.symbol}/${this.info.token0.symbol}\nPrice ${direction} ${notification.targetPrice.toFixed(8)}.\nCurrent Price: ${newPriceT1T0.toFixed(8)}`;
 
-          botInstance.sendMessage(notification.originalChatId, alertMessage);
-          console.log(`Notification triggered for chat ${notification.originalChatId}: ${poolInfo.token1.symbol}/${poolInfo.token0.symbol} at ${newPriceT1T0}, target ${notification.targetPrice}`);
+          this.botInstance.sendMessage(notification.originalChatId, alertMessage);
+          console.log(`Notification triggered for chat ${notification.originalChatId}: ${this.info.token1.symbol}/${this.info.token0.symbol} at ${newPriceT1T0}, target ${notification.targetPrice}`);
           notification.triggered = true;
           notificationsChanged = true;
           return false;
@@ -455,173 +424,34 @@ class PoolService {
 
     // Save state if notifications changed
     if (notificationsChanged) {
-      // Find pool address from poolInfo
-      const poolAddress = Object.keys(this.monitoredPools).find(addr =>
-        this.monitoredPools[addr] === poolInfo
-      );
-
-      if (poolAddress) {
-        this.stateManager.savePoolState(poolAddress, poolInfo).catch(err => {
-          console.error(`Error saving state after alert trigger for ${poolAddress}:`, err.message);
-        });
-      }
+      this._saveMonitoringState();
     }
   }
 
   /**
-   * Update position messages for positions in this pool that are in range
+   * Save monitoring state to database
    * @private
-   * @param {Object} botInstance - Telegram bot instance
-   * @param {string} poolAddress - Pool address
-   * @param {string} timezone - Timezone for time display
    */
-  async _updatePositionMessages(botInstance, poolAddress, timezone) {
+  async _saveMonitoringState() {
+    if (!this.monitoringData) {
+      return;
+    }
+
     try {
-      // Get positions that are in range for this pool
-      const positions = await this.stateManager.getInRangePositionsByPool(poolAddress);
+      // Prepare monitoring data for storage, excluding notifications
+      const { notifications, ...monitoringDataForStorage } = this.monitoringData;
 
-      if (positions.length === 0) {
-        return; // No positions to update
-      }
-
-      // Import PositionMonitor to get updated position data
-      const PositionMonitor = require('./position-monitor');
-
-      for (const storedPosition of positions) {
-        try {
-          // Create a temporary position monitor instance to get updated position data
-          const tempMonitor = new PositionMonitor(this.monitoredPools[poolAddress]?.client, this.stateManager);
-
-          // Get fresh position details with updated token amounts
-          const updatedPosition = await tempMonitor.getPositionDetails(BigInt(storedPosition.tokenId), storedPosition.isStaked);
-
-          if (updatedPosition.error) {
-            console.warn(`Error getting updated position details for token ID ${storedPosition.tokenId}:`, updatedPosition.error);
-            continue;
-          }
-
-          // Use the unified position formatting method for updates
-          const updatedMessage = tempMonitor.formatSinglePositionMessage(updatedPosition, timezone, true);
-
-          // Update the message in Telegram
-          await botInstance.editMessageText(updatedMessage, {
-            chat_id: storedPosition.chatId,
-            message_id: storedPosition.messageId,
-            parse_mode: 'Markdown',
-            disable_web_page_preview: true
-          });
-
-          // Update position data in MongoDB
-          await this.stateManager.updatePosition(
-            storedPosition.tokenId,
-            storedPosition.walletAddress,
-            storedPosition.chatId,
-            {
-              token0Amount: updatedPosition.token0Amount,
-              token1Amount: updatedPosition.token1Amount,
-              currentPrice: updatedPosition.currentPrice,
-              inRange: updatedPosition.inRange,
-              liquidity: updatedPosition.liquidity?.toString()
-            }
-          );
-
-          console.log(`Updated position message for token ID ${storedPosition.tokenId} in chat ${storedPosition.chatId}`);
-
-        } catch (error) {
-          console.error(`Error updating position message for token ID ${storedPosition.tokenId}:`, error.message);
-        }
-      }
-
+      await this.mongoose.savePoolState(this.address, {
+        ...monitoringDataForStorage,
+        priceMonitoringEnabled: this.isMonitoring
+      });
     } catch (error) {
-      console.error(`Error updating position messages for pool ${poolAddress}:`, error.message);
+      console.error(`Error saving monitoring state for pool ${this.address}:`, error.message);
     }
-  }
-
-  /**
-   * Cache all pre-configured pools
-   * @private
-   */
-  async _cachePreConfiguredPools() {
-    console.log('Caching pre-configured pools...');
-
-    // Get all enabled pools from the hierarchical structure
-    const enabledPools = poolsConfig.getEnabledPools();
-
-    for (const poolConfig of enabledPools) {
-      try {
-        // Check if already cached
-        const cached = await this.stateManager.getCachedPoolInfo(poolConfig.address);
-        if (cached) {
-          console.log(`Pool ${poolConfig.address} already cached, skipping`);
-          continue;
-        }
-
-        // Cache the pool information with metadata
-        await this._cachePoolInfo(poolConfig.address, {
-          platform: poolConfig.platform,
-          blockchain: poolConfig.blockchain
-        });
-        console.log(`Cached pre-configured pool: ${poolConfig.platform}/${poolConfig.blockchain} - ${poolConfig.address}`);
-      } catch (error) {
-        console.error(`Failed to cache pre-configured pool ${poolConfig.address} (${poolConfig.platform}/${poolConfig.blockchain}):`, error.message);
-      }
-    }
-  }
-
-  /**
-   * Cache pool information with additional metadata
-   * @private
-   * @param {string} poolAddress - Pool address to cache
-   * @param {Object} metadata - Additional metadata (platform, blockchain, etc.)
-   * @param {Object} provider - Ethereum provider (optional, will use default if not provided)
-   */
-  async _cachePoolInfo(poolAddress, metadata = {}, provider = null) {
-    if (!isValidEthereumAddress(poolAddress)) {
-      throw new Error('Invalid pool address');
-    }
-
-    // Create pool contract
-    const poolContract = createPoolContract(poolAddress);
-
-    // Get pool static information
-    const [token0Address, token1Address, fee, tickSpacing, slot0] = await Promise.all([
-      poolContract.read.token0(),
-      poolContract.read.token1(),
-      poolContract.read.fee(),
-      poolContract.read.tickSpacing(),
-      poolContract.read.slot0()
-    ]);
-
-    // Get token information
-    const [token0Info, token1Info] = await Promise.all([
-      getTokenInfo(token0Address),
-      getTokenInfo(token1Address)
-    ]);
-
-    // Prepare pool info for caching
-    const poolInfo = {
-      token0: token0Info,
-      token1: token1Info,
-      fee,
-      tickSpacing,
-      sqrtPriceX96: slot0[0],
-      tick: slot0[1],
-      observationIndex: slot0[2],
-      observationCardinality: slot0[3],
-      observationCardinalityNext: slot0[4],
-      feeProtocol: slot0[5],
-      unlocked: slot0[6],
-      // Add metadata for future filtering capabilities
-      ...metadata
-    };
-
-    // Cache the information
-    await this.stateManager.cachePoolInfo(poolAddress, poolInfo);
-
-    return poolInfo;
   }
 }
 
-// Export singleton instance
-const poolService = new PoolService();
-module.exports = poolService;
+module.exports = {
+  Pool,
+  getPool: Pool.getPool,
+};

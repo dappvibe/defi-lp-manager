@@ -4,48 +4,37 @@
  */
 const { environment } = require('./config');
 const { getProvider } = require('./services/blockchain/provider');
-const poolService = require('./services/uniswap/pool');
-const initTelegramBot = require('./services/telegram/bot');
-const PositionMonitor = require('./services/uniswap/position-monitor');
-const MongoStateManager = require('./services/database/mongo');
+const Bot = require('./services/telegram/bot');
+const { mongoose } = require('./services/database/mongoose');
+const { WalletService } = require('./services/wallet');
 
 /**
  * Initialize the application
  * @returns {Object} Application context with initialized services
  */
 async function initializeApp() {
+    await mongoose.connect();
+
     // Initialize services
     const provider = getProvider();
 
-    // Initialize MongoDB state manager
-    const mongoStateManager = new MongoStateManager();
-    await mongoStateManager.connect();
+    // Initialize wallet service
+    const walletService = new WalletService(mongoose);
+    await walletService.loadWalletsFromDatabase();
 
-    // Initialize pool service
-    await poolService.initialize();
-
-    // Initialize position monitor for wallet tracking with state manager
-    const positionMonitor = new PositionMonitor(provider, mongoStateManager);
-
-    // Initialize the Telegram bot with the pool service and position monitor
-    const bot = initTelegramBot(
+    // Initialize the Bot with the wallet service
+    const bot = new Bot(
         environment.telegram.botToken,
         provider,
-        poolService.getMonitoredPools(),
-        positionMonitor,
-        environment.telegram.timezone
+        mongoose,
+        walletService
     );
-
-    // Initialize pool service with monitoring functionality
-    // This must be done after the bot is initialized since it needs the bot instance
-    await poolService.initialize(bot, provider, environment.telegram.timezone);
 
     return {
         provider,
         bot,
-        poolService,
-        positionMonitor,
-        mongoStateManager,
+        mongoose,
+        walletService,
     };
 }
 
@@ -54,21 +43,16 @@ async function initializeApp() {
  * @param {Object} appContext - The application context with services to clean up
  */
 async function cleanupApp(appContext) {
-    const { bot, poolService, mongoStateManager } = appContext;
-
-    // Close pool service (includes stopping all monitoring)
-    if (poolService) {
-        await poolService.close();
-    }
+    const { bot, mongoose } = appContext;
 
     // Close MongoDB connection if available
-    if (mongoStateManager) {
-        await mongoStateManager.close();
+    if (mongoose) {
+        await mongoose.disconnect();
     }
 
-    // Stop the Telegram bot
-    if (bot && typeof bot.stopPolling === 'function') {
-        bot.stopPolling();
+    // Bot shutdown
+    if (bot && typeof bot.shutdown === 'function') {
+        await bot.shutdown();
     }
 }
 

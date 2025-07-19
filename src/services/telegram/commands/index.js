@@ -3,17 +3,17 @@
  * Exports handler classes for bot to instantiate and bind
  */
 const StartHandler = require('./start');
-const NotifyHandler = require('./notify');
-const PoolHandler = require('./pool');
+const { PoolHandler } = require('./pool');
 const WalletHandler = require('./wallet');
 const HelpHandler = require("./help");
-const LpHandler = require('./lp');
+const { LpHandler, PositionMessage } = require('./lp');
 
+// Export all handlers
 module.exports = {
   StartHandler,
   HelpHandler,
-  NotifyHandler,
   PoolHandler,
   WalletHandler,
-  LpHandler
+  LpHandler,
+  PositionMessage
 };

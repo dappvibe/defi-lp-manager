@@ -20,8 +20,8 @@ const constants = {
 
     // Messages
     messages: {
-        welcome: "Use /notify <price> to set a price alert for monitored pools in this chat.",
-        invalidAddress: "Use /pool <address> to monitor a valid Ethereum pool contract address, or use /notify <pool_address> <price> for alerts.",
+        welcome: "Welcome! Use /pool to monitor pools or /wallet <address> to monitor wallet positions.",
+        invalidAddress: "Use /pool <address> to monitor a valid Ethereum pool contract address.",
         priceAlertTemplate: "🔔 Price Alert! 🔔\\nPool: {symbol1}/{symbol0}\\nPrice {direction} {targetPrice}.\\nCurrent Price: {currentPrice}",
     },
 

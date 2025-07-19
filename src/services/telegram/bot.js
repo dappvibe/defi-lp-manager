@@ -1,57 +1,115 @@
 /**
  * Telegram Bot Service
- * Main bot initialization and message handling
+ * Object-oriented bot implementation extending TelegramBot
  */
 const TelegramBot = require('node-telegram-bot-api');
 const { environment } = require('../../config');
-const { StartHandler, HelpHandler, NotifyHandler, PoolHandler, WalletHandler, LpHandler } = require('./commands');
-
+const { StartHandler, HelpHandler, WalletHandler, LpHandler } = require('./commands');
 const Throttler = require('./throttler');
+const poolsConfig = require('../../config/pools');
+const TelegramMessage = require("./message");
+const { PoolHandler } = require("./commands/pool");
 
 /**
- * Initialize the Telegram bot with all commands
- * @param {string} token - Telegram bot token
- * @param {object} provider - Ethereum provider instance
- * @param {object} monitoredPools - Object to store monitored pools
- * @param {object} positionMonitor - Position monitor instance
- * @param {string} timezone - Timezone for time display
- * @returns {TelegramBot} - Initialized bot instance
+ * Bot class extending TelegramBot with throttling and command handling
  */
-function initTelegramBot(token, provider, monitoredPools, positionMonitor, timezone) {
-  // Create the bot with standard options
-  const bot = new TelegramBot(token, { polling: true });
+class Bot extends TelegramBot {
+  /**
+   * Initialize the bot
+   * @param {string} token - Telegram bot token
+   * @param {object} provider - Ethereum provider instance
+   * @param {object} mongoose - Mongoose instance
+   * @param {object} walletService - Wallet service instance
+   * @param {object} options - Additional bot options
+   */
+  constructor(token, provider, mongoose, walletService, options = {}) {
+    // Initialize parent TelegramBot with polling enabled
+    super(token, {polling: true, ...options});
 
-  // Add throttling capabilities
-  const rateLimit = environment.telegram.rateLimit;
-  const throttler = new Throttler({
-    maxRequests: rateLimit.maxRequestsPerSecond,
-    timeWindowMs: 1000
-  });
+    // Store dependencies
+    this.provider = provider;
+    this.mongoose = mongoose;
+    this.walletService = walletService;
 
-  // Track last edit time for messages
-  const lastEditTimes = {};
+    // Initialize throttling
+    this.rateLimit = environment.telegram.rateLimit;
+    this.throttler = new Throttler({
+      maxRequests: this.rateLimit.maxRequestsPerSecond,
+      timeWindowMs: 1000
+    });
 
-  // Override bot methods with throttled versions
-  const originalSendMessage = bot.sendMessage;
-  bot.sendMessage = async function(chatId, text, options = {}) {
-    return throttler.throttle(() => originalSendMessage.call(bot, chatId, text, options));
-  };
+    // Track last edit time for messages
+    this.lastEditTimes = {};
 
-  const originalEditMessageText = bot.editMessageText;
-  bot.editMessageText = async function(text, options = {}) {
+    // Initialize the bot
+    this.init();
+  }
+
+  /**
+   * Initialize bot with event handlers and command registration
+   */
+  init() {
+    this.setupEventHandlers();
+    this.registerCommandHandlers();
+  }
+
+  registerCommandHandlers() {
+    new StartHandler(this, poolsConfig, this.walletService);
+    new HelpHandler(this);
+    new PoolHandler(this, this.mongoose, poolsConfig);
+    new WalletHandler(this, this.walletService);
+    new LpHandler(this, this.mongoose, this.walletService);
+  }
+
+  send(message) {
+    try {
+      if (!message instanceof TelegramMessage) throw new Error('Invalid message type');
+
+      if (!message.id) {
+        return this.sendMessage(message.chatId, message.toString(), message.getOptions()).then(reply => {
+          message.id = reply.message_id;
+          message.metadata = reply;
+          return message;
+        });
+      } else {
+        const options = {
+          ...message.getOptions(),
+          message_id: message.id,
+          chat_id: message.chatId,
+        };
+        return this.editMessageText(message.toString(), options).then(reply => {
+          message.metadata = reply;
+          return message;
+        });
+      }
+    } catch (error) {
+      console.error('Error sending message:', error);
+    }
+  }
+
+  /**
+   * Throttled version of sendMessage
+   * @param {number} chatId - Chat ID
+   * @param {string} text - Message text
+   * @param {object} options - Message options
+   * @returns {Promise} - Promise resolving to sent message
+   */
+  async sendMessage(chatId, text, options = {}) {
+    return this.throttler.throttle(() => super.sendMessage(chatId, text, options));
+  }
+
+  /**
+   * Throttled version of editMessageText with smart price update handling
+   * @param {string} text - New message text
+   * @param {object} options - Edit options
+   * @returns {Promise} - Promise resolving to edited message
+   */
+  async editMessageText(text, options = {}) {
     const messageKey = `${options.chat_id || ''}_${options.message_id || ''}`;
-    const now = Date.now();
-    const lastEdit = lastEditTimes[messageKey] || 0;
-
-    // Calculate delay needed to respect minimum time between edits
-    const timeSinceLastEdit = now - lastEdit;
-    const delayNeeded = Math.max(0, rateLimit.messageEditDelay - timeSinceLastEdit);
-
-    // Check if this is a price update message by looking for specific patterns
-    const isPriceUpdate = text.includes('📊 Price:') && text.includes('⏰ Updated:');
-
-    // If this is a price update that would be throttled, discard it
-    if (isPriceUpdate && delayNeeded > 0) {
+    const lastEdit = this.lastEditTimes[messageKey] || 0;
+    const timeSinceLastEdit = Date.now() - lastEdit;
+    const delayNeeded = Math.max(0, this.rateLimit.messageEditDelay - timeSinceLastEdit);
+    if (delayNeeded > 0) {
       // Return a resolved promise to maintain interface consistency
       return Promise.resolve({ message_id: options.message_id });
     }
@@ -62,33 +120,27 @@ function initTelegramBot(token, provider, monitoredPools, positionMonitor, timez
     }
 
     // Update last edit time and throttle the API call
-    lastEditTimes[messageKey] = Date.now();
-    return throttler.throttle(() => originalEditMessageText.call(bot, text, options));
-  };
+    this.lastEditTimes[messageKey] = Date.now();
+    return this.throttler.throttle(() => super.editMessageText(text, options));
+  }
 
-  const originalAnswerCallbackQuery = bot.answerCallbackQuery;
-  bot.answerCallbackQuery = async function(callbackQueryId, options = {}) {
-    return throttler.throttle(() => originalAnswerCallbackQuery.call(bot, callbackQueryId, options));
-  };
+  /**
+   * Throttled version of answerCallbackQuery
+   * @param {string} callbackQueryId - Callback query ID
+   * @param {object} options - Answer options
+   * @returns {Promise} - Promise resolving to callback answer
+   */
+  async answerCallbackQuery(callbackQueryId, options = {}) {
+    return this.throttler.throttle(() => super.answerCallbackQuery(callbackQueryId, options));
+  }
 
-  const originalSendPhoto = bot.sendPhoto;
-  bot.sendPhoto = async function(chatId, photo, options = {}) {
-    return throttler.throttle(() => originalSendPhoto.call(bot, chatId, photo, options));
-  };
-
-  // Log events
-  bot.on('polling_start', () => console.log('Telegram Bot started polling'));
-  bot.on('polling_error', (error) => console.error('Telegram Bot polling error:', error));
-
-  // Register command handlers
-  StartHandler.onText(bot, monitoredPools, positionMonitor);
-  HelpHandler.onText(bot);
-  NotifyHandler.onText(bot, monitoredPools, timezone);
-  PoolHandler.onText(bot, provider, monitoredPools, timezone);
-  WalletHandler.onText(bot, positionMonitor, timezone);
-  LpHandler.onText(bot, positionMonitor, timezone);
-
-  return bot;
+  /**
+   * Setup event handlers for bot events
+   */
+  setupEventHandlers() {
+    this.on('polling_start', () => console.log('Telegram Bot started polling'));
+    this.on('polling_error', (error) => console.error('Telegram Bot polling error:', error));
+  }
 }
 
-module.exports = initTelegramBot;
+module.exports = Bot;

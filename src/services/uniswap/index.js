@@ -6,7 +6,7 @@ const helpers = require('./helpers');
 const utils = require('./utils');
 const contracts = require('./contracts');
 const poolService = require('./pool');
-const positionMonitor = require('./position-monitor');
+const positionMonitor = require('./position');
 
 module.exports = {
   helpers,
