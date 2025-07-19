@@ -62,20 +62,20 @@ class PositionMessage extends TelegramMessage {
 
     const { position } = this;
     const feePercent = (position.fee / 10000).toFixed(2);
-    const poolLink = `https://pancakeswap.finance/liquidity/${position.tokenId}?chain=arb&persistChain=1`;
+    const positionLink = `https://pancakeswap.finance/liquidity/${position.tokenId}?chain=arb&persistChain=1`;
 
     // Format components
-    const header = `**${position.token0Symbol}/${position.token1Symbol}** (${feePercent}%) - [#${position.tokenId}](${poolLink})`;
+    const rangeIcon = position.inRange ? '🟢' : '🔴';
+    const timestamp = getTimeInTimezone();
+
+    const header = `${rangeIcon} $${parseFloat(position.currentPrice).toFixed(2)}`;
     const amounts = `💰 ${parseFloat(position.token0Amount).toFixed(4)} ${position.token0Symbol} + ${parseFloat(position.token1Amount).toFixed(2)} ${position.token1Symbol}`;
-    const priceRange = `📊 **$${parseFloat(position.currentPrice).toFixed(2)}** - $${parseFloat(position.lowerPrice).toFixed(2)} - $${parseFloat(position.upperPrice).toFixed(2)}`;
-
+    const time = `⏰ ${timestamp}`;
     const stakingStatus = position.isStaked ? '🥩 STAKED' : '💼 UNSTAKED';
-    const rangeStatus = position.inRange ? '🟢 IN RANGE' : '🔴 OUT OF RANGE';
-    const status = `${stakingStatus} | ${rangeStatus}`;
+    const priceRange = `${stakingStatus} | $${parseFloat(position.lowerPrice).toFixed(2)} - $${parseFloat(position.upperPrice).toFixed(2)}`;
+    const poolInfo = `${position.token0Symbol}/${position.token1Symbol} (${feePercent}%) - [#${position.tokenId}](${positionLink})`;
 
-    const timestamp = `🕐 Updated: ${getTimeInTimezone()}`;
-
-    return `${header}\n${amounts}\n${priceRange}\n${status}\n${timestamp}`;
+    return `${header}\n${amounts}\n${time}\n${priceRange}\n${poolInfo}`;
   }
 
   getOptions() {
