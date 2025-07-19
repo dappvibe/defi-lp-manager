@@ -4,7 +4,7 @@
  */
 const TelegramBot = require('node-telegram-bot-api');
 const { environment } = require('../../config');
-const { StartHandler, HelpHandler, NotifyHandler, WalletHandler, LpHandler } = require('./commands');
+const { StartHandler, HelpHandler, WalletHandler, LpHandler } = require('./commands');
 const Throttler = require('./throttler');
 const poolsConfig = require('../../config/pools');
 const TelegramMessage = require("./message");
@@ -56,7 +56,6 @@ class Bot extends TelegramBot {
   registerCommandHandlers() {
     this.startHandler = new StartHandler(this, poolsConfig, this.walletService);
     this.helpHandler = new HelpHandler(this);
-    //this.notifyHandler = new NotifyHandler(this, this.monitoredPools);
     this.poolHandler = new PoolHandler(this, this.mongoose, poolsConfig);
     this.walletHandler = new WalletHandler(this, this.walletService);
     this.lpHandler = new LpHandler(this, this.mongoose, this.walletService);

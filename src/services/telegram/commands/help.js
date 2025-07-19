@@ -1,7 +1,6 @@
 const StartHandler = require('./start');
 const { PoolHandler } = require('./pool');
 const WalletHandler = require('./wallet');
-const NotifyHandler = require('./notify');
 const { LpHandler } = require('./lp');
 
 /**
@@ -17,7 +16,6 @@ class HelpMessage {
       StartHandler,
       PoolHandler,
       WalletHandler,
-      NotifyHandler,
       LpHandler,
       HelpHandler  // Include self for completeness
     ];

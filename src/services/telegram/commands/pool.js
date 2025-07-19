@@ -351,7 +351,6 @@ Shows all pre-configured pools as individual messages, each displaying:
 • Use toggle buttons to control monitoring state
 
 **Related Commands:**
-• \`/notify <price> [pool]\` - Set price alerts for monitored pools
 • \`/wallet\` - Monitor wallet positions instead`;
   }
 }

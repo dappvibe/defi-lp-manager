@@ -411,8 +411,7 @@ class WalletHandler {
 • You can monitor multiple wallets in one chat
 
 **Related Commands:**
-• \`/pool\` - Monitor pool prices instead
-• \`/notify\` - Set price alerts for pools`;
+• \`/pool\` - Monitor pool prices instead`;
   }
 }
 
