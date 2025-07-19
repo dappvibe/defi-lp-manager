@@ -36,9 +36,9 @@ class MongooseService {
       const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/defi-lp-manager';
       await mongoose.connect(uri);
       this.isConnected = true;
-      console.log('Connected to MongoDB via Mongoose');
+      console.log('Connected to MongoDB');
     } catch (error) {
-      console.error('Failed to connect to MongoDB via Mongoose:', error.message);
+      console.error('Failed to connect to MongoDB:', error.message);
       this.isConnected = false;
     }
   }
@@ -148,16 +148,13 @@ class MongooseService {
 
   async cachePoolInfo(poolAddress, poolInfo) {
     await this.savePoolState(poolAddress, poolInfo);
-    console.log(`Cached static info for pool ${poolAddress}`);
   }
 
   async getCachedPoolInfo(poolAddress) {
     try {
       const poolInfo = await Pool.findOne({ address: poolAddress }).lean();
       if (poolInfo) {
-        const populatedPool = await this.populatePoolTokens(poolInfo);
-        console.log(`Retrieved pool info for ${poolAddress}`);
-        return populatedPool;
+        return await this.populatePoolTokens(poolInfo);
       }
       return null;
     } catch (error) {
@@ -370,8 +367,6 @@ class MongooseService {
         positionDoc,
         { upsert: true, new: true }
       );
-
-      console.log(`Saved position ${tokenId} for wallet ${walletAddress}`);
     } catch (error) {
       console.error(`Error saving position ${position.tokenId}:`, error.message);
     }
@@ -406,8 +401,6 @@ class MongooseService {
         tokenId,
         walletAddress
       });
-
-      console.log(`Removed position ${tokenId} for wallet ${walletAddress}`);
     } catch (error) {
       console.error(`Error removing position ${tokenId}:`, error.message);
     }
@@ -419,7 +412,6 @@ class MongooseService {
       const tokenData = await Token.findById(address.toLowerCase()).lean();
 
       if (tokenData) {
-        console.log(`Retrieved cached token ${tokenData.symbol} (${address})`);
         return tokenData;
       }
       return null;
@@ -445,8 +437,6 @@ class MongooseService {
         tokenDoc,
         { upsert: true, new: true }
       );
-
-      console.log(`Cached token ${tokenData.symbol} (${address})`);
     } catch (error) {
       console.error(`Error caching token for ${address}:`, error);
     }
@@ -473,7 +463,6 @@ class MongooseService {
   async removeTokenFromCache(address, chainId) {
     try {
       await Token.findByIdAndDelete(address.toLowerCase());
-      console.log(`Removed token ${address} from cache`);
     } catch (error) {
       console.error(`Error removing token ${address} from cache:`, error);
     }
