@@ -8,6 +8,10 @@ const Token = require('./models/Token');
 class MongooseService {
   static #instance = null;
 
+  /**
+   * Gets singleton instance of MongooseService
+   * @returns {MongooseService} The singleton instance
+   */
   static getInstance() {
     if (!MongooseService.#instance) {
       MongooseService.#instance = new MongooseService();
@@ -240,6 +244,41 @@ class MongooseService {
     } catch (error) {
       console.error(`Error finding pools by platform and blockchain:`, error.message);
       return [];
+    }
+  }
+
+  /**
+   * Find pool by token addresses and fee
+   * @param {string} token0Address - Address of token0
+   * @param {string} token1Address - Address of token1
+   * @param {number} fee - Pool fee value
+   * @returns {Promise<Object|null>} Pool object with populated token data or null if not found
+   */
+  async findPoolByTokensAndFee(token0Address, token1Address, fee) {
+    try {
+      const normalizedToken0 = token0Address.toLowerCase();
+      const normalizedToken1 = token1Address.toLowerCase();
+
+      // Find pool that matches the tokens (in either order) and fee
+      const pool = await Pool.findOne({
+        $and: [
+          {
+            $or: [
+              { token0: normalizedToken0, token1: normalizedToken1 },
+              { token0: normalizedToken1, token1: normalizedToken0 }
+            ]
+          },
+          { fee: fee }
+        ]
+      }).lean();
+
+      if (pool) {
+        return await this.populatePoolTokens(pool);
+      }
+      return null;
+    } catch (error) {
+      console.error(`Error finding pool by tokens ${token0Address}, ${token1Address} and fee ${fee}:`, error.message);
+      return null;
     }
   }
 

@@ -40,27 +40,13 @@ class Pool extends EventEmitter {
    */
   static async getPoolOfTokens(token0Address, token1Address, fee) {
     try {
-      // First, query MongoDB for already stored pool with these tokens and fee
-      const mongooseInstance = mongoose;
-      if (!mongooseInstance.isConnected) {
-        await mongooseInstance.connect();
-      }
-
-      // Check both token order combinations since pools can be stored with either order
-      const pools = await mongooseInstance.getAllCachedPools();
-      const existingPool = pools.find(pool => {
-        const feeMatch = pool.fee === fee / 10000; // Convert to percentage format used in storage
-        const tokensMatch = (
-          (pool.token0 === token0Address.toLowerCase() && pool.token1 === token1Address.toLowerCase()) ||
-          (pool.token0 === token1Address.toLowerCase() && pool.token1 === token0Address.toLowerCase())
-        );
-        return feeMatch && tokensMatch;
-      });
-
-      if (existingPool) {
-        console.log(`Found existing pool in database: ${existingPool.address}`);
-        return this.getPool(existingPool.address);
-      }
+      // Query MongoDB directly for pool with these specific tokens and fee
+      const existingPool = await mongoose.findPoolByTokensAndFee(
+        token0Address,
+        token1Address,
+        fee / 10000 // Convert to percentage format used in storage
+      );
+      if (existingPool) return this.getPool(existingPool.address);
 
       // If not found in database, query the factory contract
       const factoryContract = getContract({
