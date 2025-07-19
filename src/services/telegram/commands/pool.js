@@ -5,6 +5,7 @@
  */
 const { Pool } = require('../../uniswap/pool');
 const TelegramMessage = require("../message");
+const { getTimeInTimezone } = require('../../../utils/time');
 
 /**
  * Represents a no pools configured message
@@ -43,21 +44,18 @@ class PoolInfoMessage extends TelegramMessage {
   toString() {
     const pair = `[${this.pool.info.token0.symbol}/${this.pool.info.token1.symbol}](https://pancakeswap.finance/info/v3/arb/pairs/${this.pool.address})`;
     const feePercent = this.pool.info.fee ? (this.pool.info.fee).toFixed(2) + '%' : 'Unknown';
-    const pairWithFee = `${pair} (${feePercent})`;
 
-    let messageText = `📊 ${this._moneyFormat(this.price)}
-💰 **${pairWithFee}**`;
+    const updateTime = getTimeInTimezone();
+
+    let messageText = `📊 ${this._moneyFormat(this.price)}`;
 
     // Add TVL if available
     if (this.pool.info.tvl) {
-      const tvlText = `💎 TVL: $${this._moneyFormat(this.pool.info.tvl)}`;
-      messageText += `\n${tvlText}`;
+      messageText += `\n💎 $${this._moneyFormat(this.pool.info.tvl)}`;
     }
 
-    const { getTimeInTimezone } = require('../../../utils/time');
-    const updateTime = getTimeInTimezone();
-    messageText += `
-⏰ ${updateTime}`;
+    messageText += `\n⏰ ${updateTime}`;
+    messageText += `\n💰 ${pair} (${feePercent})`;
 
     return messageText;
   }
@@ -83,7 +81,7 @@ class PoolInfoMessage extends TelegramMessage {
     return {
       inline_keyboard: [[
         {
-          text: isMonitored ? '🔴 Stop Monitoring' : '🟢 Start Monitoring',
+          text: isMonitored ? '🔴 Stop' : '🟢 Start Monitoring',
           callback_data: `pool_${isMonitored ? 'stop' : 'start'}_${this.pool.address}`
         }
       ]]
