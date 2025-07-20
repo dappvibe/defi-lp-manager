@@ -103,7 +103,7 @@ class PositionMessage extends TelegramMessage {
       feesLine += `\n`;
     }
 
-    const amounts = `💰 ${parseFloat(position.token0Amount).toFixed(4)} ${position.token0.symbol} + ${parseFloat(position.token1Amount).toFixed(2)} ${position.token1.symbol}`;
+    const amounts = `💰 ${parseFloat(position.token0Amount).toFixed(4)} ${position.token0.symbol} + ${moneyFormat(parseFloat(position.token1Amount))} ${position.token1.symbol}`;
 
     // Calculate position age
     let timeWithAge = `⏰ ${timestamp}`;
