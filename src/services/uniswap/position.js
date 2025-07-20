@@ -99,15 +99,15 @@ class Position extends EventEmitter {
 
   /**
    * Fetch all positions for a wallet
-   * @param {string} walletAddress - Wallet address
+   * @param {string} wallet - Wallet address
    * @returns {Promise<Array<Position>>} Array of Position instances
    */
-  static async fetchPositions(walletAddress) {
+  static async fetchPositions(wallet) {
     try {
       // Get both unstaked and staked positions
       const [unstakedPositions, stakedPositions] = await Promise.all([
-        Position.fetchUnstakedPositions(walletAddress),
-        Position.fetchStakedPositions(walletAddress)
+        Position.fetchUnstakedPositions(wallet),
+        Position.fetchStakedPositions(wallet)
       ]);
 
       // Combine and return all positions
