@@ -398,6 +398,10 @@ class LpHandler {
       if (combinedToken1Value < 0.1) {
         console.log(`Position ${position.tokenId} liquidity dropped below 0.1 (${combinedToken1Value.toFixed(4)}). Stopping monitoring.`);
 
+        // send last update reflecting 0 liquidity
+        message.position = updatedPosition;
+        await this.bot.send(message);
+
         // Stop monitoring this position
         await this.stopMonitoringPosition(position.tokenId);
         this.positionMessages.delete(position.tokenId);
