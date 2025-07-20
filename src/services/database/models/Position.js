@@ -9,6 +9,7 @@ const positionSchema = new mongoose.Schema({
   token0Symbol: String,
   token1Symbol: String,
   isStaked: { type: Boolean, default: false },
+  createdAt: { type: Date, default: Date.now, index: true },
   updatedAt: { type: Date, default: Date.now }
 });
 

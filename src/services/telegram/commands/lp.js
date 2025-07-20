@@ -104,12 +104,25 @@ class PositionMessage extends TelegramMessage {
     }
 
     const amounts = `💰 ${parseFloat(position.token0Amount).toFixed(4)} ${position.token0.symbol} + ${parseFloat(position.token1Amount).toFixed(2)} ${position.token1.symbol}`;
-    const time = `⏰ ${timestamp}`;
+
+    // Calculate position age
+    let timeWithAge = `⏰ ${timestamp}`;
+    if (position.createdAt) {
+      const now = new Date();
+      const created = new Date(position.createdAt);
+      const ageMs = now - created;
+      const ageMinutes = Math.floor(ageMs / (1000 * 60));
+      const hours = Math.floor(ageMinutes / 60);
+      const minutes = ageMinutes % 60;
+      const ageDisplay = hours > 0 ? `${hours}:${minutes.toString().padStart(2, '0')}` : `0:${minutes.toString().padStart(2, '0')}`;
+      timeWithAge = `⏰ ${timestamp} ⏳ ${ageDisplay}`;
+    }
+
     const stakingStatus = position.isStaked ? '🥩 STAKED' : '💼 UNSTAKED';
     const priceRange = `${stakingStatus} | $${moneyFormat(parseFloat(position.lowerPrice))} - $${moneyFormat(parseFloat(position.upperPrice))}`;
     const poolInfo = `${position.token0.symbol}/${position.token1.symbol} (${feePercent}%) - [#${position.tokenId}](${positionLink})`;
 
-    return `${header}\n${feesLine}${time}\n${amounts}\n${priceRange}\n${poolInfo}`;
+    return `${header}\n${feesLine}${timeWithAge}\n${amounts}\n${priceRange}\n${poolInfo}`;
   }
 
   getOptions() {
@@ -221,6 +234,13 @@ class LpHandler {
 
     for (let i = 0; i < positions.length; i++) {
       const position = positions[i];
+
+      // Get existing position data from database to preserve createdAt
+      const existingPosition = await this.db.getPosition(position.tokenId, walletAddress);
+      if (existingPosition && existingPosition.createdAt) {
+        position.createdAt = existingPosition.createdAt;
+      }
+
       const positionMessage = new PositionMessage(position);
       positionMessage.chatId = chatId;
 
@@ -247,14 +267,23 @@ class LpHandler {
    */
   async savePositionData(position, walletAddress, chatId, messageId) {
     try {
-      await this.db.savePosition({
+      const positionData = {
         ...position.toObject(),
         walletAddress,
         poolAddress: position.pool.address,
         chatId,
         messageId,
         isMonitored: true
-      });
+      };
+
+      // Only set createdAt if it's not already set (for new positions)
+      if (!position.createdAt) {
+        positionData.createdAt = new Date();
+      } else {
+        positionData.createdAt = position.createdAt;
+      }
+
+      await this.db.savePosition(positionData);
     } catch (error) {
       console.error(`Error saving position ${position.tokenId}:`, error);
     }
@@ -378,6 +407,7 @@ class LpHandler {
       }
 
       updatedPosition.walletAddress = position.walletAddress; // FIXME
+      updatedPosition.createdAt = position.createdAt; // Preserve createdAt
       updatedPosition.fees = await message.position.fetchAccumulatedFees();
       message.position = updatedPosition;
 
@@ -389,7 +419,8 @@ class LpHandler {
         poolAddress: updatedPosition.pool.address,
         chatId: message.chatId,
         messageId: message.id,
-        isMonitored: true
+        isMonitored: true,
+        createdAt: updatedPosition.createdAt
       });
     } catch (error) {
       console.error(`Error updating position message for ${position.tokenId}:`, error);
@@ -472,6 +503,7 @@ class LpHandler {
       // Create Position object with full data
       const position = new Position(fullPositionData);
       position.walletAddress = positionData.walletAddress; // Ensure wallet address is set
+      position.createdAt = positionData.createdAt; // Preserve original creation time
 
       const positionMessage = new PositionMessage(position);
       positionMessage.chatId = positionData.chatId;
