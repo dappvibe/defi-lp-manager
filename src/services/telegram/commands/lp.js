@@ -109,7 +109,7 @@ class PositionMessage extends TelegramMessage {
     const priceRange = `${stakingStatus} | $${moneyFormat(parseFloat(position.lowerPrice))} - $${moneyFormat(parseFloat(position.upperPrice))}`;
     const poolInfo = `${position.token0.symbol}/${position.token1.symbol} (${feePercent}%) - [#${position.tokenId}](${positionLink})`;
 
-    return `${header}\n${feesLine}${amounts}\n${time}\n${priceRange}\n${poolInfo}`;
+    return `${header}\n${feesLine}${time}\n${amounts}\n${priceRange}\n${poolInfo}`;
   }
 
   getOptions() {
