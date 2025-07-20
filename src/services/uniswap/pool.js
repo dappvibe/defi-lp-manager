@@ -6,7 +6,7 @@ const { EventEmitter } = require('events');
 const { getTokenInfo, createPoolContract } = require('./contracts');
 const { isValidEthereumAddress, calculatePrice } = require('./utils');
 const { uniswapV3Pool: poolAbi } = require('./abis');
-const { getTimeInTimezone } = require('../../utils/time');
+const { getTimeInTimezone } = require('../../utils');
 const { mongoose } = require('../database/mongoose');
 const { getProvider } = require('../blockchain/provider');
 const {getContract} = require("viem");
@@ -267,8 +267,6 @@ class Pool extends EventEmitter {
 
     this.isMonitoring = false;
     this.monitoringData = null;
-    this.botInstance = null;
-    this.timezone = null;
 
     // Update monitoring state in database
     await this.mongoose.savePoolState(this.address, {

@@ -1,6 +1,6 @@
 const Position = require('../../uniswap/position');
 const TelegramMessage = require("../message");
-const { getTimeInTimezone } = require('../../../utils/time');
+const { getTimeInTimezone, moneyFormat } = require('../../../utils');
 
 /**
  * Message classes for different LP command scenarios
@@ -91,14 +91,14 @@ class PositionMessage extends TelegramMessage {
     const rangeIcon = position.inRange ? '🟢' : '🔴';
     const timestamp = getTimeInTimezone();
 
-    const header = `${rangeIcon} $${parseFloat(position.currentPrice).toFixed(2)}`;
+    const header = `${rangeIcon} $${moneyFormat(parseFloat(position.currentPrice))}`;
 
     // Build fees line with CAKE rewards
     let feesLine = '';
     if (position.fees) {
-      feesLine = `💸 $${position.fees.totalValue.toFixed(2)}`;
+      feesLine = `💸 $${moneyFormat(position.fees.totalValue)}`;
       if (position.fees.cakeRewards) {
-        feesLine += ` 🍪 $${position.fees.cakeRewards.value.toFixed(2)}`;
+        feesLine += ` 🍪 $${moneyFormat(position.fees.cakeRewards.value)}`;
       }
       feesLine += `\n`;
     }
@@ -106,7 +106,7 @@ class PositionMessage extends TelegramMessage {
     const amounts = `💰 ${parseFloat(position.token0Amount).toFixed(4)} ${position.token0.symbol} + ${parseFloat(position.token1Amount).toFixed(2)} ${position.token1.symbol}`;
     const time = `⏰ ${timestamp}`;
     const stakingStatus = position.isStaked ? '🥩 STAKED' : '💼 UNSTAKED';
-    const priceRange = `${stakingStatus} | $${parseFloat(position.lowerPrice).toFixed(2)} - $${parseFloat(position.upperPrice).toFixed(2)}`;
+    const priceRange = `${stakingStatus} | $${moneyFormat(parseFloat(position.lowerPrice))} - $${moneyFormat(parseFloat(position.upperPrice))}`;
     const poolInfo = `${position.token0.symbol}/${position.token1.symbol} (${feePercent}%) - [#${position.tokenId}](${positionLink})`;
 
     return `${header}\n${feesLine}${amounts}\n${time}\n${priceRange}\n${poolInfo}`;

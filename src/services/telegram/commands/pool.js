@@ -5,7 +5,7 @@
  */
 const { Pool } = require('../../uniswap/pool');
 const TelegramMessage = require("../message");
-const { getTimeInTimezone } = require('../../../utils/time');
+const { getTimeInTimezone, moneyFormat} = require('../../../utils');
 
 /**
  * Represents a no pools configured message
@@ -47,21 +47,17 @@ class PoolInfoMessage extends TelegramMessage {
 
     const updateTime = getTimeInTimezone();
 
-    let messageText = `📊 ${this._moneyFormat(this.price)}`;
+    let messageText = `📊 ${moneyFormat(this.price)}`;
 
     // Add TVL if available
     if (this.pool.info.tvl) {
-      messageText += `\n💎 $${this._moneyFormat(this.pool.info.tvl)}`;
+      messageText += `\n💎 $${moneyFormat(this.pool.info.tvl)}`;
     }
 
     messageText += `\n⏰ ${updateTime}`;
     messageText += `\n💰 ${pair} (${feePercent})`;
 
     return messageText;
-  }
-
-  _moneyFormat(price) {
-    return price.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
   }
 
   getOptions() {

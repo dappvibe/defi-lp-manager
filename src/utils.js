@@ -8,6 +8,11 @@ function getTimeInTimezone(options = { hour12: false }) {
     return new Date().toLocaleTimeString('en-US', { timeZone: timezone, ...options });
 }
 
+function moneyFormat(price) {
+    return price.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+
 module.exports = {
-    getTimeInTimezone
+    getTimeInTimezone,
+    moneyFormat
 };
