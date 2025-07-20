@@ -169,10 +169,11 @@ class LpHandler {
 
   /**
    * Registers bot command handlers for the /lp command
-   * @returns {void}
+   * @returns {this}
    */
   registerHandlers() {
     this.bot.onText(/\/lp/, (msg) => this.handleCommand(msg));
+    return this;
   }
 
   /**
@@ -193,7 +194,7 @@ class LpHandler {
       await this.processWallets(chatId, monitoredWallets);
     } catch (error) {
       console.error('Error in LP handler:', error);
-      await this.bot.send(new GeneralErrorMessage(chatId, error.message));
+      await this.bot.send(new GeneralErrorMessage(chatId, error.message)).catch(console.error); // don't crash
     }
   }
 
