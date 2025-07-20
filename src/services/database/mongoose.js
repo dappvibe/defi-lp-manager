@@ -218,9 +218,7 @@ class MongooseService {
         ]
       }).lean();
 
-      const populatedPools = await this.populatePoolTokens(pools);
-      console.log(`Found ${pools.length} pools containing token symbol ${tokenSymbol}`);
-      return populatedPools;
+      return await this.populatePoolTokens(pools);
     } catch (error) {
       console.error(`Error finding pools by token symbol ${tokenSymbol}:`, error.message);
       return [];

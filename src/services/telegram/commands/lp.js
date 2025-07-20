@@ -92,14 +92,24 @@ class PositionMessage extends TelegramMessage {
     const timestamp = getTimeInTimezone();
 
     const header = `${rangeIcon} $${parseFloat(position.currentPrice).toFixed(2)}`;
-    const fees = position.fees ? `💸 +$${position.fees.totalValue.toFixed(2)}` : '';
+
+    // Build fees line with CAKE rewards
+    let feesLine = '';
+    if (position.fees) {
+      feesLine = `💸 $${position.fees.totalValue.toFixed(2)}`;
+      if (position.fees.cakeRewards) {
+        feesLine += ` 🍪 $${position.fees.cakeRewards.value.toFixed(2)}`;
+      }
+      feesLine += `\n`;
+    }
+
     const amounts = `💰 ${parseFloat(position.token0Amount).toFixed(4)} ${position.token0.symbol} + ${parseFloat(position.token1Amount).toFixed(2)} ${position.token1.symbol}`;
     const time = `⏰ ${timestamp}`;
     const stakingStatus = position.isStaked ? '🥩 STAKED' : '💼 UNSTAKED';
     const priceRange = `${stakingStatus} | $${parseFloat(position.lowerPrice).toFixed(2)} - $${parseFloat(position.upperPrice).toFixed(2)}`;
     const poolInfo = `${position.token0.symbol}/${position.token1.symbol} (${feePercent}%) - [#${position.tokenId}](${positionLink})`;
 
-    return `${header}\n${fees}\n${amounts}\n${time}\n${priceRange}\n${poolInfo}`;
+    return `${header}\n${feesLine}${amounts}\n${time}\n${priceRange}\n${poolInfo}`;
   }
 
   getOptions() {
@@ -309,7 +319,7 @@ class LpHandler {
       }
 
       updatedPosition.walletAddress = position.walletAddress; // FIXME
-      updatedPosition.fees = await message.position.getAccumulatedFees();
+      updatedPosition.fees = await message.position.fetchAccumulatedFees();
       message.position = updatedPosition;
 
       await this.bot.send(message);

@@ -22,7 +22,9 @@ class PoolsConfig {
         // USDC/ARB (0.05% fee)
         '0x9fFCA51D23Ac7F7df82da414865Ef1055E5aFCc3',
         // USDT/LINK (0.05% fee)
-        '0x2d0Bb2f6D514118642f8588B1c22043e865EaA88'
+        '0x2d0Bb2f6D514118642f8588B1c22043e865EaA88',
+        // CAKE/USDC (0.25% fee)
+        '0xDaA5B2e06cA117f25c8d62f7f7FBaedcF7a939f4'
       ]
     };
   }

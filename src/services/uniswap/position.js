@@ -7,6 +7,7 @@ const { tickToHumanPrice, isPositionInRange } = require('./helpers');
 const TokenService = require('./token');
 const { getProvider } = require('../blockchain/provider');
 const { Position: UniswapPosition, Pool: UniswapPool } = require('@uniswap/v3-sdk');
+const { mongoose } = require("../database/mongoose");
 
 class Position extends EventEmitter {
   /**
@@ -301,18 +302,11 @@ class Position extends EventEmitter {
 
   /**
    * Fetch accumulated fees for a position
-   * @param {bigint} tokenId - Position token ID
    * @returns {Promise<Object>} Accumulated fees
    */
-  static async fetchAccumulatedFees(tokenId) {
+  async fetchAccumulatedFees() {
     try {
-      const positionManagerContract = Position.getPositionManagerContract();
-
-      // First get position data to check if it exists and has liquidity
-      const positionData = await positionManagerContract.read.positions([tokenId]);
-      const liquidity = positionData[7];
-
-      if (liquidity === 0n) {
+      if (this.liquidity === 0n) {
         return {
           token0Fees: '0',
           token1Fees: '0',
@@ -322,9 +316,11 @@ class Position extends EventEmitter {
         };
       }
 
+      const positionManagerContract = Position.getPositionManagerContract();
+
       // Prepare collect call with max values to simulate fee collection without actually collecting
       const collectParams = {
-        tokenId: tokenId,
+        tokenId: this.tokenId,
         recipient: '0x0000000000000000000000000000000000000000', // Zero address for simulation
         amount0Max: BigInt('340282366920938463463374607431768211455'), // Max uint128
         amount1Max: BigInt('340282366920938463463374607431768211455')  // Max uint128
@@ -335,40 +331,45 @@ class Position extends EventEmitter {
       const amount0Fees = feeAmounts.result[0];
       const amount1Fees = feeAmounts.result[1];
 
-      // Get token information
-      const token0Address = positionData[2];
-      const token1Address = positionData[3];
-
-      const tokenService = Position.getTokenService();
-      const [token0, token1] = await Promise.all([
-        tokenService.getToken(token0Address),
-        tokenService.getToken(token1Address)
-      ]);
-
       // Convert to human readable amounts
-      const token0FeesFormatted = (parseFloat(amount0Fees.toString()) / Math.pow(10, token0.decimals)).toFixed(token0.decimals);
-      const token1FeesFormatted = (parseFloat(amount1Fees.toString()) / Math.pow(10, token1.decimals)).toFixed(token1.decimals);
+      const token0FeesFormatted = (parseFloat(amount0Fees.toString()) / Math.pow(10, this.token0.decimals)).toFixed(this.token0.decimals);
+      const token1FeesFormatted = (parseFloat(amount1Fees.toString()) / Math.pow(10, this.token1.decimals)).toFixed(this.token1.decimals);
 
       // Calculate total value assuming token1 is stablecoin (like USDC)
-      const pool = await Pool.getPoolOfTokens(token0Address, token1Address, positionData[4]);
-      const currentPrice = await pool.getCurrentPrice();
-
-      const token0Value = parseFloat(token0FeesFormatted) * (currentPrice || 0);
+      const token0Value = parseFloat(token0FeesFormatted) * (this.currentPrice || 0);
       const token1Value = parseFloat(token1FeesFormatted);
-      const totalValue = token0Value + token1Value;
+      let totalValue = token0Value + token1Value;
+
+      // Add CAKE rewards if position is staked
+      let cakeRewards = null;
+      try {
+        const cakeRewardAmount = await this.fetchCakeRewards();
+        if (cakeRewardAmount > 0) {
+          const cakePrice = await Position.getCakePrice();
+          const cakeValue = cakeRewardAmount * cakePrice;
+          cakeRewards = {
+            amount: cakeRewardAmount.toFixed(4),
+            value: cakeValue,
+            price: cakePrice
+          };
+        }
+      } catch (error) {
+        console.warn(`Could not fetch CAKE rewards for position ${this.tokenId}:`, error.message);
+      }
 
       return {
         token0Fees: token0FeesFormatted,
         token1Fees: token1FeesFormatted,
-        token0Symbol: token0.symbol,
-        token1Symbol: token1.symbol,
+        token0Symbol: this.token0.symbol,
+        token1Symbol: this.token1.symbol,
         token0Value,
         token1Value,
         totalValue,
-        currentPrice
+        currentPrice: this.currentPrice,
+        cakeRewards
       };
     } catch (error) {
-      console.error(`Error fetching accumulated fees for token ID ${tokenId}:`, error);
+      console.error(`Error fetching accumulated fees for token ID ${this.tokenId}:`, error);
       return {
         token0Fees: '0',
         token1Fees: '0',
@@ -381,11 +382,32 @@ class Position extends EventEmitter {
   }
 
   /**
-   * Get accumulated fees for this position instance
-   * @returns {Promise<Object>} Accumulated fees
+   * Fetch CAKE rewards for a staked position
+   * @returns {Promise<number>} CAKE reward amount
    */
-  async getAccumulatedFees() {
-    return await Position.fetchAccumulatedFees(this.tokenId);
+  async fetchCakeRewards() {
+    try {
+      const stakingContract = Position.getStakingContract();
+      if (!stakingContract) {
+        throw new Error('Staking contract not available');
+      }
+
+      if (!this.isStaked) {
+        return 0; // No rewards for unstaked positions
+      }
+
+      // Get pending CAKE rewards from staking contract
+      const pendingCake = await stakingContract.read.pendingCake([this.tokenId]);
+
+      if (!pendingCake || pendingCake === 0n) return 0;
+
+      // Convert to human readable amount (CAKE has 18 decimals)
+      return parseFloat(pendingCake.toString()) / Math.pow(10, 18);
+
+    } catch (error) {
+      console.error(`Error fetching CAKE rewards for position ${this.tokenId}:`, error);
+      return 0;
+    }
   }
 
   /**
@@ -517,6 +539,44 @@ class Position extends EventEmitter {
       walletAddress: this.walletAddress,
       poolAddress: this.getPoolAddress()
     };
+  }
+
+  /**
+   * Get current CAKE price in USD from CAKE/USDT pool
+   * @returns {Promise<number>} CAKE price in USD
+   */
+  static async getCakePrice() {
+    try {
+      const { Pool } = require('./pool');
+
+      // Find CAKE pools
+      const cakePools = await mongoose.findPoolsByTokenSymbol('Cake');
+
+      if (cakePools.length === 0) {
+        throw new Error('No CAKE pools found in database');
+      }
+
+      // Find a CAKE/USDT or CAKE/USDC pool
+      const cakeStablePool = cakePools.find(pool => {
+        const token0Symbol = pool.token0.symbol;
+        const token1Symbol = pool.token1.symbol;
+        return (token0Symbol === 'Cake' && (token1Symbol === 'USDT' || token1Symbol === 'USDC')) ||
+               ((token0Symbol === 'USDT' || token0Symbol === 'USDC') && token1Symbol === 'Cake');
+      });
+
+      if (!cakeStablePool) {
+        throw new Error('No CAKE/USDT or CAKE/USDC pool found');
+      }
+
+      // Get the pool instance
+      const pool = Pool.getPool(cakeStablePool.address);
+
+      // Get current price from the pool
+      return await pool.getCurrentPrice();
+    } catch (error) {
+      console.error('Error fetching CAKE price from pool:', error);
+      return 0; // Fallback price
+    }
   }
 }
 
