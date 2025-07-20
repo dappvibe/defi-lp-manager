@@ -3,14 +3,12 @@
  * Represents a single pool with its own address and operations
  */
 const { EventEmitter } = require('events');
-const { getTokenInfo, createPoolContract } = require('./contracts');
+const { getTokenInfo, createPoolContract, createFactoryContract } = require('./contracts');
 const { isValidEthereumAddress, calculatePrice } = require('./utils');
 const { uniswapV3Pool: poolAbi } = require('./abis');
 const { getTimeInTimezone } = require('../../utils');
 const { mongoose } = require('../database/mongoose');
 const { getProvider } = require('../blockchain/provider');
-const {getContract} = require("viem");
-const {contracts} = require("../../config");
 const TokenService = require('./token');
 
 class Pool extends EventEmitter {
@@ -49,11 +47,7 @@ class Pool extends EventEmitter {
       if (existingPool) return this.getPool(existingPool.address);
 
       // If not found in database, query the factory contract
-      const factoryContract = getContract({
-        address: contracts.getContractAddress('pancakeswap', 'arbitrum', 'V3Factory'),
-        abi: require('./abis/v3-factory.json'),
-        client: getProvider()
-      });
+      const factoryContract = createFactoryContract();
 
       const poolAddress = await factoryContract.read.getPool([token0Address, token1Address, fee]);
 

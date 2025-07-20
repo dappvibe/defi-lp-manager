@@ -1,5 +1,3 @@
-const { getContract } = require('viem');
-const { contracts } = require('../../config');
 const { Token } = require('@uniswap/sdk-core');
 const {EventEmitter} = require('events');
 const { getPool, Pool} = require('./pool');
@@ -8,6 +6,7 @@ const TokenService = require('./token');
 const { getProvider } = require('../blockchain/provider');
 const { Position: UniswapPosition, Pool: UniswapPool } = require('@uniswap/v3-sdk');
 const { mongoose } = require("../database/mongoose");
+const { createPositionManagerContract, createStakingContract } = require('./contracts');
 
 class Position extends EventEmitter {
   /**
@@ -66,14 +65,7 @@ class Position extends EventEmitter {
    */
   static getPositionManagerContract() {
     if (!Position._positionManagerContract) {
-      const positionManagerAddress = contracts.getContractAddress('pancakeswap', 'arbitrum', 'nonfungiblePositionManager');
-      const positionManagerAbi = require('./abis/v3-position-manager.json');
-
-      Position._positionManagerContract = getContract({
-        address: positionManagerAddress,
-        abi: positionManagerAbi,
-        client: Position.getProvider()
-      });
+      Position._positionManagerContract = createPositionManagerContract();
     }
     return Position._positionManagerContract;
   }
@@ -85,14 +77,7 @@ class Position extends EventEmitter {
   static getStakingContract() {
     if (!Position._stakingContract) {
       try {
-        const stakingContractAddress = contracts.getContractAddress('pancakeswap', 'arbitrum', 'masterChefV3');
-        const stakingAbi = require('./abis/masterchef-v3.json');
-
-        Position._stakingContract = getContract({
-          address: stakingContractAddress,
-          abi: stakingAbi,
-          client: Position.getProvider()
-        });
+        Position._stakingContract = createStakingContract();
       } catch (error) {
         console.warn('Staking contract not available:', error.message);
         Position._stakingContract = null;
