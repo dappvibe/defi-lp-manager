@@ -20,10 +20,6 @@ class Position extends EventEmitter {
     this.tokenId = positionData.tokenId;
     this.token0 = positionData.token0;
     this.token1 = positionData.token1;
-    this.token0Symbol = positionData.token0Symbol;
-    this.token1Symbol = positionData.token1Symbol;
-    this.token0Decimals = positionData.token0Decimals;
-    this.token1Decimals = positionData.token1Decimals;
     this.fee = positionData.fee;
     this.tickLower = positionData.tickLower;
     this.tickUpper = positionData.tickUpper;
@@ -36,8 +32,6 @@ class Position extends EventEmitter {
     this.currentPrice = positionData.currentPrice;
     this.inRange = positionData.inRange;
     this.isStaked = positionData.isStaked || false;
-    this.token0Instance = positionData.token0Instance;
-    this.token1Instance = positionData.token1Instance;
     this.walletAddress = positionData.walletAddress;
 
     this.pool = getPool(positionData.poolAddress, provider);
@@ -281,12 +275,8 @@ class Position extends EventEmitter {
 
       return {
         tokenId,
-        token0: token0Address,
-        token1: token1Address,
-        token0Symbol: token0.symbol,
-        token1Symbol: token1.symbol,
-        token0Decimals: token0.decimals,
-        token1Decimals: token1.decimals,
+        token0: token0,
+        token1: token1,
         fee,
         tickLower,
         tickUpper,
@@ -299,8 +289,6 @@ class Position extends EventEmitter {
         currentPrice,
         inRange,
         isStaked,
-        token0Instance: token0,
-        token1Instance: token1,
         walletAddress,
         poolAddress: pool.address,
         pool
@@ -512,12 +500,8 @@ class Position extends EventEmitter {
   toObject() {
     return {
       tokenId: this.tokenId,
-      token0: this.token0,
-      token1: this.token1,
-      token0Symbol: this.token0Symbol,
-      token1Symbol: this.token1Symbol,
-      token0Decimals: this.token0Decimals,
-      token1Decimals: this.token1Decimals,
+      token0: this.token0.address,
+      token1: this.token1.address,
       fee: this.fee,
       tickLower: this.tickLower,
       tickUpper: this.tickUpper,

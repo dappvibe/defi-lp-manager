@@ -93,11 +93,11 @@ class PositionMessage extends TelegramMessage {
 
     const header = `${rangeIcon} $${parseFloat(position.currentPrice).toFixed(2)}`;
     const fees = position.fees ? `💸 +$${position.fees.totalValue.toFixed(2)}` : '';
-    const amounts = `💰 ${parseFloat(position.token0Amount).toFixed(4)} ${position.token0Symbol} + ${parseFloat(position.token1Amount).toFixed(2)} ${position.token1Symbol}`;
+    const amounts = `💰 ${parseFloat(position.token0Amount).toFixed(4)} ${position.token0.symbol} + ${parseFloat(position.token1Amount).toFixed(2)} ${position.token1.symbol}`;
     const time = `⏰ ${timestamp}`;
     const stakingStatus = position.isStaked ? '🥩 STAKED' : '💼 UNSTAKED';
     const priceRange = `${stakingStatus} | $${parseFloat(position.lowerPrice).toFixed(2)} - $${parseFloat(position.upperPrice).toFixed(2)}`;
-    const poolInfo = `${position.token0Symbol}/${position.token1Symbol} (${feePercent}%) - [#${position.tokenId}](${positionLink})`;
+    const poolInfo = `${position.token0.symbol}/${position.token1.symbol} (${feePercent}%) - [#${position.tokenId}](${positionLink})`;
 
     return `${header}\n${fees}\n${amounts}\n${time}\n${priceRange}\n${poolInfo}`;
   }
@@ -315,9 +315,9 @@ class LpHandler {
       await this.bot.send(message);
 
       await this.db.savePosition({
-        ...position.toObject(),
-        walletAddress: position.walletAddress,
-        poolAddress: position.pool.address,
+        ...updatedPosition.toObject(),
+        walletAddress: updatedPosition.walletAddress,
+        poolAddress: updatedPosition.pool.address,
         chatId: message.chatId,
         messageId: message.id,
         isMonitored: true
