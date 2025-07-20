@@ -93,19 +93,50 @@ class PositionMessage extends TelegramMessage {
 
     const header = `${rangeIcon} $${moneyFormat(parseFloat(position.currentPrice))}`;
 
-    // Build fees line with CAKE rewards
+    // Build fees line with CAKE rewards and calculate APY
     let feesLine = '';
+    let apyDisplay = '';
+
     if (position.fees) {
       feesLine = `💸 $${moneyFormat(position.fees.totalValue)}`;
       if (position.fees.cakeRewards) {
         feesLine += ` 🍪 $${moneyFormat(position.fees.cakeRewards.value)}`;
       }
+
+      // Calculate real-time APY if position has createdAt and we have total fees/rewards
+      if (position.createdAt && position.fees.totalValue > 0) {
+        const now = new Date();
+        const created = new Date(position.createdAt);
+        const ageInMs = now - created;
+        const ageInSeconds = ageInMs / 1000;
+
+        if (ageInSeconds > 0) {
+          // Calculate total position value (token amounts in USD)
+          const token0Value = parseFloat(position.token0Amount) * parseFloat(position.currentPrice);
+          const token1Value = parseFloat(position.token1Amount);
+          const totalPositionValue = token0Value + token1Value;
+
+          if (totalPositionValue > 0) {
+            // Total profit = fees + CAKE rewards
+            const totalProfit = position.fees.totalValue + (position.fees.cakeRewards?.value || 0);
+
+            // Calculate per-second return rate
+            const secondlyReturn = totalProfit / totalPositionValue / ageInSeconds;
+
+            // Annualize (31,536,000 seconds per year) and convert to percentage
+            const apy = secondlyReturn * 31536000 * 100;
+
+            apyDisplay = ` 📈 ${apy.toFixed(1)}%`;
+          }
+        }
+      }
+
       feesLine += `\n`;
     }
 
     const amounts = `💰 ${parseFloat(position.token0Amount).toFixed(4)} ${position.token0.symbol} + ${moneyFormat(parseFloat(position.token1Amount))} ${position.token1.symbol}`;
 
-    // Calculate position age
+    // Calculate position age with APY
     let timeWithAge = `⏰ ${timestamp}`;
     if (position.createdAt) {
       const now = new Date();
@@ -115,7 +146,7 @@ class PositionMessage extends TelegramMessage {
       const hours = Math.floor(ageMinutes / 60);
       const minutes = ageMinutes % 60;
       const ageDisplay = hours > 0 ? `${hours}:${minutes.toString().padStart(2, '0')}` : `0:${minutes.toString().padStart(2, '0')}`;
-      timeWithAge = `⏰ ${timestamp} ⏳ ${ageDisplay}`;
+      timeWithAge = `⏰ ${timestamp} ⏳ ${ageDisplay}${apyDisplay}`;
     }
 
     const stakingStatus = position.isStaked ? '🥩 STAKED' : '💼 UNSTAKED';
