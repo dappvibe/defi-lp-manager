@@ -49,6 +49,29 @@ class NoPositionsMessage extends TelegramMessage {
   }
 }
 
+/**
+ * Reply to position message notifying price is out of range. Delete when back in range.
+ */
+class RangeNotificationMessage extends TelegramMessage {
+  constructor(position, chatId, replyToMessageId) {
+    super();
+    this.chatId = chatId;
+    this.position = position;
+    this.replyToMessageId = replyToMessageId;
+  }
+
+  toString() {
+    return `⚠️ **Position Out of Range**`;
+  }
+
+  getOptions() {
+    return {
+      parse_mode: 'Markdown',
+      reply_to_message_id: this.replyToMessageId
+    };
+  }
+}
+
 class PositionMessage extends TelegramMessage {
   constructor(position) {
     super();
@@ -105,6 +128,7 @@ class LpHandler {
     this.db = db;
     this.walletService = walletService;
     this.positionMessages = new Map(); // tokenId => PositionMessage
+    this.rangeNotificationMessages = new Map(); // tokenId => RangeNotificationMessage
     this.swapEventListener = (swapInfo, poolData) => this.onSwap(swapInfo, poolData);
 
     this.registerHandlers();
@@ -212,8 +236,53 @@ class LpHandler {
     for (const message of affectedPositions) {
       try {
         await this.updatePositionMessage(message);
+
+        // Check range notification
+        await this.handleRangeNotification(message);
       } catch (error) {
         console.error(`Error updating position ${message.position.tokenId}:`, error);
+      }
+    }
+  }
+
+  async handleRangeNotification(positionMessage) {
+    const { position } = positionMessage;
+    const tokenId = position.tokenId;
+    const hasNotification = this.rangeNotificationMessages.has(tokenId);
+
+    if (!position.inRange && !hasNotification) {
+      // Position went out of range - send notification
+      // Set a temporary placeholder to prevent race conditions
+      this.rangeNotificationMessages.set(tokenId, { sending: true });
+
+      const rangeNotification = new RangeNotificationMessage(
+        position,
+        positionMessage.chatId,
+        positionMessage.id
+      );
+
+      try {
+        const sentNotification = await this.bot.send(rangeNotification);
+        this.rangeNotificationMessages.set(tokenId, sentNotification);
+      } catch (error) {
+        console.error(`Error sending range notification for position ${tokenId}:`, error);
+        // Remove placeholder on error
+        this.rangeNotificationMessages.delete(tokenId);
+      }
+    } else if (position.inRange && hasNotification) {
+      const notificationMessage = this.rangeNotificationMessages.get(tokenId);
+
+      // Skip if it's just a placeholder (still sending)
+      if (notificationMessage && notificationMessage.sending) {
+        return;
+      }
+
+      // Position came back in range - delete notification
+      try {
+        await this.bot.deleteMessage(notificationMessage.chatId, notificationMessage.id);
+        this.rangeNotificationMessages.delete(tokenId);
+      } catch (error) {
+        console.error(`Error deleting range notification for position ${tokenId}:`, error);
       }
     }
   }

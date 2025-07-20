@@ -382,50 +382,10 @@ class Pool extends EventEmitter {
           // Emit swap event
           this.emit('swap', swapInfo, poolData);
 
-          // Check price alerts
-          this._checkPriceAlerts(newPriceT1T0);
           this.monitoringData.lastPriceT1T0 = newPriceT1T0;
         });
       }
     });
-  }
-
-  /**
-   * Check price alerts
-   * @private
-   * @param {number} newPriceT1T0 - New price
-   */
-  _checkPriceAlerts(newPriceT1T0) {
-    if (!this.monitoringData || !this.botInstance) {
-      return;
-    }
-
-    const lastPrice = this.monitoringData.lastPriceT1T0;
-    let notificationsChanged = false;
-
-    this.monitoringData.notifications = this.monitoringData.notifications.filter(notification => {
-      if (!notification.triggered) {
-        const crossesUp = lastPrice < notification.targetPrice && newPriceT1T0 >= notification.targetPrice;
-        const crossesDown = lastPrice > notification.targetPrice && newPriceT1T0 <= notification.targetPrice;
-
-        if (crossesUp || crossesDown) {
-          const direction = crossesUp ? "rose above" : "fell below";
-          const alertMessage = ` Price Alert! \nPool: ${this.info.token1.symbol}/${this.info.token0.symbol}\nPrice ${direction} ${notification.targetPrice.toFixed(8)}.\nCurrent Price: ${newPriceT1T0.toFixed(8)}`;
-
-          this.botInstance.sendMessage(notification.originalChatId, alertMessage);
-          console.log(`Notification triggered for chat ${notification.originalChatId}: ${this.info.token1.symbol}/${this.info.token0.symbol} at ${newPriceT1T0}, target ${notification.targetPrice}`);
-          notification.triggered = true;
-          notificationsChanged = true;
-          return false;
-        }
-      }
-      return !notification.triggered;
-    });
-
-    // Save state if notifications changed
-    if (notificationsChanged) {
-      this._saveMonitoringState();
-    }
   }
 
   /**
