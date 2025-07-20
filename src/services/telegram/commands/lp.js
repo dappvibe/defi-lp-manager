@@ -133,6 +133,12 @@ class GeneralErrorMessage extends TelegramMessage {
  * Handler for /lp command - Lists liquidity positions for monitored wallets
  */
 class LpHandler {
+  /**
+   * Creates an instance of LpHandler
+   * @param {Object} bot - Telegram bot instance
+   * @param {Object} db - Database service instance
+   * @param {Object} walletService - Wallet service instance
+   */
   constructor(bot, db, walletService) {
     this.bot = bot;
     this.db = db;
@@ -148,10 +154,19 @@ class LpHandler {
     });
   }
 
+  /**
+   * Registers bot command handlers for the /lp command
+   * @returns {void}
+   */
   registerHandlers() {
     this.bot.onText(/\/lp/, (msg) => this.handleCommand(msg));
   }
 
+  /**
+   * Handles the /lp command by processing monitored wallets and their positions
+   * @param {Object} msg - Telegram message object
+   * @returns {Promise<void>}
+   */
   async handleCommand(msg) {
     const chatId = msg.chat.id;
     const monitoredWallets = this.walletService.getWalletsForChat(chatId);
@@ -169,6 +184,12 @@ class LpHandler {
     }
   }
 
+  /**
+   * Processes all monitored wallets for a chat, fetching and displaying their positions
+   * @param {string} chatId - Telegram chat ID
+   * @param {string[]} wallets - Array of wallet addresses to process
+   * @returns {Promise<void>}
+   */
   async processWallets(chatId, wallets) {
     for (let i = 0; i < wallets.length; i++) {
       const walletAddress = wallets[i];
@@ -184,6 +205,14 @@ class LpHandler {
     }
   }
 
+  /**
+   * Processes positions for a wallet, sending messages and starting monitoring
+   * @param {string} chatId - Telegram chat ID
+   * @param {string} walletAddress - Wallet address being processed
+   * @param {Position[]} positions - Array of position objects
+   * @param {Object} loadingMessage - Loading message to replace or reference
+   * @returns {Promise<void>}
+   */
   async processPositions(chatId, walletAddress, positions, loadingMessage) {
     if (positions.length === 0) {
       await this.bot.send(new NoPositionsMessage(chatId, loadingMessage.id));
@@ -208,6 +237,14 @@ class LpHandler {
     }
   }
 
+  /**
+   * Saves position data to the database for persistence
+   * @param {Position} position - Position object to save
+   * @param {string} walletAddress - Wallet address owning the position
+   * @param {string} chatId - Telegram chat ID
+   * @param {string} messageId - Message ID of the position message
+   * @returns {Promise<void>}
+   */
   async savePositionData(position, walletAddress, chatId, messageId) {
     try {
       await this.db.savePosition({
@@ -223,6 +260,11 @@ class LpHandler {
     }
   }
 
+  /**
+   * Starts monitoring a position for swap events and price changes
+   * @param {string} tokenId - Token ID of the position to monitor
+   * @returns {void}
+   */
   startMonitoringPosition(tokenId) {
     const message = this.positionMessages.get(tokenId);
     if (!message) {
@@ -239,6 +281,12 @@ class LpHandler {
     });
   }
 
+  /**
+   * Handles swap events by updating affected position messages
+   * @param {Object} swapInfo - Information about the swap event
+   * @param {Object} poolData - Pool data containing address and other details
+   * @returns {Promise<void>}
+   */
   async onSwap(swapInfo, poolData) {
     const affectedPositions = Array.from(this.positionMessages.values())
       .filter(message => message.position.pool.address === poolData.address);
@@ -255,6 +303,12 @@ class LpHandler {
     }
   }
 
+  /**
+   * Handles range notifications by sending alerts when positions go out of range
+   * and removing alerts when they come back in range
+   * @param {PositionMessage} positionMessage - Position message to check for range changes
+   * @returns {Promise<void>}
+   */
   async handleRangeNotification(positionMessage) {
     const { position } = positionMessage;
     const tokenId = position.tokenId;
@@ -297,6 +351,11 @@ class LpHandler {
     }
   }
 
+  /**
+   * Updates a position message with fresh data from the blockchain
+   * @param {PositionMessage} message - Position message to update
+   * @returns {Promise<void>}
+   */
   async updatePositionMessage(message) {
     const { position } = message;
 
@@ -338,6 +397,11 @@ class LpHandler {
     }
   }
 
+  /**
+   * Stops monitoring a position and cleans up related resources
+   * @param {string} tokenId - Token ID of the position to stop monitoring
+   * @returns {Promise<void>}
+   */
   async stopMonitoringPosition(tokenId) {
     const message = this.positionMessages.get(tokenId);
     if (!message) {
@@ -360,6 +424,10 @@ class LpHandler {
     }
   }
 
+  /**
+   * Restores monitoring for all previously monitored positions on startup
+   * @returns {Promise<void>}
+   */
   async restoreMonitoredPositions() {
     try {
       console.log('Restoring monitored positions...');
@@ -387,6 +455,11 @@ class LpHandler {
     }
   }
 
+  /**
+   * Restores monitoring for a single position from stored data
+   * @param {Object} positionData - Stored position data from database
+   * @returns {Promise<void>}
+   */
   async restorePosition(positionData) {
     try {
       // Fetch full position details from blockchain
@@ -414,6 +487,10 @@ class LpHandler {
     }
   }
 
+  /**
+   * Returns help text for the /lp command
+   * @returns {string} Help text describing the command functionality
+   */
   static help() {
     return "/lp - List current liquidity pools for monitored wallets";
   }
