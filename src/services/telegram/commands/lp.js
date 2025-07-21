@@ -404,8 +404,8 @@ class LpHandler {
 
       // Position came back in range - delete notification
       try {
-        await this.bot.deleteMessage(notificationMessage.chatId, notificationMessage.id);
         this.rangeNotificationMessages.delete(tokenId);
+        await this.bot.deleteMessage(notificationMessage.chatId, notificationMessage.id);
       } catch (error) {
         console.error(`Error deleting range notification for position ${tokenId}:`, error);
       }
