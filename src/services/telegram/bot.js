@@ -1,9 +1,7 @@
 /**
  * Telegram Bot Service
- * Object-oriented bot implementation extending TelegramBot
  */
 const TelegramBot = require('node-telegram-bot-api');
-const { environment } = require('../../config');
 const { StartHandler, HelpHandler, WalletHandler, LpHandler } = require('./commands');
 const Throttler = require('./throttler');
 const poolsConfig = require('../../config/pools');
@@ -14,25 +12,18 @@ const { PoolHandler } = require("./commands/pool");
  * Bot class extending TelegramBot with throttling and command handling
  */
 class Bot extends TelegramBot {
-  /**
-   * Initialize the bot
-   * @param {string} token - Telegram bot token
-   * @param {object} provider - Ethereum provider instance
-   * @param {object} mongoose - Mongoose instance
-   * @param {object} walletService - Wallet service instance
-   * @param {object} options - Additional bot options
-   */
-  constructor(token, provider, mongoose, walletService, options = {}) {
+  constructor(config, provider, db, walletService) {
     // Initialize parent TelegramBot with polling enabled
-    super(token, {polling: true, ...options});
+    super(config.telegram.botToken, {polling: true});
 
     // Store dependencies
+    this.config = config;
     this.provider = provider;
-    this.mongoose = mongoose;
+    this.db = db;
     this.walletService = walletService;
 
     // Initialize throttling
-    this.rateLimit = environment.telegram.rateLimit;
+    this.rateLimit = this.config.telegram.rateLimit;
     this.throttler = new Throttler({
       maxRequests: this.rateLimit.maxRequestsPerSecond,
       timeWindowMs: 1000
@@ -56,9 +47,9 @@ class Bot extends TelegramBot {
   registerCommandHandlers() {
     new StartHandler(this, poolsConfig, this.walletService);
     new HelpHandler(this);
-    new PoolHandler(this, this.mongoose, poolsConfig);
+    new PoolHandler(this, this.db, poolsConfig);
     new WalletHandler(this, this.walletService);
-    new LpHandler(this, this.mongoose, this.walletService);
+    new LpHandler(this, this.db, this.walletService);
   }
 
   send(message) {

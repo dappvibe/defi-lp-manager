@@ -5,24 +5,9 @@ const PoolMessage = require('./models/PoolMessage');
 const Wallet = require('./models/Wallet');
 const Token = require('./models/Token');
 
-class MongooseService {
-  static #instance = null;
-
-  /**
-   * Gets singleton instance of MongooseService
-   * @returns {MongooseService} The singleton instance
-   */
-  static getInstance() {
-    if (!MongooseService.#instance) {
-      MongooseService.#instance = new MongooseService();
-    }
-    return MongooseService.#instance;
-  }
-
-  constructor() {
-    if (MongooseService.#instance) {
-      throw new Error('Use MongooseService.getInstance() instead of new operator');
-    }
+class Db {
+  constructor(config) {
+    this.uri = config.db.uri;
     this.isConnected = false;
   }
 
@@ -33,9 +18,7 @@ class MongooseService {
     if (this.isConnected) return;
 
     try {
-      const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/defi-lp-manager';
-      await mongoose.connect(uri);
-      this.isConnected = true;
+      await mongoose.connect(this.uri);
       console.log('Connected to MongoDB');
     } catch (error) {
       console.error('Failed to connect to MongoDB:', error.message);
@@ -541,6 +524,4 @@ class MongooseService {
   }
 }
 
-module.exports = {
-  mongoose: MongooseService.getInstance()
-};
+module.exports = Db;

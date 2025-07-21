@@ -37,8 +37,8 @@ const config = {
     },
 
     // Database configuration
-    database: {
-        mongoUri: process.env.MONGODB_URI || 'mongodb://mongodb:27017/defi-lp-manager',
+    db: {
+        uri: process.env.MONGODB_URI || 'mongodb://mongodb:27017/defi-lp-manager',
     },
 
     // Firebase configuration (for future use)

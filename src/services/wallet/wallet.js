@@ -6,10 +6,9 @@
 class WalletService {
   /**
    * Create a new WalletService instance
-   * @param {Object} mongoose - Mongoose instance
    */
-  constructor(mongoose) {
-    this.mongoose = mongoose;
+  constructor(db) {
+    this.db = db;
     this.monitoredWallets = new Map(); // chatId -> Set of wallet addresses
   }
 
@@ -138,11 +137,11 @@ class WalletService {
    */
   async loadWalletsFromDatabase() {
     try {
-      if (!this.mongoose.isConnected) {
-        await this.mongoose.connect();
+      if (!this.db.isConnected) {
+        await this.db.connect();
       }
 
-      const wallets = await this.mongoose.getAllMonitoredWallets();
+      const wallets = await this.db.getAllMonitoredWallets();
 
       for (const wallet of wallets) {
         if (!this.monitoredWallets.has(wallet.chatId)) {
@@ -167,11 +166,11 @@ class WalletService {
    */
   async saveWalletToDatabase(walletAddress, chatId) {
     try {
-      if (!this.mongoose.isConnected) {
-        await this.mongoose.connect();
+      if (!this.db.isConnected) {
+        await this.db.connect();
       }
 
-      await this.mongoose.saveMonitoredWallet(walletAddress, chatId);
+      await this.db.saveMonitoredWallet(walletAddress, chatId);
     } catch (error) {
       console.error('Error saving wallet to database:', error);
       throw error;
@@ -187,11 +186,11 @@ class WalletService {
    */
   async removeWalletFromDatabase(walletAddress, chatId) {
     try {
-      if (!this.mongoose.isConnected) {
-        await this.mongoose.connect();
+      if (!this.db.isConnected) {
+        await this.db.connect();
       }
 
-      await this.mongoose.removeMonitoredWallet(walletAddress, chatId);
+      await this.db.removeMonitoredWallet(walletAddress, chatId);
     } catch (error) {
       console.error('Error removing wallet from database:', error);
       throw error;

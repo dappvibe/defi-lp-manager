@@ -3,10 +3,10 @@
  * Exports all configuration objects for easy importing
  */
 
-const environment = require('./environment');
+const config = require('./config');
 const constants = require('./constants');
 
 module.exports = {
-    environment,
+    config,
     constants,
 };

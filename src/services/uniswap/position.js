@@ -2,11 +2,10 @@ const { Token } = require('@uniswap/sdk-core');
 const {EventEmitter} = require('events');
 const { getPool, Pool} = require('./pool');
 const { tickToHumanPrice, isPositionInRange } = require('./helpers');
-const TokenService = require('./token');
 const { getProvider } = require('../blockchain/provider');
 const { Position: UniswapPosition, Pool: UniswapPool } = require('@uniswap/v3-sdk');
-const { mongoose } = require("../database/mongoose");
-const { createPositionManagerContract, createStakingContract } = require('./contracts');
+const ContractsService = require('./contracts');
+const createProvider = require("../blockchain/provider");
 
 class Position extends EventEmitter {
   /**
@@ -37,7 +36,7 @@ class Position extends EventEmitter {
     this.pool = getPool(positionData.poolAddress, provider);
 
     // Provider for refreshing data
-    this.provider = provider || getProvider();
+    this.provider = provider || createProvider();
   }
 
   /**
@@ -60,12 +59,38 @@ class Position extends EventEmitter {
   }
 
   /**
+   * Contracts service instance
+   */
+  static _contractsService = null;
+
+  /**
+   * Set contracts service instance
+   * @param {ContractsService} contractsService Contracts service instance
+   */
+  static setContractsService(contractsService) {
+    Position._contractsService = contractsService;
+  }
+
+  /**
+   * Database instance - initialized lazily
+   */
+  static _db = null;
+
+  /**
+   * Set database instance
+   * @param {object} db Database instance
+   */
+  static setDb(db) {
+    Position._db = db;
+  }
+
+  /**
    * Get or create position manager contract
    * @returns {object} Position manager contract
    */
   static getPositionManagerContract() {
     if (!Position._positionManagerContract) {
-      Position._positionManagerContract = createPositionManagerContract();
+      Position._positionManagerContract = Position._contractsService.createPositionManagerContract();
     }
     return Position._positionManagerContract;
   }
@@ -77,7 +102,7 @@ class Position extends EventEmitter {
   static getStakingContract() {
     if (!Position._stakingContract) {
       try {
-        Position._stakingContract = createStakingContract();
+        Position._stakingContract = this._contractsService.createStakingContract();
       } catch (error) {
         console.warn('Staking contract not available:', error.message);
         Position._stakingContract = null;
@@ -90,11 +115,8 @@ class Position extends EventEmitter {
    * Get or create token service
    * @returns {TokenService} Token service instance
    */
-  static getTokenService() {
-    if (!Position._tokenService) {
-      Position._tokenService = new TokenService(Position.getProvider());
-    }
-    return Position._tokenService;
+  static setTokenService(tokenService) {
+    Position._tokenService = tokenService;
   }
 
   /**
@@ -229,7 +251,7 @@ class Position extends EventEmitter {
       const liquidity = positionData[7];
 
       // Get Uniswap SDK Token instances
-      const tokenService = Position.getTokenService();
+      const tokenService = Position._tokenService;
       const [token0, token1] = await Promise.all([
         tokenService.getToken(token0Address),
         tokenService.getToken(token1Address)
@@ -535,7 +557,7 @@ class Position extends EventEmitter {
       const { Pool } = require('./pool');
 
       // Find CAKE pools
-      const cakePools = await mongoose.findPoolsByTokenSymbol('Cake');
+      const cakePools = await this._db.findPoolsByTokenSymbol('Cake');
 
       if (cakePools.length === 0) {
         throw new Error('No CAKE pools found in database');

@@ -1,6 +1,7 @@
 /**
  * Application constants
  * Centralized location for all fixed values used throughout the application
+ * @deprecated
  */
 
 const constants = {

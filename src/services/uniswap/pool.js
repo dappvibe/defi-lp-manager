@@ -3,16 +3,34 @@
  * Represents a single pool with its own address and operations
  */
 const { EventEmitter } = require('events');
-const { getTokenInfo, createPoolContract, createFactoryContract } = require('./contracts');
+// ContractsService will be injected
 const { isValidEthereumAddress, calculatePrice } = require('./utils');
 const { uniswapV3Pool: poolAbi } = require('./abis');
 const { getTimeInTimezone } = require('../../utils');
-const { mongoose } = require('../database/mongoose');
-const { getProvider } = require('../blockchain/provider');
+const createProvider = require('../blockchain/provider');
 const TokenService = require('./token');
 
 class Pool extends EventEmitter {
   static #poolInstances = new Map();
+  static #contractsService = null;
+  static #db = null;
+
+  /**
+   * Set the contracts service dependency
+   * @param {ContractsService} contractsService - The contracts service instance
+   */
+  static setContractsService(contractsService) {
+    Pool.#contractsService = contractsService;
+  }
+
+  /**
+   * Set the database dependency
+   * @param {Object} db - The database instance
+   */
+  static setDb(db) {
+    Pool.#db = db;
+  }
+
 
   /**
    * Gets singleton instance of Pool. Each pool must be a single instance because
@@ -24,7 +42,7 @@ class Pool extends EventEmitter {
    */
   static getPool(address, provider = null, mongoOverride = null) {
     if (!Pool.#poolInstances.has(address)) {
-      Pool.#poolInstances.set(address, new Pool(address, provider, mongoOverride));
+      Pool.#poolInstances.set(address, new Pool(address, Pool.#db, provider, mongoOverride));
     }
     return Pool.#poolInstances.get(address);
   }
@@ -39,7 +57,7 @@ class Pool extends EventEmitter {
   static async getPoolOfTokens(token0Address, token1Address, fee) {
     try {
       // Query MongoDB directly for pool with these specific tokens and fee
-      const existingPool = await mongoose.findPoolByTokensAndFee(
+      const existingPool = await this.#db.findPoolByTokensAndFee(
         token0Address,
         token1Address,
         fee / 10000 // Convert to percentage format used in storage
@@ -47,7 +65,7 @@ class Pool extends EventEmitter {
       if (existingPool) return this.getPool(existingPool.address);
 
       // If not found in database, query the factory contract
-      const factoryContract = createFactoryContract();
+      const factoryContract = Pool.#contractsService.createFactoryContract();
 
       const poolAddress = await factoryContract.read.getPool([token0Address, token1Address, fee]);
 
@@ -62,7 +80,7 @@ class Pool extends EventEmitter {
     }
   }
 
-  constructor(address, provider = null, mongoOverride = null) {
+  constructor(address, db, provider = null, mongoOverride = null) {
     super();
 
     if (isValidEthereumAddress(address)) {
@@ -70,10 +88,10 @@ class Pool extends EventEmitter {
     } else {
       throw new Error('Invalid pool address');
     }
-    this.provider = provider || getProvider();
-    this.mongoose = mongoOverride || mongoose;
+    this.provider = provider || createProvider();
+    this.db = db;
 
-    this.contract = createPoolContract(address);
+    this.contract = Pool.#contractsService.createPoolContract(address);
 
     // Pool-specific properties
     this.info = null;
@@ -88,7 +106,7 @@ class Pool extends EventEmitter {
   async getPoolInfo() {
     if (!this.info) {
       // Try to get from cache first
-      let cachedInfo = await this.mongoose.getCachedPoolInfo(this.address);
+      let cachedInfo = await this.db.getCachedPoolInfo(this.address);
 
       if (cachedInfo) {
         this.info = cachedInfo;
@@ -109,18 +127,18 @@ class Pool extends EventEmitter {
 
       // Get token information and ensure they are cached in database
       const [token0Info, token1Info] = await Promise.all([
-        getTokenInfo(token0Address),
-        getTokenInfo(token1Address)
+        Pool.#contractsService.getTokenInfo(token0Address),
+        Pool.#contractsService.getTokenInfo(token1Address)
       ]);
 
       // Cache tokens in database
       await Promise.all([
-        this.mongoose.cacheToken(token0Address, 42161, {
+        this.db.cacheToken(token0Address, 42161, {
           symbol: token0Info.symbol,
           decimals: token0Info.decimals,
           name: token0Info.name
         }),
-        this.mongoose.cacheToken(token1Address, 42161, {
+        this.db.cacheToken(token1Address, 42161, {
           symbol: token1Info.symbol,
           decimals: token1Info.decimals,
           name: token1Info.name
@@ -149,7 +167,7 @@ class Pool extends EventEmitter {
       };
 
       // Cache the information
-      await this.mongoose.cachePoolInfo(this.address, poolDataForStorage);
+      await this.db.cachePoolInfo(this.address, poolDataForStorage);
     }
     return this.info;
   }
@@ -179,7 +197,7 @@ class Pool extends EventEmitter {
    */
   async getTVL() {
     try {
-      const tokenService = new TokenService(this.provider);
+      const tokenService = new TokenService(this.provider, this.db);
 
       // Get token information from TokenService
       const [token0Info, token1Info] = await Promise.all([
@@ -262,7 +280,7 @@ class Pool extends EventEmitter {
     this.monitoringData = null;
 
     // Update monitoring state in database
-    await this.mongoose.savePoolState(this.address, {
+    await this.db.savePoolState(this.address, {
       priceMonitoringEnabled: false,
       updatedAt: new Date()
     });
@@ -312,7 +330,7 @@ class Pool extends EventEmitter {
   async close() {
     await this.stopMonitoring();
 
-    if (this.mongoose) {
+    if (this.db) {
       // Note: mongoose connection is shared, so we don't close it here
       // await this.mongoose.disconnect();
     }
@@ -392,7 +410,7 @@ class Pool extends EventEmitter {
       // Prepare monitoring data for storage, excluding notifications
       const { notifications, ...monitoringDataForStorage } = this.monitoringData;
 
-      await this.mongoose.savePoolState(this.address, {
+      await this.db.savePoolState(this.address, {
         ...monitoringDataForStorage,
         priceMonitoringEnabled: this.isMonitoring
       });
@@ -402,7 +420,44 @@ class Pool extends EventEmitter {
   }
 }
 
+/**
+ * Pool Service wrapper for dependency injection
+ */
+class PoolService {
+  /**
+   * Create a new PoolService instance
+   */
+  constructor(contractsService ) {
+    // Set the contracts service dependency for the Pool class
+    Pool.setContractsService(contractsService);
+    this.contractsService = contractsService;
+  }
+
+  /**
+   * Get a pool instance
+   * @param {string} address - Pool contract address
+   * @param {*} provider - Optional custom provider
+   * @param {*} mongoOverride - Optional MongoDB instance override
+   * @returns {Pool} Pool instance
+   */
+  getPool(address, provider = null, mongoOverride = null) {
+    return Pool.getPool(address, provider, mongoOverride);
+  }
+
+  /**
+   * Get pool data from factory
+   * @param {string} token0Address - Token0 address
+   * @param {string} token1Address - Token1 address
+   * @param {number} fee - Pool fee
+   * @returns {Promise<Pool>} Pool
+   */
+  async getPoolOfTokens(token0Address, token1Address, fee) {
+    return Pool.getPoolOfTokens(token0Address, token1Address, fee);
+  }
+}
+
 module.exports = {
   Pool,
+  PoolService,
   getPool: Pool.getPool,
 };

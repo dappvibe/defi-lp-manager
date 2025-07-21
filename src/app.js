@@ -2,38 +2,41 @@
  * Main application module
  * Contains core application logic and initialization
  */
-const { environment } = require('./config');
-const { getProvider } = require('./services/blockchain/provider');
-const Bot = require('./services/telegram/bot');
-const { mongoose } = require('./services/database/mongoose');
-const { WalletService } = require('./services/wallet');
+const { createContainer } = require('./container');
+const {Pool} = require("./services/uniswap/pool");
+const Position = require("./services/uniswap/position");
 
 /**
  * Initialize the application
  * @returns {Object} Application context with initialized services
  */
 async function initializeApp() {
-    await mongoose.connect();
+    // Create and configure the dependency injection container
+    const container = createContainer();
 
-    // Initialize services
-    const provider = getProvider();
+    // Connect to database
+    const db = container.resolve('db');
+    await db.connect();
 
-    // Initialize wallet service
-    const walletService = new WalletService(mongoose);
+    // Initialize wallet service and load wallets from database
+    const walletService = container.resolve('walletService');
     await walletService.loadWalletsFromDatabase();
 
-    // Initialize the Bot with the wallet service
-    const bot = new Bot(
-        environment.telegram.botToken,
-        provider,
-        mongoose,
-        walletService
-    );
+    Pool.setDb(db);
+    Pool.setContractsService(container.resolve('contractsService'));
+    Position.setContractsService(container.resolve('contractsService'));
+    Position.setTokenService(container.resolve('tokenService'));
+    Position.setDb(db)
+
+    // Get other services from container
+    const provider = container.resolve('provider');
+    const bot = container.resolve('bot');
 
     return {
+        container,
         provider,
         bot,
-        mongoose,
+        db,
         walletService,
     };
 }

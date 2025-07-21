@@ -1,10 +1,10 @@
 /**
  * Blockchain provider service
- * Manages connections to Ethereum nodes
+ * Manages WebSocket connections to Ethereum nodes
  */
-const { createPublicClient, http } = require('viem');
+const { createPublicClient, webSocket } = require('viem');
 const { mainnet, sepolia, polygon, arbitrum } = require('viem/chains');
-const config = require('../../config/environment');
+const config = require('../../config/config');
 
 /**
  * Map network names to viem chains
@@ -17,7 +17,7 @@ const CHAIN_MAP = {
 };
 
 /**
- * Map network names to Alchemy URLs
+ * Map network names to Alchemy WebSocket URLs
  */
 const ALCHEMY_URL_MAP = {
     'mainnet': 'eth-mainnet.g.alchemy.com',
@@ -27,33 +27,27 @@ const ALCHEMY_URL_MAP = {
 };
 
 /**
- * Create a provider instance for interacting with the blockchain
+ * Create a WebSocket provider instance for real-time blockchain data
  */
 function createProvider() {
     const chain = CHAIN_MAP[config.blockchain.network] || mainnet;
-    const alchemyHost = ALCHEMY_URL_MAP[config.blockchain.network] || 'eth-mainnet.g.alchemy.com';
-    const alchemyUrl = `https://${alchemyHost}/v2/${config.blockchain.alchemyApiKey}`;
+    const alchemyHost = ALCHEMY_URL_MAP[config.blockchain.network];
+    const alchemyWsUrl = `wss://${alchemyHost}/v2/${config.blockchain.alchemyApiKey}`;
 
     return createPublicClient({
         chain,
-        transport: http(alchemyUrl)
+        transport: webSocket(alchemyWsUrl, {
+            reconnect: {
+                attempts: 5,
+                delay: 1000
+            },
+            timeout: 30000,
+            keepAlive: {
+                interval: 30000,
+                pongTimeout: 5000
+            }
+        })
     });
 }
 
-// Singleton provider instance
-let providerInstance = null;
-
-/**
- * Get the provider instance (creates it if it doesn't exist)
- */
-function getProvider() {
-    if (!providerInstance) {
-        providerInstance = createProvider();
-    }
-    return providerInstance;
-}
-
-module.exports = {
-    getProvider,
-    createProvider, // Exported for testing
-};
+module.exports = createProvider;

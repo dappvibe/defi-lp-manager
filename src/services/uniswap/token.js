@@ -1,13 +1,12 @@
 const { Token } = require('@uniswap/sdk-core');
 const { getContract } = require('viem');
-const { mongoose } = require('../database/mongoose');
 
 class TokenService {
-    constructor(provider) {
+    constructor(provider, db) {
         this.provider = provider;
         this.tokenCache = new Map(); // Keep in-memory cache for performance
         this.erc20Abi = require('./abis/erc20.json');
-        this.mongoose = mongoose;
+        this.db = db;
     }
 
     /**
@@ -99,7 +98,7 @@ class TokenService {
      */
     async getCachedTokenFromMongoose(address, chainId) {
         try {
-            const tokenData = await this.mongoose.getCachedToken(address, chainId);
+            const tokenData = await this.db.getCachedToken(address, chainId);
 
             if (tokenData) {
                 return new Token(
@@ -126,7 +125,7 @@ class TokenService {
      */
     async cacheTokenInMongoose(address, chainId, tokenData) {
         try {
-            await this.mongoose.cacheToken(address, chainId, tokenData);
+            await this.db.cacheToken(address, chainId, tokenData);
         } catch (error) {
             console.error(`Error caching token in MongoDB for ${address}:`, error);
         }
@@ -139,7 +138,7 @@ class TokenService {
         this.tokenCache.clear();
 
         try {
-            await this.mongoose.clearTokenCache();
+            await this.db.clearTokenCache();
             console.log('Cleared all token caches');
         } catch (error) {
             console.error('Error clearing token cache from MongoDB:', error);
@@ -156,7 +155,7 @@ class TokenService {
         this.tokenCache.delete(cacheKey);
 
         try {
-            await this.mongoose.removeTokenFromCache(address, chainId);
+            await this.db.removeTokenFromCache(address, chainId);
             console.log(`Cleared cache for token ${address} on chain ${chainId}`);
         } catch (error) {
             console.error(`Error clearing token cache from MongoDB for ${address}:`, error);
@@ -169,7 +168,7 @@ class TokenService {
      */
     async getAllCachedTokens() {
         try {
-            return await this.mongoose.getAllCachedTokens();
+            return await this.db.getAllCachedTokens();
         } catch (error) {
             console.error('Error getting all cached tokens from MongoDB:', error);
             return [];
