@@ -1,11 +1,11 @@
 /**
- * Wallet Service
+ * Wallet Registry
  * Handles wallet monitoring and persistence
  */
 
-class WalletService {
+class WalletRegistry {
   /**
-   * Create a new WalletService instance
+   * Create a new WalletRegistry instance
    */
   constructor(db) {
     this.db = db;
@@ -219,4 +219,4 @@ class WalletService {
   }
 }
 
-module.exports = WalletService;
+module.exports = WalletRegistry;

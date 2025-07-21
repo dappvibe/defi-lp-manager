@@ -12,7 +12,7 @@ const { PoolHandler } = require("./commands/pool");
  * Bot class extending TelegramBot with throttling and command handling
  */
 class Bot extends TelegramBot {
-  constructor(config, provider, db, walletService) {
+  constructor(config, provider, db, walletRegistry) {
     // Initialize parent TelegramBot with polling enabled
     super(config.telegram.botToken, {polling: true});
 
@@ -20,7 +20,7 @@ class Bot extends TelegramBot {
     this.config = config;
     this.provider = provider;
     this.db = db;
-    this.walletService = walletService;
+    this.walletRegistry = walletRegistry;
 
     // Initialize throttling
     this.rateLimit = this.config.telegram.rateLimit;
@@ -45,11 +45,11 @@ class Bot extends TelegramBot {
   }
 
   registerCommandHandlers() {
-    new StartHandler(this, poolsConfig, this.walletService);
+    new StartHandler(this, poolsConfig, this.walletRegistry);
     new HelpHandler(this);
     new PoolHandler(this, this.db, poolsConfig);
-    new WalletHandler(this, this.walletService);
-    new LpHandler(this, this.db, this.walletService);
+    new WalletHandler(this, this.walletRegistry);
+    new LpHandler(this, this.db, this.walletRegistry);
   }
 
   send(message) {

@@ -3,8 +3,8 @@
  * Provides access to wallet management functionality
  */
 
-const WalletService = require('./wallet');
+const WalletRegistry = require('./registry');
 
 module.exports = {
-  WalletService
+  WalletRegistry
 };

@@ -19,8 +19,8 @@ async function initializeApp() {
     await db.connect();
 
     // Initialize wallet service and load wallets from database
-    const walletService = container.resolve('walletService');
-    await walletService.loadWalletsFromDatabase();
+    const walletRegistry = container.resolve('walletRegistry');
+    await walletRegistry.loadWalletsFromDatabase();
 
     Pool.setDb(db);
     Pool.setContractsService(container.resolve('contractsService'));
@@ -37,7 +37,7 @@ async function initializeApp() {
         provider,
         bot,
         db,
-        walletService,
+        walletRegistry,
     };
 }
 

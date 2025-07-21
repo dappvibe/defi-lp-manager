@@ -208,11 +208,11 @@ class WalletHandler {
   /**
    * Create a new WalletHandler instance
    * @param {TelegramBot} bot - The bot instance
-   * @param {object} walletService - Wallet service instance
+   * @param {object} walletRegistry - Wallet service instance
    */
-  constructor(bot, walletService) {
+  constructor(bot, walletRegistry) {
     this.bot = bot;
-    this.walletService = walletService;
+    this.walletRegistry = walletRegistry;
 
     // Register handlers on instantiation
     this.registerHandlers();
@@ -285,7 +285,7 @@ class WalletHandler {
 
     try {
       // Check if already monitoring and add wallet
-      const wasAdded = await this.walletService.addWallet(walletAddress, chatId);
+      const wasAdded = await this.walletRegistry.addWallet(walletAddress, chatId);
 
       // Create and send monitoring status message
       const statusMessage = new MonitoringStatusMessage(!wasAdded);
@@ -320,7 +320,7 @@ class WalletHandler {
     }
 
     // If user has only one monitored wallet, stop that one
-    const monitoredWallets = this.walletService.getWalletsForChat(chatId);
+    const monitoredWallets = this.walletRegistry.getWalletsForChat(chatId);
     if (monitoredWallets.length === 1) {
       await this.processStopMonitoring(chatId, monitoredWallets[0]);
       return;
@@ -349,7 +349,7 @@ class WalletHandler {
     }
 
     // Stop monitoring
-    const success = await this.walletService.removeWallet(walletAddress, chatId);
+    const success = await this.walletRegistry.removeWallet(walletAddress, chatId);
 
     if (success) {
       const successMessage = new StopMonitoringSuccessMessage(walletAddress);
@@ -366,7 +366,7 @@ class WalletHandler {
    */
   async handleListWallets(msg) {
     const chatId = msg.chat.id;
-    const monitoredWallets = this.walletService.getWalletsForChat(chatId);
+    const monitoredWallets = this.walletRegistry.getWalletsForChat(chatId);
 
     if (monitoredWallets.length === 0) {
       const noWalletsMessage = new NoWalletsMonitoredMessage();

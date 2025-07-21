@@ -181,12 +181,12 @@ class LpHandler {
    * Creates an instance of LpHandler
    * @param {Object} bot - Telegram bot instance
    * @param {Object} db - Database service instance
-   * @param {Object} walletService - Wallet service instance
+   * @param {Object} walletRegistry - Wallet service instance
    */
-  constructor(bot, db, walletService) {
+  constructor(bot, db, walletRegistry) {
     this.bot = bot;
     this.db = db;
-    this.walletService = walletService;
+    this.walletRegistry = walletRegistry;
     this.positionMessages = new Map(); // tokenId => PositionMessage
     this.rangeNotificationMessages = new Map(); // tokenId => RangeNotificationMessage
     this.swapEventListener = (swapInfo, poolData) => this.onSwap(swapInfo, poolData);
@@ -214,7 +214,7 @@ class LpHandler {
    */
   async handleCommand(msg) {
     const chatId = msg.chat.id;
-    const monitoredWallets = this.walletService.getWalletsForChat(chatId);
+    const monitoredWallets = this.walletRegistry.getWalletsForChat(chatId);
 
     if (monitoredWallets.length === 0) {
       await this.bot.send(new NoWalletsMessage(chatId));
@@ -498,7 +498,7 @@ class LpHandler {
   async restoreMonitoredPositions() {
     try {
       console.log('Restoring monitored positions...');
-      const wallets = this.walletService.getAllMonitoredWallets();
+      const wallets = this.walletRegistry.getAllMonitoredWallets();
       let restoredCount = 0;
 
       for (const walletAddress of wallets) {

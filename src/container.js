@@ -7,7 +7,7 @@ const awilix = require('awilix');
 // Import services
 const createProvider = require('./services/blockchain/provider');
 const Db = require('./services/database/db');
-const { WalletService } = require('./services/wallet');
+const { WalletRegistry } = require('./services/wallet');
 const Bot = require('./services/telegram/bot');
 const ContractsService = require('./services/uniswap/contracts');
 const { PoolService } = require('./services/uniswap/pool');
@@ -45,7 +45,7 @@ function createContainer() {
 
   // Register wallet service
   container.register({
-    walletService: awilix.asClass(WalletService).singleton()
+    walletRegistry: awilix.asClass(WalletRegistry).singleton()
   });
 
   // Register contracts service
