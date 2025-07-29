@@ -7,8 +7,8 @@ class WalletRegistry {
   /**
    * Create a new WalletRegistry instance
    */
-  constructor(db) {
-    this.db = db;
+  constructor(walletModel) {
+    this.walletModel = walletModel;
     this.monitoredWallets = new Map(); // chatId -> Set of wallet addresses
   }
 
@@ -137,11 +137,7 @@ class WalletRegistry {
    */
   async loadWalletsFromDatabase() {
     try {
-      if (!this.db.isConnected) {
-        await this.db.connect();
-      }
-
-      const wallets = await this.db.getAllMonitoredWallets();
+      const wallets = await this.walletModel.getAllMonitoredWallets();
 
       for (const wallet of wallets) {
         if (!this.monitoredWallets.has(wallet.chatId)) {
@@ -166,11 +162,11 @@ class WalletRegistry {
    */
   async saveWalletToDatabase(walletAddress, chatId) {
     try {
-      if (!this.db.isConnected) {
-        await this.db.connect();
+      if (!this.walletModel.isConnected) {
+        await this.walletModel.connect();
       }
 
-      await this.db.saveMonitoredWallet(walletAddress, chatId);
+      await this.walletModel.saveMonitoredWallet(walletAddress, chatId);
     } catch (error) {
       console.error('Error saving wallet to database:', error);
       throw error;
@@ -186,11 +182,11 @@ class WalletRegistry {
    */
   async removeWalletFromDatabase(walletAddress, chatId) {
     try {
-      if (!this.db.isConnected) {
-        await this.db.connect();
+      if (!this.walletModel.isConnected) {
+        await this.walletModel.connect();
       }
 
-      await this.db.removeMonitoredWallet(walletAddress, chatId);
+      await this.walletModel.removeMonitoredWallet(walletAddress, chatId);
     } catch (error) {
       console.error('Error removing wallet from database:', error);
       throw error;

@@ -2,7 +2,6 @@
  * Main application module
  * Contains core application logic and initialization
  */
-const { createContainer } = require('./container');
 const {Pool} = require("./services/uniswap/pool");
 const Position = require("./services/uniswap/position");
 
@@ -12,11 +11,13 @@ const Position = require("./services/uniswap/position");
  */
 async function initializeApp() {
     // Create and configure the dependency injection container
-    const container = createContainer();
+    const container = require('./container')();
+
+    const config = container.resolve('config');
 
     // Connect to database
-    const db = container.resolve('db');
-    await db.connect();
+    const db = container.resolve('mongoose');
+    await db.connect(config.db.uri);
 
     // Initialize wallet service and load wallets from database
     const walletRegistry = container.resolve('walletRegistry');

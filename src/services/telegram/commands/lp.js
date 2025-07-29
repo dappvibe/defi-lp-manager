@@ -181,11 +181,13 @@ class LpHandler {
    * Creates an instance of LpHandler
    * @param {Object} bot - Telegram bot instance
    * @param {Object} db - Database service instance
+   * @param messageModel
    * @param {Object} walletRegistry - Wallet service instance
    */
-  constructor(bot, db, walletRegistry) {
+  constructor(bot, db, messageModel, walletRegistry) {
     this.bot = bot;
     this.db = db;
+    this.messageModel = messageModel;
     this.walletRegistry = walletRegistry;
     this.positionMessages = new Map(); // tokenId => PositionMessage
     this.rangeNotificationMessages = new Map(); // tokenId => RangeNotificationMessage

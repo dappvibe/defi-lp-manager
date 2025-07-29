@@ -4,9 +4,6 @@
  */
 const awilix = require('awilix');
 
-// Import services
-const createProvider = require('./services/blockchain/provider');
-const Db = require('./services/database/db');
 const { WalletRegistry } = require('./services/wallet');
 const Bot = require('./services/telegram/bot');
 const ContractsService = require('./services/uniswap/contracts');
@@ -25,18 +22,12 @@ function createContainer() {
 
   // Register configuration
   container.register({
+    container: awilix.asValue(container),
     config: awilix.asValue(config)
   });
 
-  // Register database connection as singleton
-  container.register({
-    db: awilix.asClass(Db).singleton()
-  });
-
-  // Register blockchain provider as singleton
-  container.register({
-    provider: awilix.asFunction(() => createProvider()).singleton()
-  });
+  require('./services/blockchain')(container);
+  require('./services/database')(container);
 
   // Register telegram bot
   container.register({
@@ -65,6 +56,4 @@ function createContainer() {
   return container;
 }
 
-module.exports = {
-  createContainer
-};
+module.exports = createContainer;

@@ -172,7 +172,7 @@ class PoolHandler {
 
         await this.bot.send(message).then(msg => {
           this.messages.set(message.pool.address, msg);
-          this.db.savePoolMessage(message.pool.address, chatId, msg.id, msg.pool.getMonitoringStatus());
+          this.db.create(message.pool.address, chatId, msg.id, msg.pool.getMonitoringStatus());
         });
       }
     } catch (error) {
@@ -235,7 +235,7 @@ class PoolHandler {
     try {
       const { info, price } = await message.pool.startMonitoring();
       this.listenSwaps(message.pool);
-      this.db.savePoolMessage(message.pool.address, message.chatId, message.id, true);
+      this.db.create(message.pool.address, message.chatId, message.id, true);
       return price;
     } catch (error) {
       console.error(`Error starting pool monitoring  ${message.pool.info.token0.symbol}/${message.pool.info.token1.symbol} (${message.pool.info.fee}%)`, error.message);
@@ -250,7 +250,7 @@ class PoolHandler {
     try {
       message.pool.removeListener('swap', this.swapEventListener);
       await message.pool.stopMonitoring();
-      this.db.savePoolMessage(message.pool.address, message.chatId, message.id, false);
+      this.db.create(message.pool.address, message.chatId, message.id, false);
     } catch (error) {
       console.error(`Error stopping pool monitoring ${message.pool.info.token0.symbol}/${message.pool.info.token1.symbol} (${message.pool.info.fee}%)`, error.message);
     }
