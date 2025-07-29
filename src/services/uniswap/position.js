@@ -559,7 +559,7 @@ class Position extends EventEmitter {
       // Get current price from the pool
       return await pool.getCurrentPrice();
     } catch (error) {
-      console.error('Error fetching CAKE price from pool:', error);
+      console.error('(Try /pool) Error fetching CAKE price from pool:', error);
       return 0; // Fallback price
     }
   }
