@@ -272,8 +272,8 @@ class PoolHandler {
   async onSwap(swapInfo, poolData) {
     const { address, newPrice, timestamp } = swapInfo;
 
+    const msg = this.messages.get(address);
     try {
-      const msg = this.messages.get(address);
 
       // price is updated often, we must not let API to rate limit requests
       if (msg.lastUpdate !== null) {
@@ -292,6 +292,8 @@ class PoolHandler {
       return await this.bot.send(msg).then(msg => {msg.lastUpdate = Date.now()});
     } catch (error) {
       console.error(`Error handling swap event for pool ${address}:`, error.message);
+      msg.pool.removeListener('swap', this.swapEventListener);
+      this.db.savePoolMessage(msg.pool.address, msg.chatId, msg.id, false);
     }
   }
 
