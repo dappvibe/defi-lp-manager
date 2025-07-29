@@ -127,9 +127,6 @@ class Pool extends EventEmitter {
         })
       ]);
 
-      // Calculate TVL
-      const tvl = await this.getTVL();
-
       // Prepare pool info for runtime use
       this.info = {
         token0: token0Info, // Keep for runtime use
@@ -137,8 +134,10 @@ class Pool extends EventEmitter {
         fee: fee / 10000,
         tickSpacing,
         unlocked: slot0[6],
-        tvl: tvl
       };
+
+      // Calculate TVL
+      this.info.tvl = await this.getTVL();
 
       // Prepare data for database storage with token addresses
       const poolDataForStorage = {
