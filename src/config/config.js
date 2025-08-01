@@ -40,13 +40,6 @@ const config = {
     db: {
         uri: process.env.MONGODB_URI || 'mongodb://mongodb:27017/defi-lp-manager',
     },
-
-    // Firebase configuration (for future use)
-    firebase: {
-        projectId: process.env.FIREBASE_PROJECT_ID,
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        privateKey: process.env.FIREBASE_PRIVATE_KEY,
-    },
 };
 
 module.exports = config;
