@@ -160,6 +160,4 @@ class PoolsConfig {
   }
 }
 
-// Create and export a singleton instance
-const poolsConfig = new PoolsConfig();
-module.exports = poolsConfig;
+module.exports = PoolsConfig;

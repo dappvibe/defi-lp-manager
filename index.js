@@ -4,7 +4,7 @@
  */
 
 // Import application module
-const { initializeApp, cleanupApp } = require('./src/app');
+const { startApp, cleanupApp } = require('./src/app');
 
 // Application context
 let appContext;
@@ -13,13 +13,8 @@ let appContext;
  * Start the application
  */
 async function main() {
-    try {
-        appContext = await initializeApp();
-        console.log('Application started successfully.');
-    } catch (error) {
-        console.error('Failed to start application:', error);
-        process.exit(1);
-    }
+    appContext = await startApp();
+    console.log('Application started successfully.');
 }
 
 /**
@@ -38,6 +33,7 @@ process.on('SIGINT', async () => {
 
 // Start the application
 main().catch(error => {
-    console.error('Error during application startup:', error);
+    console.error('Error during application startup:', error.message);
+    throw error;
     process.exit(1);
 });

@@ -2,14 +2,12 @@
  * Main application module
  * Contains core application logic and initialization
  */
-const {Pool} = require("./services/uniswap/pool");
-const Position = require("./services/uniswap/position");
 
 /**
  * Initialize the application
  * @returns {Object} Application context with initialized services
  */
-async function initializeApp() {
+async function startApp() {
     // Create and configure the dependency injection container
     const container = require('./container')();
 
@@ -18,16 +16,6 @@ async function initializeApp() {
     // Connect to database
     const db = container.resolve('mongoose');
     await db.connect(config.db.uri);
-
-    // Initialize wallet service and load wallets from database
-    const walletRegistry = container.resolve('walletRegistry');
-    await walletRegistry.loadWalletsFromDatabase();
-
-    Pool.setDb(db);
-    Pool.setContractsService(container.resolve('contractsService'));
-    Position.setContractsService(container.resolve('contractsService'));
-    Position.setTokenService(container.resolve('tokenService'));
-    Position.setDb(db)
 
     // Get other services from container
     const provider = container.resolve('provider');
@@ -38,7 +26,6 @@ async function initializeApp() {
         provider,
         bot,
         db,
-        walletRegistry,
     };
 }
 
@@ -61,6 +48,6 @@ async function cleanupApp(appContext) {
 }
 
 module.exports = {
-    initializeApp,
+    startApp,
     cleanupApp,
 };
