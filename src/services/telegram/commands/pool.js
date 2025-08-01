@@ -3,7 +3,6 @@
  * Lists all configured pools with toggle buttons for monitoring
  * Usage: /pool
  */
-const { Pool } = require('../../uniswap/pool');
 const TelegramMessage = require("../message");
 const { getTimeInTimezone, moneyFormat} = require('../../../utils');
 
@@ -110,22 +109,22 @@ class PoolErrorMessage extends TelegramMessage {
 class PoolHandler {
   /**
    * Create a new PoolHandler instance
-   * @param {TelegramBot} bot - The bot instance
-   * @param db
+   * @param {MessageModel} messageModel
+   * @param poolModel
+   * @param pools
    * @param poolsConfig
    */
-  constructor(bot, db, poolsConfig) {
-    this.bot = bot;
-    this.db = db;
+  constructor(messageModel, poolModel, pools, poolsConfig) {
+    this.messageModel = messageModel;
     this.swapEventListener = (swapInfo, poolData) => {
       return this.onSwap(swapInfo, poolData);
     };
-    this.registerHandlers();
 
     // store messages to update. each message has its pool as property
     this.messages = new Map();
-    const configuredPools = poolsConfig.getPools('pancakeswap', 'arbitrum');
-    this.db.getMonitoredPoolMessages().then(monitoredPools => {
+    this.pools = poolsConfig.getPools('pancakeswap', 'arbitrum');
+
+/*    this.messageModel.getMonitoredPoolMessages().then(monitoredPools => {
       for (const address of configuredPools) {
         const msg = new PoolInfoMessage(Pool.getPool(address), null);
         this.messages.set(address, msg);
@@ -138,7 +137,7 @@ class PoolHandler {
           }
         }
       }
-    });
+    });*/
   }
 
   /**
@@ -149,7 +148,7 @@ class PoolHandler {
     const chatId = msg.chat.id;
 
     try {
-      if (this.messages.size === 0) {
+      if (this.pools.length === 0) {
         const noPoolsMessage = new NoPoolsMessage();
         noPoolsMessage.chatId = chatId;
         return this.bot.send(noPoolsMessage);
@@ -157,7 +156,7 @@ class PoolHandler {
 
       // Send a message for each configured pool
       for (const message of this.messages.values()) {
-        await message.pool.getPoolInfo(); // fetch from db or blockchain
+        await message.pool.getPoolInfo(); // fetch from model or blockchain
         const [price, tvl] = await Promise.all([
           message.pool.getCurrentPrice(),
           message.pool.getTVL()
@@ -170,9 +169,9 @@ class PoolHandler {
         message.chatId = chatId;
         message.id = null;
 
-        await this.bot.send(message).then(msg => {
-          this.messages.set(message.pool.address, msg);
-          this.db.create(message.pool.address, chatId, msg.id, msg.pool.getMonitoringStatus());
+        await this.bot.send(message).then(async (sentMsg) => {
+          this.messages.set(message.pool.address, sentMsg);
+          await this.messageModel.saveMessage(sentMsg);
         });
       }
     } catch (error) {
@@ -235,7 +234,7 @@ class PoolHandler {
     try {
       const { info, price } = await message.pool.startMonitoring();
       this.listenSwaps(message.pool);
-      this.db.create(message.pool.address, message.chatId, message.id, true);
+      await this.messageModel.saveMessage(message);
       return price;
     } catch (error) {
       console.error(`Error starting pool monitoring  ${message.pool.info.token0.symbol}/${message.pool.info.token1.symbol} (${message.pool.info.fee}%)`, error.message);
@@ -250,7 +249,7 @@ class PoolHandler {
     try {
       message.pool.removeListener('swap', this.swapEventListener);
       await message.pool.stopMonitoring();
-      this.db.create(message.pool.address, message.chatId, message.id, false);
+      this.messageModel.create(message.pool.address, message.chatId, message.id, false);
     } catch (error) {
       console.error(`Error stopping pool monitoring ${message.pool.info.token0.symbol}/${message.pool.info.token1.symbol} (${message.pool.info.fee}%)`, error.message);
     }
@@ -293,23 +292,20 @@ class PoolHandler {
     } catch (error) {
       console.error(`Error handling swap event for pool ${address}:`, error.message);
       msg.pool.removeListener('swap', this.swapEventListener);
-      this.db.savePoolMessage(msg.pool.address, msg.chatId, msg.id, false);
+      await this.messageModel.saveMessage(msg);
     }
   }
 
   /**
    * Register command handlers with the bot
    */
-  registerHandlers() {
+  attach(bot) {
+    this.bot = bot;
     // Wrap to keep 'this' context of PoolHandler
-    this.bot.onText(/\/pool/, (msg) => {
-      this.handleText(msg);
-    });
+    this.bot.onText(/\/pool/, (msg) => this.handleText(msg));
 
     // Callback query handlers for pool toggle buttons
-    this.bot.on('callback_query', (callbackQuery) => {
-      this.handleCallback(callbackQuery);
-    });
+    this.bot.on('callback_query', (callbackQuery) => this.handleCallback(callbackQuery));
   }
 
   /**
@@ -353,9 +349,4 @@ Shows all pre-configured pools as individual messages, each displaying:
   }
 }
 
-module.exports = {
-  PoolHandler,
-  PoolInfoMessage,
-  NoPoolsMessage,
-  PoolErrorMessage,
-};
+module.exports = PoolHandler

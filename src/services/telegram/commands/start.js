@@ -83,25 +83,21 @@ class StartMessage {
 class StartHandler {
   /**
    * Create a new StartHandler instance
-   * @param {TelegramBot} bot - The bot instance
    * @param poolsConfig
-   * @param {Object} positionMonitor - Position monitor instance
+   * @param positionModel
    */
-  constructor(bot, poolsConfig, positionMonitor) {
-    this.bot = bot;
+  constructor(poolsConfig, positionModel) {
     this.monitoredPools = poolsConfig.getPools('pancakeswap', 'arbitrum');
-    this.positionMonitor = positionMonitor;
-
-    // Register handlers on instantiation
-    this.registerHandlers();
+    this.positionModel = positionModel;
   }
 
   /**
    * Register command handlers with the bot
    */
-  registerHandlers() {
+  attach(bot) {
+    this.bot = bot;
     this.bot.onText(/\/start/, (msg) => {
-      this.handleText(msg);
+      return this.handleText(msg);
     });
   }
 
@@ -111,7 +107,7 @@ class StartHandler {
    */
   async handleText(msg) {
     const chatId = msg.chat.id;
-    const startMessage = new StartMessage(chatId, this.monitoredPools, this.positionMonitor);
+    const startMessage = new StartMessage(chatId, this.monitoredPools, this.positionModel);
     await this.bot.sendMessage(chatId, startMessage.toString(), { parse_mode: 'Markdown' });
   }
 

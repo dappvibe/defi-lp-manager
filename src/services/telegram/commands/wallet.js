@@ -4,7 +4,7 @@
  * Usage: /wallet <address>
  */
 
-const { isValidEthereumAddress } = require('../../uniswap/utils');
+const {isAddress} = require("viem");
 
 /**
  * Represents a wallet address prompt message
@@ -208,32 +208,23 @@ class WalletHandler {
   /**
    * Create a new WalletHandler instance
    * @param {TelegramBot} bot - The bot instance
-   * @param {object} walletRegistry - Wallet service instance
+   * @param {object} walletModel - Wallet service instance
    */
-  constructor(bot, walletRegistry) {
-    this.bot = bot;
-    this.walletRegistry = walletRegistry;
-
-    // Register handlers on instantiation
-    this.registerHandlers();
+  constructor(walletModel) {
+    this.walletRegistry = walletModel;
   }
 
   /**
    * Register command handlers with the bot
    */
-  registerHandlers() {
+  attach(bot) {
+    this.bot = bot;
     // Wallet position monitoring commands
-    this.bot.onText(/\/wallet(?:\s+(.+))?/, (msg, match) => {
-      this.handle(msg, match);
-    });
+    this.bot.onText(/\/wallet(?:\s+(.+))?/, (msg, match) => this.handle(msg, match));
 
-    this.bot.onText(/\/stop_wallet(?:\s+(.+))?/, (msg, match) => {
-      this.handleStopWallet(msg, match);
-    });
+    this.bot.onText(/\/stop_wallet(?:\s+(.+))?/, (msg, match) => this.handleStopWallet(msg, match));
 
-    this.bot.onText(/\/list_wallets/, (msg) => {
-      this.handleListWallets(msg);
-    });
+    this.bot.onText(/\/list_wallets/, (msg) => this.handleListWallets(msg));
   }
 
   /**
@@ -273,7 +264,7 @@ class WalletHandler {
    */
   async processWalletAddress(chatId, walletAddress) {
     // Validate address
-    if (!isValidEthereumAddress(walletAddress)) {
+    if (!isAddress(walletAddress)) {
       const invalidMessage = new InvalidAddressMessage();
       await this.bot.sendMessage(chatId, invalidMessage.toString());
       return;

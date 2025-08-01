@@ -86,21 +86,13 @@ class HelpHandler {
     static description = 'Show help information for all commands';
 
     /**
-     * Create a new HelpHandler instance
-     * @param {TelegramBot} bot - The bot instance
-     */
-    constructor(bot) {
-      this.bot = bot;
-      this.registerHandlers();
-    }
-
-    /**
      * Register command handlers with the bot
      */
-    registerHandlers() {
-        this.bot.onText(/\/help/, (msg) => {
-            return this.handle(msg);
-        });
+    attach(bot) {
+      this.bot = bot;
+      this.bot.onText(/\/help/, (msg) => {
+        return this.handle(msg);
+      });
     }
 
     /**

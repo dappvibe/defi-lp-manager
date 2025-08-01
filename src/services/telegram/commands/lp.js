@@ -179,32 +179,28 @@ class GeneralErrorMessage extends TelegramMessage {
 class LpHandler {
   /**
    * Creates an instance of LpHandler
-   * @param {Object} bot - Telegram bot instance
-   * @param {Object} db - Database service instance
    * @param messageModel
-   * @param {Object} walletRegistry - Wallet service instance
+   * @param walletModel
    */
-  constructor(bot, db, messageModel, walletRegistry) {
-    this.bot = bot;
-    this.db = db;
+  constructor(messageModel, walletModel) {
     this.messageModel = messageModel;
-    this.walletRegistry = walletRegistry;
+    this.walletModel = walletModel;
     this.positionMessages = new Map(); // tokenId => PositionMessage
     this.rangeNotificationMessages = new Map(); // tokenId => RangeNotificationMessage
     this.swapEventListener = (swapInfo, poolData) => this.onSwap(swapInfo, poolData);
 
-    this.registerHandlers();
     // Start restoration process asynchronously
-    this.restoreMonitoredPositions().catch(error => {
-      console.error('Error during position monitoring restoration:', error);
-    });
+    // this.restoreMonitoredPositions().catch(error => {
+    //   console.error('Error during position monitoring restoration:', error);
+    // });
   }
 
   /**
    * Registers bot command handlers for the /lp command
    * @returns {this}
    */
-  registerHandlers() {
+  attach(bot) {
+    this.bot = bot;
     this.bot.onText(/\/lp/, (msg) => this.handleCommand(msg));
     return this;
   }
@@ -216,7 +212,7 @@ class LpHandler {
    */
   async handleCommand(msg) {
     const chatId = msg.chat.id;
-    const monitoredWallets = this.walletRegistry.getWalletsForChat(chatId);
+    const monitoredWallets = this.walletModel.getWalletsForChat(chatId);
 
     if (monitoredWallets.length === 0) {
       await this.bot.send(new NoWalletsMessage(chatId));
@@ -500,7 +496,7 @@ class LpHandler {
   async restoreMonitoredPositions() {
     try {
       console.log('Restoring monitored positions...');
-      const wallets = this.walletRegistry.getAllMonitoredWallets();
+      const wallets = this.walletModel.getAllMonitoredWallets();
       let restoredCount = 0;
 
       for (const walletAddress of wallets) {
@@ -566,4 +562,4 @@ class LpHandler {
   }
 }
 
-module.exports = { LpHandler, PositionMessage };
+module.exports = LpHandler

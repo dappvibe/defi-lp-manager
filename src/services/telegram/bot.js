@@ -2,26 +2,21 @@
  * Telegram Bot Service
  */
 const TelegramBot = require('node-telegram-bot-api');
-const { StartHandler, HelpHandler, WalletHandler, LpHandler } = require('./commands');
 const Throttler = require('./throttler');
-const poolsConfig = require('../../config/pools');
 const TelegramMessage = require("./message");
-const { PoolHandler } = require("./commands/pool");
 
 /**
  * Bot class extending TelegramBot with throttling and command handling
  */
 class Bot extends TelegramBot {
-  constructor(config, provider, db, messageModel, walletRegistry) {
+  constructor(config, startHandler, helpHandler, poolHandler, walletHandler, lpHandler) {
     // Initialize parent TelegramBot with polling enabled
     super(config.telegram.botToken, {polling: true});
 
-    // Store dependencies
+    this.on('polling_start', () => console.log('Telegram Bot started polling'));
+    this.on('polling_error', (error) => console.error('Telegram Bot polling error:', error));
+
     this.config = config;
-    this.provider = provider;
-    this.db = db;
-    this.messageModel = messageModel;
-    this.walletRegistry = walletRegistry;
 
     // Initialize throttling
     this.rateLimit = this.config.telegram.rateLimit;
@@ -29,28 +24,13 @@ class Bot extends TelegramBot {
       maxRequests: this.rateLimit.maxRequestsPerSecond,
       timeWindowMs: 1000
     });
-
-    // Track last edit time for messages
     this.lastEditTimes = {};
 
-    // Initialize the bot
-    this.init();
-  }
-
-  /**
-   * Initialize bot with event handlers and command registration
-   */
-  init() {
-    this.setupEventHandlers();
-    this.registerCommandHandlers();
-  }
-
-  registerCommandHandlers() {
-    new StartHandler(this, poolsConfig, this.walletRegistry);
-    new HelpHandler(this);
-    new PoolHandler(this, this.db, poolsConfig);
-    new WalletHandler(this, this.walletRegistry);
-    new LpHandler(this, this.db, this.messageModel, this.walletRegistry);
+    startHandler.attach(this)
+    helpHandler.attach(this)
+    poolHandler.attach(this)
+    //walletHandler.attach(this)
+    //lpHandler.attach(this)
   }
 
   send(message) {
@@ -126,13 +106,6 @@ class Bot extends TelegramBot {
     return this.throttler.throttle(() => super.answerCallbackQuery(callbackQueryId, options));
   }
 
-  /**
-   * Setup event handlers for bot events
-   */
-  setupEventHandlers() {
-    this.on('polling_start', () => console.log('Telegram Bot started polling'));
-    this.on('polling_error', (error) => console.error('Telegram Bot polling error:', error));
-  }
 }
 
 module.exports = Bot;
