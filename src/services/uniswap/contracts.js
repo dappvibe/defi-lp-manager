@@ -2,13 +2,8 @@
  * Contract interaction service
  * Handles creation and interaction with Ethereum contracts
  */
+const awilix = require('awilix');
 const { getContract } = require('viem');
-const { erc20: erc20Abi, uniswapV3Pool: poolAbi } = require('./abis');
-
-// Import additional ABIs
-const positionManagerAbi = require('./abis/v3-position-manager.json');
-const stakingAbi = require('./abis/masterchef-v3.json');
-const factoryAbi = require('./abis/v3-factory.json');
 
 // Contract addresses for PancakeSwap on Arbitrum
 const CONTRACT_ADDRESSES = {
@@ -21,109 +16,45 @@ const CONTRACT_ADDRESSES = {
   }
 };
 
-/**
- * Contract service class with dependency injection
- */
-class ContractsService {
-  /**
-   * Create a new ContractsService instance
-   */
-  constructor(provider) {
-    this.provider = provider;
-  }
+module.exports = (container) => {
+  const provider = container.resolve('provider');
+  const addresses = CONTRACT_ADDRESSES.pancakeswap.arbitrum;
 
-  /**
-   * Create an ERC20 token contract instance
-   * @param {string} tokenAddress - The token contract address
-   * @returns {Object} The contract instance
-   */
-  createErc20Contract(tokenAddress) {
-    return getContract({
-      address: tokenAddress,
-      abi: erc20Abi,
-      client: this.provider
-    });
-  }
-
-  /**
-   * Create a Uniswap V3 pool contract instance
-   * @param {string} poolAddress - The pool contract address
-   * @returns {Object} The contract instance
-   */
-  createPoolContract(poolAddress) {
-    return getContract({
-      address: poolAddress,
-      abi: poolAbi,
-      client: this.provider
-    });
-  }
-
-  /**
-   * Create a Uniswap V3 position manager contract instance
-   * @returns {Object} The position manager contract instance
-   */
-  createPositionManagerContract() {
-    const positionManagerAddress = CONTRACT_ADDRESSES.pancakeswap.arbitrum.nonfungiblePositionManager;
-
-    return getContract({
-      address: positionManagerAddress,
-      abi: positionManagerAbi,
-      client: this.provider
-    });
-  }
-
-  /**
-   * Create a staking contract instance (MasterChef V3)
-   * @returns {Object} The staking contract instance
-   */
-  createStakingContract() {
-    const stakingContractAddress = CONTRACT_ADDRESSES.pancakeswap.arbitrum.masterChefV3;
-
-    return getContract({
-      address: stakingContractAddress,
-      abi: stakingAbi,
-      client: this.provider
-    });
-  }
-
-  /**
-   * Create a Uniswap V3 factory contract instance
-   * @returns {Object} The factory contract instance
-   */
-  createFactoryContract() {
-    const factoryAddress = CONTRACT_ADDRESSES.pancakeswap.arbitrum.V3Factory;
-
-    return getContract({
-      address: factoryAddress,
-      abi: factoryAbi,
-      client: this.provider
-    });
-  }
-
-  /**
-   * Get token information (symbol, decimals)
-   * @param {string} tokenAddress - The token contract address
-   * @returns {Promise<Object>} Token information
-   */
-  async getTokenInfo(tokenAddress) {
-    const tokenContract = this.createErc20Contract(tokenAddress);
-
-    try {
-      const [symbol, decimals] = await Promise.all([
-        tokenContract.read.symbol(),
-        tokenContract.read.decimals()
-      ]);
-
-      return {
-        address: tokenAddress,
-        symbol,
-        decimals
-      };
-    } catch (error) {
-      console.error(`Error fetching token info for ${tokenAddress}:`, error);
-      throw error;
-    }
-  }
-}
-
-module.exports = ContractsService;
+  container.register({
+    positionManager: awilix.asFunction((provider) => {
+      return getContract({
+        address: addresses.nonfungiblePositionManager,
+        abi: require('./abis/v3-position-manager.json'),
+        client: provider
+      })
+    }).singleton(),
+    staker: awilix.asFunction((provider) => {
+      return getContract({
+        address: addresses.masterChefV3,
+        abi: require('./abis/masterchef-v3.json'),
+        client: provider
+      })
+    }).singleton(),
+    poolFactory: awilix.asFunction((provider) => {
+      return getContract({
+        address: addresses.V3Factory,
+        abi: require('./abis/v3-factory.json'),
+        client: provider
+      })
+    }),
+    erc20Factory: awilix.asValue((address) => {
+      return getContract({
+        address: address,
+        abi: require('./abis/erc20.json'),
+        client: provider
+      });
+    }),
+    poolContract: awilix.asValue((address) => {
+      return getContract({
+        address: address,
+        abi: require('./abis/v3-pool.json'),
+        client: provider
+      });
+    })
+  })
+};

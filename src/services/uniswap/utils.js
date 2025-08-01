@@ -1,7 +1,7 @@
 /**
  * Price calculation utilities for blockchain data
  */
-const { isAddress, formatUnits } = require('viem');
+const { formatUnits } = require('viem');
 
 /**
  * Calculates price of token0 in terms of token1 (token1/token0)
@@ -25,16 +25,6 @@ function calculatePrice(sqrtPriceX96, decimalsToken0, decimalsToken1) {
     return formatUnits(finalPriceBigNumber, displayDecimals);
 }
 
-/**
- * Check if a string is a valid Ethereum address
- * @param {string} address - The address to validate
- * @returns {boolean} True if address is valid
- */
-function isValidEthereumAddress(address) {
-    return isAddress(address);
-}
-
 module.exports = {
     calculatePrice,
-    isValidEthereumAddress
 };

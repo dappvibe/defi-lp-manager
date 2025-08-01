@@ -1,11 +1,10 @@
 const { Token } = require('@uniswap/sdk-core');
 const {EventEmitter} = require('events');
 const { getPool, Pool} = require('./pool');
-const { tickToHumanPrice, isPositionInRange } = require('./helpers');
 const { getProvider } = require('../blockchain/provider');
-const { Position: UniswapPosition, Pool: UniswapPool } = require('@uniswap/v3-sdk');
-const ContractsService = require('./contracts');
+const { Position: UniswapPosition, Pool: UniswapPool, tickToPrice} = require('@uniswap/v3-sdk');
 const createProvider = require("../blockchain/provider");
+const awilix = require("awilix");
 
 class Position extends EventEmitter {
   /**
@@ -276,10 +275,10 @@ class Position extends EventEmitter {
           sqrtPriceX96
         );
 
-      const lowerPrice = tickToHumanPrice(Number(tickLower), token0, token1);
-      const upperPrice = tickToHumanPrice(Number(tickUpper), token0, token1);
-      const currentPrice = tickToHumanPrice(currentTick, token0, token1);
-      const inRange = isPositionInRange(Number(tickLower), Number(tickUpper), currentTick);
+      const lowerPrice = tickToPrice(token0, token1, tickLower);
+      const upperPrice = tickToPrice(token0, token1, tickUpper);
+      const currentPrice = tickToPrice(token0, token1, currentTick);
+      const inRange = currentTick >= tickLower && currentTick < tickUpper;
 
       return {
         tokenId,
@@ -587,4 +586,59 @@ class Position extends EventEmitter {
   }
 }
 
-module.exports = Position;
+module.exports = (container) => {
+  container.register({
+    positionFactory: awilix.asFunction((cradle) => {
+      return {
+        /**
+         * Create a new Position instance
+         * @param {Object} positionData - Position data object
+         * @param {object} provider - Blockchain provider (optional)
+         * @returns {Position} Position instance
+         */
+        createPosition: (positionData, provider = null) => {
+          return new Position(positionData, provider);
+        },
+
+        /**
+         * Fetch all positions for a wallet
+         * @param {string} wallet - Wallet address
+         * @returns {Promise<Array<Position>>} Array of Position instances
+         */
+        fetchPositions: async (wallet) => {
+          try {
+            // Get both unstaked and staked positions
+            const [unstakedPositions, stakedPositions] = await Promise.all([
+              Position.fetchUnstakedPositions(wallet),
+              Position.fetchStakedPositions(wallet)
+            ]);
+
+            // Combine and return all positions
+            return [...unstakedPositions, ...stakedPositions];
+          } catch (error) {
+            console.error('Error fetching positions:', error);
+            return [];
+          }
+        },
+
+        /**
+         * Fetch unstaked positions for a wallet
+         * @param {string} walletAddress - Wallet address
+         * @returns {Promise<Array<Position>>} Array of Position instances
+         */
+        fetchUnstakedPositions: (walletAddress) => {
+          return Position.fetchUnstakedPositions(walletAddress);
+        },
+
+        /**
+         * Fetch staked positions for a wallet
+         * @param {string} walletAddress - Wallet address
+         * @returns {Promise<Array<Position>>} Array of Position instances
+         */
+        fetchStakedPositions: (walletAddress) => {
+          return Position.fetchStakedPositions(walletAddress);
+        }
+      };
+    }).singleton()
+  })
+};

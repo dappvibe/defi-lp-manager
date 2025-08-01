@@ -1,102 +1,59 @@
-/**
- * Individual Pool Class
- * Represents a single pool with its own address and operations
- */
+const awilix = require('awilix');
 const { EventEmitter } = require('events');
-// ContractsService will be injected
-const { isValidEthereumAddress, calculatePrice } = require('./utils');
+const { calculatePrice } = require('./utils');
 const { uniswapV3Pool: poolAbi } = require('./abis');
 const { getTimeInTimezone } = require('../../utils');
-const createProvider = require('../blockchain/provider');
 const TokenService = require('./token');
 
+/**
+ * Represents a Uniswap V3 pool for a pair of tokens.
+ * Handles pool monitoring, price tracking, and event emission.
+ */
 class Pool extends EventEmitter {
-  static #poolInstances = new Map();
-  static #contractsService = null;
-  static #db = null;
-
   /**
-   * Set the contracts service dependency
-   * @param {ContractsService} contractsService - The contracts service instance
+   * Creates a new Pool instance
+   * @param contract
+   * @param {TokenService} tokens
+   * @param {PoolModel} poolModel
    */
-  static setContractsService(contractsService) {
-    Pool.#contractsService = contractsService;
-  }
-
-  /**
-   * Set the database dependency
-   * @param {Object} db - The database instance
-   */
-  static setDb(db) {
-    Pool.#db = db;
-  }
-
-
-  /**
-   * Gets singleton instance of Pool. Each pool must be a single instance because
-   * they listen to blockchain events and all events must be handled by one object for efficiency
-   * @param {string} address - Pool contract address
-   * @param {*} provider - Optional custom provider
-   * @param {*} mongoOverride - Optional MongoDB instance override
-   * @returns {Pool} Singleton pool instance
-   */
-  static getPool(address, provider = null, mongoOverride = null) {
-    if (!Pool.#poolInstances.has(address)) {
-      Pool.#poolInstances.set(address, new Pool(address, Pool.#db, provider, mongoOverride));
-    }
-    return Pool.#poolInstances.get(address);
-  }
-
-  /**
-   * Get pool data from factory
-   * @param {string} token0Address - Token0 address
-   * @param {string} token1Address - Token1 address
-   * @param {number} fee - Pool fee
-   * @returns {Promise<Pool>} Pool
-   */
-  static async getPoolOfTokens(token0Address, token1Address, fee) {
-    try {
-      // Query MongoDB directly for pool with these specific tokens and fee
-      const existingPool = await this.#db.findPoolByTokensAndFee(
-        token0Address,
-        token1Address,
-        fee / 10000 // Convert to percentage format used in storage
-      );
-      if (existingPool) return this.getPool(existingPool.address);
-
-      // If not found in database, query the factory contract
-      const factoryContract = Pool.#contractsService.createFactoryContract();
-
-      const poolAddress = await factoryContract.read.getPool([token0Address, token1Address, fee]);
-
-      if (poolAddress && poolAddress !== '0x0000000000000000000000000000000000000000') {
-        return this.getPool(poolAddress);
-      } else {
-        throw new Error('Pool not found');
-      }
-    } catch (error) {
-      console.error('Error getting pool data:', error);
-      return null;
-    }
-  }
-
-  constructor(address, db, provider = null, mongoOverride = null) {
+  constructor(contract, tokens, poolModel) {
     super();
 
-    if (isValidEthereumAddress(address)) {
-      this.address = address;
-    } else {
-      throw new Error('Invalid pool address');
-    }
-    this.provider = provider || createProvider();
-    this.db = db;
-
-    this.contract = Pool.#contractsService.createPoolContract(address);
+    this.contract = contract;
+    this.tokens = tokens;
+    this.model = poolModel;
 
     // Pool-specific properties
-    this.info = null;
     this.isMonitoring = false;
     this.watchUnsubscriber = null;
+  }
+
+  get info() {
+    const promise = (async () => {
+      // Try to get from db first
+      let info = await this.model.get(this.address);
+
+      if (!info) {
+        // get from blockchain
+        const [token0Address, token1Address, fee, tickSpacing, slot0] = await Promise.all([
+          this.contract.read.token0(),
+          this.contract.read.token1(),
+          this.contract.read.fee(),
+          this.contract.read.tickSpacing(),
+          this.contract.read.slot0()
+        ]);
+
+        const [token0, token1] = await Promise.all([
+          this.tokens.get(token0Address),
+          this.tokens.get(token1Address)
+        ]);
+      }
+
+      Object.defineProperty(this, 'info', {value: info, writable: false});
+      return info;
+    })();
+    Object.defineProperty(this, 'info', {value: promise, writable: true});
+    return promise;
   }
 
   /**
@@ -106,7 +63,7 @@ class Pool extends EventEmitter {
   async getPoolInfo() {
     if (!this.info) {
       // Try to get from cache first
-      let cachedInfo = await this.db.getCachedPoolInfo(this.address);
+      let cachedInfo = await this.model.get(this.address);
 
       if (cachedInfo) {
         this.info = cachedInfo;
@@ -125,30 +82,15 @@ class Pool extends EventEmitter {
         this.contract.read.slot0()
       ]);
 
-      // Get token information and ensure they are cached in database
-      const [token0Info, token1Info] = await Promise.all([
-        Pool.#contractsService.getTokenInfo(token0Address),
-        Pool.#contractsService.getTokenInfo(token1Address)
-      ]);
-
-      // Cache tokens in database
-      await Promise.all([
-        this.db.cacheToken(token0Address, 42161, {
-          symbol: token0Info.symbol,
-          decimals: token0Info.decimals,
-          name: token0Info.name
-        }),
-        this.db.cacheToken(token1Address, 42161, {
-          symbol: token1Info.symbol,
-          decimals: token1Info.decimals,
-          name: token1Info.name
-        })
+      const [token0, token1] = await Promise.all([
+        this.tokens.get(token0Address),
+        this.tokens.get(token1Address)
       ]);
 
       // Prepare pool info for runtime use
       this.info = {
-        token0: token0Info, // Keep for runtime use
-        token1: token1Info, // Keep for runtime use
+        token0: token0, // Keep for runtime use
+        token1: token1, // Keep for runtime use
         fee: fee / 10000,
         tickSpacing,
         unlocked: slot0[6],
@@ -167,7 +109,7 @@ class Pool extends EventEmitter {
       };
 
       // Cache the information
-      await this.db.cachePoolInfo(this.address, poolDataForStorage);
+      await this.model.cachePoolInfo(this.address, poolDataForStorage);
     }
     return this.info;
   }
@@ -197,7 +139,7 @@ class Pool extends EventEmitter {
    */
   async getTVL() {
     try {
-      const tokenService = new TokenService(this.provider, this.db);
+      const tokenService = new TokenService(this.provider, this.model);
 
       // Get token information from TokenService
       const [token0Info, token1Info] = await Promise.all([
@@ -280,7 +222,7 @@ class Pool extends EventEmitter {
     this.monitoringData = null;
 
     // Update monitoring state in database
-    await this.db.savePoolState(this.address, {
+    await this.model.savePoolState(this.address, {
       priceMonitoringEnabled: false,
       updatedAt: new Date()
     });
@@ -330,7 +272,7 @@ class Pool extends EventEmitter {
   async close() {
     await this.stopMonitoring();
 
-    if (this.db) {
+    if (this.model) {
       // Note: mongoose connection is shared, so we don't close it here
       // await this.mongoose.disconnect();
     }
@@ -410,7 +352,7 @@ class Pool extends EventEmitter {
       // Prepare monitoring data for storage, excluding notifications
       const { notifications, ...monitoringDataForStorage } = this.monitoringData;
 
-      await this.db.savePoolState(this.address, {
+      await this.model.savePoolState(this.address, {
         ...monitoringDataForStorage,
         priceMonitoringEnabled: this.isMonitoring
       });
@@ -420,44 +362,114 @@ class Pool extends EventEmitter {
   }
 }
 
+
 /**
- * Pool Service wrapper for dependency injection
+ * Container registration function for Uniswap pools.
+ * Registers individual pool instances and pools collection service.
+ * @param {awilix.AwilixContainer} container - The Awilix container
+ * @returns {void}
  */
-class PoolService {
-  /**
-   * Create a new PoolService instance
-   */
-  constructor(contractsService ) {
-    // Set the contracts service dependency for the Pool class
-    Pool.setContractsService(contractsService);
-    this.contractsService = contractsService;
-  }
+module.exports = (container) => {
+  const poolModel = container.resolve('poolModel');
+  const poolsConfig = container.resolve('poolsConfig');
+  const tokenService = container.resolve('tokens');
+  const poolContract = container.resolve('poolContract');
 
-  /**
-   * Get a pool instance
-   * @param {string} address - Pool contract address
-   * @param {*} provider - Optional custom provider
-   * @param {*} mongoOverride - Optional MongoDB instance override
-   * @returns {Pool} Pool instance
-   */
-  getPool(address, provider = null, mongoOverride = null) {
-    return Pool.getPool(address, provider, mongoOverride);
-  }
+  // Get all enabled pools from config and register them individually
+  const enabledPools = poolsConfig.getEnabledPools();
+  const poolRegistrations = {};
 
-  /**
-   * Get pool data from factory
-   * @param {string} token0Address - Token0 address
-   * @param {string} token1Address - Token1 address
-   * @param {number} fee - Pool fee
-   * @returns {Promise<Pool>} Pool
-   */
-  async getPoolOfTokens(token0Address, token1Address, fee) {
-    return Pool.getPoolOfTokens(token0Address, token1Address, fee);
-  }
-}
+  enabledPools.forEach(poolInfo => {
+    const serviceName = `pools.${poolInfo.address.toLowerCase()}`;
+    poolRegistrations[serviceName] = awilix.asFunction(() => {
+      return new Pool(poolContract(poolInfo.address), poolModel);
+    }).singleton();
+  });
 
-module.exports = {
-  Pool,
-  PoolService,
-  getPool: Pool.getPool,
+  // Register all individual pools
+  container.register(poolRegistrations);
+
+  // Register the pools collection service
+  container.register({
+    pools: awilix.asFunction((cradle) => {
+      const poolInstances = {};
+      const poolAddresses = enabledPools.map(p => p.address);
+
+      // Create a proxy object that provides easy access to all pools
+      poolAddresses.forEach(address => {
+        const normalizedAddress = address.toLowerCase();
+        Object.defineProperty(poolInstances, normalizedAddress, {
+          get() {
+            return container.resolve(`pools.${normalizedAddress}`);
+          },
+          enumerable: true
+        });
+      });
+
+      return {
+        // Direct access to pool instances
+        ...poolInstances,
+
+        // Utility methods
+        getAllAddresses: () => poolAddresses,
+
+        getAll: () => poolAddresses.map(addr =>
+          container.resolve(`pools.${addr.toLowerCase()}`)
+        ),
+
+        getByAddress: (address) => {
+          const normalized = address.toLowerCase();
+          if (!poolAddresses.some(addr => addr.toLowerCase() === normalized)) {
+            throw new Error(`Pool ${address} is not registered`);
+          }
+          return container.resolve(`pools.${normalized}`);
+        },
+
+        getByPlatform: (platform, blockchain) => {
+          return enabledPools
+            .filter(p => p.platform === platform && p.blockchain === blockchain)
+            .map(p => container.resolve(`pools.${p.address.toLowerCase()}`));
+        },
+
+        getByTokens: async (token0Address, token1Address, fee) => {
+          try {
+            // Query database for pool with these specific tokens and fee
+            const existingPool = await db.findPoolByTokensAndFee(
+              token0Address,
+              token1Address,
+              fee / 10000 // Convert to percentage format used in storage
+            );
+            if (existingPool) {
+              return container.resolve(`pools.${existingPool.address.toLowerCase()}`);
+            }
+
+            // If not found in database, query the factory contract
+            const factoryContract = contractsService.createFactoryContract();
+            const poolAddress = await factoryContract.read.getPool([token0Address, token1Address, fee]);
+
+            if (poolAddress && poolAddress !== '0x0000000000000000000000000000000000000000') {
+              const normalized = poolAddress.toLowerCase();
+              if (poolAddresses.some(addr => addr.toLowerCase() === normalized)) {
+                return container.resolve(`pools.${normalized}`);
+              } else {
+                throw new Error(`Pool ${poolAddress} found but not in configured pool list`);
+              }
+            } else {
+              throw new Error('Pool not found');
+            }
+          } catch (error) {
+            console.error('Error getting pool by tokens:', error);
+            return null;
+          }
+        },
+
+        isPoolSupported: (address) => {
+          const normalized = address.toLowerCase();
+          return poolAddresses.some(addr => addr.toLowerCase() === normalized);
+        }
+      };
+    }).singleton(),
+  })
+
+  console.log(`Registered ${enabledPools.length} pools with 'pools.' namespace`);
 };
