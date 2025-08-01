@@ -30,95 +30,61 @@ const messageSchema = new Schema({
 });
 
 class MessageModel {
-  constructor(chatId, messageId) {
-    this.chatId = chatId;
-    this.messageId = messageId;
+  // Static utility method for generating composite IDs
+  static generateId(chatId, messageId) {
+    return `${chatId}_${messageId}`;
   }
 
-  generateId() {
-    return `${this.chatId}_${this.messageId}`;
-  };
+  // Save a TelegramMessage instance to database
+  static async saveMessage(messageInstance) {
+    const doc = new this({
+      chatId: messageInstance.chatId,
+      messageId: messageInstance.id,
+      type: messageInstance.constructor.name,
+      metadata: messageInstance.metadata || {}
+    });
 
-  async find(poolAddress, chatId) {
-    try {
-      const compositeId = `${poolAddress}_${chatId}`;
-      return await this.findById(compositeId).lean();
-    } catch (error) {
-      console.error(`Error getting pool message for ${poolAddress}:`, error.message);
-      return null;
-    }
+    return await doc.save();
   }
 
-  // Pool Message methods
-  async create(poolAddress, chatId, messageId, isMonitored = true) {
-    try {
-      const compositeId = `${poolAddress}_${chatId}`;
-      const poolMessage = {
-        _id: compositeId,
-        poolAddress,
-        chatId,
-        messageId,
-        isMonitored,
-        updatedAt: new Date()
-      };
-
-      await PoolMessage.findByIdAndUpdate(
-        compositeId,
-        poolMessage,
-        {upsert: true, new: true}
-      );
-    } catch (error) {
-      console.error(`Error saving pool message for ${poolAddress}:`, error.message);
+  // Create typed instance from database document
+  static createTypedInstance(doc, originalClass) {
+    if (!originalClass) {
+      console.warn(`Cannot create typed instance: class not provided for type ${doc.type}`);
+      return doc;
     }
-  }
 
-  async delete(poolAddress, chatId) {
-    try {
-      const compositeId = `${poolAddress}_${chatId}`;
-      await PoolMessage.findByIdAndDelete(compositeId);
+    // Create new instance with same prototype
+    const instance = Object.create(originalClass.prototype);
 
-      console.log(`Removed pool message for ${poolAddress} in chat ${chatId}`);
-    } catch (error) {
-      console.error(`Error removing pool message for ${poolAddress}:`, error.message);
-    }
-  }
+    // Copy basic properties
+    instance.id = doc.messageId;
+    instance.chatId = doc.chatId;
+    instance.metadata = doc.metadata || {};
 
-  async update(poolAddress, chatId, messageId) {
-    try {
-      const compositeId = `${poolAddress}_${chatId}`;
-      await PoolMessage.findByIdAndUpdate(
-        compositeId,
-        {
-          messageId,
-          updatedAt: new Date()
-        }
-      );
+    // Initialize constructor (this will set up any default values)
+    originalClass.call(instance);
 
-      console.log(`Updated message ID for pool message ${poolAddress} in chat ${chatId}`);
-    } catch (error) {
-      console.error(`Error updating pool message ID for ${poolAddress}:`, error.message);
-    }
-  }
-
-  async getMonitoredPoolMessages() {
-    try {
-      return await PoolMessage.find({
-        isMonitored: true
-      }).lean();
-    } catch (error) {
-      console.error('Error getting monitored pool messages:', error.message);
-      return [];
-    }
+    return instance;
   }
 }
 
 // Create compound index for efficient queries
 messageSchema.index({ chatId: 1, messageId: 1 }, { unique: true });
 
-// Pre-save middleware to automatically set the _id based on chatId and messageId
+// Pre-save middleware to automatically set the _id and type
 messageSchema.pre('save', function(next) {
-  if (!this._id) {
-    this._id = this.constructor.generateId(this.chatId, this.messageId);
+  if (!this._id && this.chatId && this.messageId) {
+    this._id = MessageModel.generateId(this.chatId, this.messageId);
+  }
+  next();
+});
+
+// Pre-validate middleware for update operations
+messageSchema.pre(['findOneAndUpdate', 'updateOne'], function(next) {
+  const update = this.getUpdate();
+  if (update.chatId && update.messageId && !update._id) {
+    update._id = MessageModel.generateId(update.chatId, update.messageId);
   }
   next();
 });
