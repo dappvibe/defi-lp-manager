@@ -4,7 +4,11 @@
   "description": "Automations to provide liquidity for Uniswap V3 pools",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:ui": "vitest --ui"
   },
   "keywords": [],
   "author": "",
@@ -15,8 +19,13 @@
     "alchemy-sdk": "3.5.9",
     "awilix": "^10.0.2",
     "dotenv": "^16.4.5",
+    "lodash": "^4.17.21",
     "mongoose": "^8.16.4",
     "node-telegram-bot-api": "^0.66.0",
     "viem": "^2.31.7"
+  },
+  "devDependencies": {
+    "mongodb-memory-server": "^10.1.4",
+    "vitest": "^3.2.4"
   }
 }

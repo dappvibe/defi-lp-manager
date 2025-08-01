@@ -3,7 +3,7 @@
  * Uses awilix to manage service dependencies
  */
 const awilix = require('awilix');
-
+const merge = require('lodash/merge');
 const { config } = require('./config');
 const PoolsConfig = require("./config/pools");
 
@@ -11,7 +11,7 @@ const PoolsConfig = require("./config/pools");
  * Create and configure the dependency injection container
  * @returns {awilix.AwilixContainer} Configured container
  */
-function createContainer(configOverrides) {
+function createContainer(configOverrides = {}) {
   const container = awilix.createContainer({
     injectionMode: awilix.InjectionMode.CLASSIC
   });
@@ -19,7 +19,7 @@ function createContainer(configOverrides) {
   // Register configuration
   container.register({
     container: awilix.asValue(container),
-    config: awilix.asValue(config),
+    config: awilix.asValue(merge({}, config, configOverrides)),
     poolsConfig: awilix.asClass(PoolsConfig).singleton()
   });
 
