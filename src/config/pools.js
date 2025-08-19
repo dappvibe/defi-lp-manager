@@ -8,25 +8,26 @@ class PoolsConfig {
     this.pancakeswap = {
       arbitrum: [
         // USDC/WETH (0.01% fee)
-        '0x7fCDC35463E3770c2fB992716Cd070B63540b947',
+        '0x7fcdc35463e3770c2fb992716cd070b63540b947',
         // USDC/WETH (0.05% fee)
-        '0xd9e2a1a61B6E61b275cEc326465d417e52C1b95c',
+        '0xd9e2a1a61b6e61b275cec326465d417e52c1b95c',
         // USDT/WETH (0.01% fee)
-        '0x389938CF14Be379217570D8e4619E51fBDafaa21',
+        '0x389938cf14be379217570d8e4619e51fbdafaa21',
         // USDC/WBTC (0.05% fee)
-        '0x843aC8dc6D34AEB07a56812b8b36429eE46BDd07',
+        '0x843ac8dc6d34aeb07a56812b8b36429ee46bdd07',
         // USDT/WETH (0.05% fee)
-        '0x0BaCc7a9717e70EA0DA5Ac075889Bd87d4C81197',
+        '0x0bacc7a9717e70ea0da5ac075889bd87d4c81197',
         // USDC/WBTC (0.01% fee)
-        '0x5A17cbf5F866BDe11C28861a2742764Fac0Eba4B',
+        '0x5a17cbf5f866bde11c28861a2742764fac0eba4b',
         // USDC/ARB (0.05% fee)
-        '0x9fFCA51D23Ac7F7df82da414865Ef1055E5aFCc3',
+        '0x9ffca51d23ac7f7df82da414865ef1055e5afcc3',
         // USDT/LINK (0.05% fee)
-        '0x2d0Bb2f6D514118642f8588B1c22043e865EaA88',
+        '0x2d0bb2f6d514118642f8588b1c22043e865eaa88',
         // CAKE/USDC (0.25% fee)
-        '0xDaA5B2e06cA117f25c8d62f7f7FBaedcF7a939f4'
+        '0xdaa5b2e06ca117f25c8d62f7f7fbaedcf7a939f4'
       ]
     };
+
   }
 
   /**
