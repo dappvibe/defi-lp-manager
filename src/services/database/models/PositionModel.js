@@ -16,7 +16,7 @@ const positionSchema = new Schema({
 positionSchema.index({ walletAddress: 1, tokenId: 1 }, { unique: true });
 
 class PositionModel {
-  async save(position) {
+  static async save(position) {
     try {
       const { tokenId, walletAddress, ...positionData } = position;
       const positionDoc = {
@@ -36,7 +36,7 @@ class PositionModel {
     }
   }
 
-  async get(tokenId, walletAddress) {
+  static async get(tokenId, walletAddress) {
     try {
       return await Position.findOne({
         tokenId,
@@ -48,7 +48,7 @@ class PositionModel {
     }
   }
 
-  async find(walletAddress) {
+  static async find(walletAddress) {
     try {
       return await Position.find({
         walletAddress
@@ -59,7 +59,7 @@ class PositionModel {
     }
   }
 
-  async remove(tokenId, walletAddress) {
+  static async remove(tokenId, walletAddress) {
     try {
       await Position.deleteOne({
         tokenId,

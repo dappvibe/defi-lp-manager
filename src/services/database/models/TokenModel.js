@@ -15,16 +15,16 @@ tokenSchema.pre('save', function() {
 });
 
 class TokenModel {
-  async get(address) {
+  static async get(address) {
     try {
-      return await TokenModel.findById(address.toLowerCase()).lean();
+      return await this.findById(address.toLowerCase()).lean();
     } catch (error) {
       console.error(`Error getting cached token for ${address}:`, error);
       return null;
     }
   }
 
-  async save(address, chainId, tokenData) {
+  static async save(address, chainId, tokenData) {
     try {
       const normalizedAddress = address.toLowerCase();
       const tokenDoc = {
@@ -45,7 +45,7 @@ class TokenModel {
     }
   }
 
-  async all() {
+  static async all() {
     try {
       return await TokenModel.find({}).lean();
     } catch (error) {
@@ -54,7 +54,7 @@ class TokenModel {
     }
   }
 
-  async clear() {
+  static async clear() {
     try {
       await TokenModel.deleteMany({});
       console.log('Cleared token cache');
@@ -63,7 +63,7 @@ class TokenModel {
     }
   }
 
-  async remove(address) {
+  static async remove(address) {
     try {
       await TokenModel.findByIdAndDelete(address.toLowerCase());
     } catch (error) {
@@ -71,7 +71,7 @@ class TokenModel {
     }
   }
 
-  async findBySymbol(tokenSymbol) {
+  static async findBySymbol(tokenSymbol) {
     try {
       return await TokenModel.find({
         symbol: { $regex: new RegExp(tokenSymbol, 'i') }
@@ -82,7 +82,7 @@ class TokenModel {
     }
   }
 
-  async findByAddresses(addresses) {
+  static async findByAddresses(addresses) {
     try {
       return await TokenModel.find({
         address: { $in: addresses }

@@ -38,7 +38,7 @@ class WalletModel {
    * Get all monitored wallets across all chats
    * @returns {Promise<Array<string>>} - Array of unique wallet addresses
    */
-  async getAll() {
+  static async getAll() {
     try {
       return await this.distinct('address');
     } catch (error) {

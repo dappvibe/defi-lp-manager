@@ -28,7 +28,7 @@ class PoolModel {
    * @param {Array|Object} pools - PoolModel or array of pools to populate
    * @returns {Array|Object} Pools with populated token data
    */
-  async populateTokens(pools) {
+  static async populateTokens(pools) {
     if (!pools) return pools;
 
     const isArray = Array.isArray(pools);
@@ -67,7 +67,7 @@ class PoolModel {
     return isArray ? populatedPools : populatedPools[0];
   }
 
-  async save(poolAddress, poolData) {
+  static async save(poolAddress, poolData) {
     try {
       const updateData = {
         address: poolAddress,
@@ -85,7 +85,7 @@ class PoolModel {
     }
   }
 
-  async loadAll() {
+  static async loadAll() {
     try {
       const pools = await PoolModel.find({}).lean();
       const populatedPools = await this.populateTokens(pools);
@@ -104,7 +104,7 @@ class PoolModel {
     }
   }
 
-  async remove(poolAddress) {
+  static async remove(poolAddress) {
     try {
       await PoolModel.deleteOne({ address: poolAddress });
       console.log(`Removed pool ${poolAddress} from database`);
@@ -113,9 +113,9 @@ class PoolModel {
     }
   }
 
-  async get(poolAddress) {
+  static async get(poolAddress) {
     try {
-      const poolInfo = await PoolModel.findOne({ address: poolAddress }).lean();
+      const poolInfo = await this.findOne({ address: poolAddress }).lean();
       if (poolInfo) {
         return await this.populateTokens(poolInfo);
       }
@@ -126,7 +126,7 @@ class PoolModel {
     }
   }
 
-  async all() {
+  static async all() {
     try {
       const pools = await PoolModel.find({}).lean();
       const populatedPools = await this.populateTokens(pools);
@@ -138,7 +138,7 @@ class PoolModel {
     }
   }
 
-  async findByTokenAddress(tokenAddress) {
+  static async findByTokenAddress(tokenAddress) {
     try {
       const normalizedAddress = tokenAddress.toLowerCase();
 
@@ -158,7 +158,7 @@ class PoolModel {
     }
   }
 
-  async findByTokenSymbol(tokenSymbol) {
+  static async findByTokenSymbol(tokenSymbol) {
     try {
       const tokens = await Token.find({
         symbol: { $regex: new RegExp(tokenSymbol, 'i') }
@@ -185,7 +185,7 @@ class PoolModel {
     }
   }
 
-  async findByPlatformAndBlockchain(platform, blockchain) {
+  static async findByPlatformAndBlockchain(platform, blockchain) {
     try {
       const query = {
         platform: platform.toLowerCase(),
@@ -202,7 +202,7 @@ class PoolModel {
     }
   }
 
-  async findByTokensAndFee(token0Address, token1Address, fee) {
+  static async findByTokensAndFee(token0Address, token1Address, fee) {
     try {
       const normalizedToken0 = token0Address.toLowerCase();
       const normalizedToken1 = token1Address.toLowerCase();
