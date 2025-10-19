@@ -43,7 +43,7 @@ class Telegram extends TelegramBot
       if (!message instanceof TelegramMessage) throw new Error('Invalid message type');
 
       if (!message.id) {
-        return this.sendMessage(message.chatId, message.toString(), message.getOptions()).then(reply => {
+        return this.sendMessage(message.chatId, message.toString(), message.options).then(reply => {
           message.id = reply.message_id;
           message.metadata = reply;
           return message;

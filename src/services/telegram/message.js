@@ -5,7 +5,7 @@ class TelegramMessage {
         this.metadata = null;
     }
 
-    getOptions = () => {};
+    get options() {};
 }
 
 module.exports = TelegramMessage;
