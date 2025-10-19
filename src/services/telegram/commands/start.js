@@ -1,17 +1,40 @@
+const TelegramMessage = require("../message");
+const AbstractHandler = require("../handler");
+
+/**
+ * Represents a wallet invitation message
+ */
+class NoWalletsMessage extends TelegramMessage {
+  constructor(chatId) {
+    super();
+    this.chatId = chatId;
+  }
+
+  toString() {
+    let content = "💼 **Get Started with Wallet Tracking**\n\n";
+    content += "📍 You don't have any wallets tracked yet!\n\n";
+    content += "🚀 **Add your first wallet to:**\n";
+    content += "• Monitor your Uniswap V3 positions\n";
+    content += "• Track position value changes\n";
+    content += "• Get alerts on important events\n\n";
+    content += "💡 Use `/wallet <address>` to start tracking a wallet.\n\n";
+    return content;
+  }
+}
+
 /**
  * Represents a start message with its content and formatting
  */
-class StartMessage {
+class StartMessage extends TelegramMessage {
   /**
    * Create a start message instance
    * @param {number} chatId - The chat ID
-   * @param {Object} monitoredPools - Object containing monitored pools
-   * @param {Object} positionMonitor - Position monitor instance
+   * @param wallets
    */
-  constructor(chatId, monitoredPools, positionMonitor) {
+  constructor(chatId, wallets) {
+    super();
     this.chatId = chatId;
-    this.monitoredPools = monitoredPools;
-    this.positionMonitor = positionMonitor;
+    this.wallets = wallets;
   }
 
   /**
@@ -20,59 +43,19 @@ class StartMessage {
    */
   toString() {
     let content = "🤖 **DeFi LP Manager Bot**\n\n";
+
     content += "🔧 **What I can do:**\n";
     content += "• Monitor Uniswap V3 liquidity pool prices\n";
     content += "• Track wallet positions and changes\n";
     content += "• Set price alerts for monitored pools\n";
     content += "• Display current liquidity positions\n\n";
-    content += "📊 **Current Monitoring Status:**\n\n";
 
-    content += this._getPoolsSection();
-    content += this._getWalletsSection();
-    content += "Use /help for available commands.";
+    content += "Your wallets:\n";
+    this.wallets.forEach(wallet => {
+      content += `• ${wallet.address} (${wallet.network})\n`;
+    })
 
     return content;
-  }
-
-  /**
-   * Get the pools section content
-   * @returns {string} The pools section
-   */
-  _getPoolsSection() {
-    const poolsInChat = Object.entries(this.monitoredPools).filter(
-      ([_, poolData]) => poolData.chatId === this.chatId
-    );
-
-    if (poolsInChat.length > 0) {
-      let section = `🏊 **Pools (${poolsInChat.length}):**\n`;
-      poolsInChat.forEach(([address, data], idx) => {
-        const pair = `${data.token1?.symbol || '???'}/${data.token0?.symbol || '???'}`;
-        const price = data.lastPriceT1T0 ? data.lastPriceT1T0.toFixed(8) : 'N/A';
-        section += `${idx + 1}. ${pair} - ${price}\n`;
-        section += `   \`${address}\`\n`;
-      });
-      return section + "\n";
-    } else {
-      return "🏊 **Pools:** None monitored in this chat\n\n";
-    }
-  }
-
-  /**
-   * Get the wallets section content
-   * @returns {string} The wallets section
-   */
-  _getWalletsSection() {
-    const monitoredWallets = this.positionMonitor.getMonitoredWallets();
-
-    if (monitoredWallets.length > 0) {
-      let section = `💼 **Wallets (${monitoredWallets.length}):**\n`;
-      monitoredWallets.forEach((addr, idx) => {
-        section += `${idx + 1}. \`${addr}\`\n`;
-      });
-      return section + "\n";
-    } else {
-      return "💼 **Wallets:** None monitored\n\n";
-    }
   }
 }
 
@@ -80,34 +63,43 @@ class StartMessage {
  * Handler for /start command
  * Sends welcome message to the user and shows current monitoring status
  */
-class StartHandler {
+class StartHandler extends AbstractHandler {
   /**
    * Create a new StartHandler instance
-   * @param poolsConfig
-   * @param positionModel
+   * @param userModel
    */
-  constructor(poolsConfig, positionModel) {
-    this.monitoredPools = poolsConfig.getPools('pancakeswap', 'arbitrum');
-    this.positionModel = positionModel;
+  constructor(userModel) {
+    super(userModel);
   }
 
   /**
    * Register command handlers with the bot
    */
-  attach(bot) {
+  listenOn(bot) {
     this.bot = bot;
     this.bot.onText(/\/start/, (msg) => {
-      return this.handleText(msg);
+      this.getUser(msg).then(
+        user => this.handle(msg, user)
+      )
     });
   }
 
   /**
    * Handle start command
    * @param {Object} msg - Message object from Telegram
+   * @param user
    */
-  async handleText(msg) {
+  async handle(msg, user) {
     const chatId = msg.chat.id;
-    const startMessage = new StartMessage(chatId, this.monitoredPools, this.positionModel);
+    const wallets = user.getWallets('arbitrum');
+    if (!wallets || wallets.length === 0) {
+      const walletMessage = new NoWalletsMessage(chatId);
+      await this.bot.sendMessage(chatId, walletMessage.toString(), { parse_mode: 'Markdown' });
+      return;
+    }
+
+    // display current status
+    const startMessage = new StartMessage(chatId, wallets);
     await this.bot.sendMessage(chatId, startMessage.toString(), { parse_mode: 'Markdown' });
   }
 
