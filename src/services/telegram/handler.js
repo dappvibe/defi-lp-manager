@@ -1,24 +1,21 @@
 class AbstractHandler {
   constructor(userModel) {
-    this.user = null;
     this.UserModel = userModel;
   }
 
   /**
    * Get user from database or create new user if not found.
-   * Populates this.user with the user object.
+   * Should NOT store in this.user so that changes in database are reflected.
    *
    * @param msg
-   * @return User
+   * @return Promise<User>
    */
   async getUser(msg) {
-    if (!this.user) {
-      this.user = await this.UserModel.getByTelegramId(msg.from.id);
+    let user = await this.UserModel.getByTelegramId(msg.from.id);
+    if (!user) { // not registered
+      user = await this.UserModel.addUser(msg.from.id);
     }
-    if (!this.user) { // not registered
-      this.user = await this.UserModel.addUser(msg.from.id);
-    }
-    return this.user;
+    return user;
   }
 }
 
