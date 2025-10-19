@@ -1,11 +1,11 @@
 class TelegramMessage {
-    constructor() {
-        this.id = null;
-        this.chatId = null;
-        this.metadata = null;
-    }
+  constructor({id, chatId, metadata} = {}) {
+    this.id = id;
+    this.chatId = chatId;
+    this.metadata = metadata;
+  }
 
-    get options() {};
+  get options() {};
 }
 
 module.exports = TelegramMessage;

@@ -38,8 +38,17 @@ class Telegram extends TelegramBot
     this.lastEditTimes = {};
   }
 
-  send(message) {
+  send(message, chatId = null) {
     try {
+      if (typeof message === 'string') {
+        if (!chatId) throw new Error('Chat ID is required for text messages');
+        let text = message;
+        message = new class extends TelegramMessage {
+          toString() {
+            return text;
+          }
+        }({chatId: chatId});
+      }
       if (!message instanceof TelegramMessage) throw new Error('Invalid message type');
 
       if (!message.id) {
