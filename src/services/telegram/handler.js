@@ -8,7 +8,7 @@ class AbstractHandler {
    * Should NOT store in this.user so that changes in database are reflected.
    *
    * @param msg
-   * @return Promise<User>
+   * @return Promise<UserModel>
    */
   async getUser(msg) {
     let user = await this.UserModel.getByTelegramId(msg.from.id);
