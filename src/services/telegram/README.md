@@ -13,7 +13,7 @@ The throttling is configured via environment variables:
 
 ### Implementation Details
 
-The bot implementation uses `Throttler` utility to:
+The telegram implementation uses `Throttler` utility to:
 
 1. Limit overall API requests to stay under Telegram's rate limits
 2. Add special handling for message edits, which have stricter rate limits

@@ -8,23 +8,19 @@
  * @returns {Object} Application context with initialized services
  */
 async function startApp() {
-    // Create and configure the dependency injection container
     const container = require('./container')();
-
     const config = container.resolve('config');
 
-    // Connect to database
     const db = container.resolve('mongoose');
-    await db.connect(config.db.uri);
+    await db.connect(config.db.uri).then(() => console.log('Connected to MongoDB'));
 
-    // Get other services from container
     const provider = container.resolve('provider');
-    const bot = container.resolve('bot');
+    const telegram = container.resolve('telegram');
 
     return {
         container,
         provider,
-        bot,
+        telegram,
         db,
     };
 }
