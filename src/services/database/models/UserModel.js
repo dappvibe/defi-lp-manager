@@ -58,8 +58,22 @@ class UserModel {
       return;
     }
 
-    this.wallets.push({ network, address });
+    const wallet = { network, address: address.toLowerCase() };
+    this.wallets.push(wallet);
     await this.save();
+    return wallet;
+  }
+
+  async removeWallet(network, address) {
+    try {
+      this.wallets = this.wallets.filter(
+        w => !(w.address === address.toLowerCase() && w.network === network)
+      );
+      await this.save();
+    } catch (e) {
+      console.error(e);
+      return false;
+    }
   }
 }
 
