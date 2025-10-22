@@ -26,7 +26,7 @@ class Telegram extends TelegramBot
     startHandler.listenOn(this)
     helpHandler.listenOn(this)
     poolHandler.listenOn(this)
-    //walletHandler.listenOn(this)
+    walletHandler.listenOn(this)
     //lpHandler.listenOn(this)
 
     // Initialize throttling
