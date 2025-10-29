@@ -20,8 +20,8 @@ async function connectTestDB() {
   });
 
   const mongoUri = mongoServer.getUri();
-
-  console.log('Connected to in-memory MongoDB for testing');
+  await mongoose.connect(mongoUri);
+  console.log('Connected to in-memory MongoDB');
 }
 
 /**
