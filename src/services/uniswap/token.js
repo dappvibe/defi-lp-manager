@@ -1,13 +1,14 @@
 const awilix = require('awilix');
 const { Token } = require('@uniswap/sdk-core');
 
-class TokenService {
-  constructor(erc20Factory, tokenModel) {
-    this.chainId = 42161; // FIXME
+Token.prototype.toString = function() { return this.address.toLowerCase(); };
+
+class TokenService
+{
+  constructor(erc20Factory, tokenModel, chainId) {
+    this.chainId = chainId;
     this.erc20Factory = erc20Factory;
     this.model = tokenModel;
-
-    this.tokens = new Map(); // Keep in-memory cache for performance
   }
 
   /**
@@ -16,29 +17,21 @@ class TokenService {
    * @return {Promise<*|Token>} Uniswap Token instance
    */
   async get(address) {
-    if (this.tokens.has(address)) return this.tokens.get(address);
-
-    let token;
+    const _id = this.model.id(this.chainId, address);
     const contract = this.erc20Factory(address);
 
-    // Check MongoDB cache
-    const row = await this.model.get(address);
-    if (row) {
-      token = new Token(row.chainId, row.address, row.decimals, row.symbol, row.name);
-    }
-    else {
+    let doc = await this.model.findById(_id);
+    if (!doc) {
       const [symbol, decimals, name] = await Promise.all([
         contract.read.symbol(),
         contract.read.decimals(),
         contract.read.name()
       ]);
-      token = new Token(this.chainId, address, decimals, symbol, name);
-      await this.model.save(address, this.chainId, { symbol, decimals, name });
+      doc = await this.model.create({ _id, symbol, decimals, name });
     }
 
-    token.contract = contract;
-
-    this.tokens.set(address, token);
+    const token = doc.toToken();
+    token.abi = contract;
     return token;
   }
 }

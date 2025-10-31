@@ -1,98 +1,29 @@
 const {Schema} = require("mongoose");
+const {Token} = require("@uniswap/sdk-core");
+
 const tokenSchema = new Schema({
-  _id: { type: String, required: true },
-  address: { type: String, required: true, unique: true, index: true },
-  chainId: { type: Number, required: true, index: true },
-  symbol: { type: String, required: true, index: true },
-  decimals: { type: Number, required: true },
+  _id: String,
   name: String,
-  cachedAt: { type: Date, default: Date.now, index: true }
+  symbol: String,
+  decimals: Number,
 }, { _id: false });
 
-// Set address as the primary key
-tokenSchema.pre('save', function() {
-  this._id = this.address;
-});
+tokenSchema.virtual('chainId').get(function() { return +this._id.split(':')[0]; });
+tokenSchema.virtual('address').get(function() { return this._id.split(':')[1]; });
 
 class TokenModel {
-  static async get(address) {
-    try {
-      return await this.findById(address.toLowerCase()).lean();
-    } catch (error) {
-      console.error(`Error getting cached token for ${address}:`, error);
-      return null;
-    }
-  }
+  /**
+   * _id must be manually set on doc creation
+   * @param chainId
+   * @param address
+   * @return {string}
+   */
+  static id(chainId, address) { return `${chainId}:${address.toLowerCase()}`; }
 
-  static async save(address, chainId, tokenData) {
-    try {
-      const normalizedAddress = address.toLowerCase();
-      const tokenDoc = {
-        _id: normalizedAddress,
-        address: normalizedAddress,
-        chainId,
-        ...tokenData,
-        cachedAt: new Date()
-      };
-
-      await TokenModel.findByIdAndUpdate(
-        normalizedAddress,
-        tokenDoc,
-        { upsert: true, new: true }
-      );
-    } catch (error) {
-      console.error(`Error caching token for ${address}:`, error);
-    }
-  }
-
-  static async all() {
-    try {
-      return await TokenModel.find({}).lean();
-    } catch (error) {
-      console.error('Error getting all cached tokens:', error);
-      return [];
-    }
-  }
-
-  static async clear() {
-    try {
-      await TokenModel.deleteMany({});
-      console.log('Cleared token cache');
-    } catch (error) {
-      console.error('Error clearing token cache:', error);
-    }
-  }
-
-  static async remove(address) {
-    try {
-      await TokenModel.findByIdAndDelete(address.toLowerCase());
-    } catch (error) {
-      console.error(`Error removing token ${address} from cache:`, error);
-    }
-  }
-
-  static async findBySymbol(tokenSymbol) {
-    try {
-      return await TokenModel.find({
-        symbol: { $regex: new RegExp(tokenSymbol, 'i') }
-      });
-    } catch (error) {
-      console.error(`Error finding tokens by symbol ${tokenSymbol}:`, error.message);
-      return [];
-    }
-  }
-
-  static async findByAddresses(addresses) {
-    try {
-      return await TokenModel.find({
-        address: { $in: addresses }
-      }).lean();
-    } catch (error) {
-      console.error('Error finding tokens by addresses:', error);
-      return [];
-    }
+  toToken() {
+    return new Token(this.chainId, this.address, this.decimals, this.symbol, this.name);
   }
 }
 
-tokenSchema.loadClass(TokenModel)
+tokenSchema.loadClass(TokenModel);
 module.exports = (mongoose) => mongoose.model('Token', tokenSchema);
