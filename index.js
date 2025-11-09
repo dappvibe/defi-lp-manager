@@ -2,23 +2,18 @@
  * Main application entry point
  * This file is responsible for starting the application and handling shutdown
  */
-
-// Import application module
-const { startApp, cleanupApp } = require('./src/app');
-
-// Application context
-let appContext;
-
-/**
- * Start the application
- */
-async function main() {
-  appContext = await startApp();
-  console.log('Application started successfully.');
-}
-
 process.on('unhandledRejection', console.error);
 process.on('uncaughtException', console.error);
+
+const App = require('./src/app');
+
+let app;
+
+async function main() {
+  app = new App();
+  await app.start();
+  console.log('Application started successfully.');
+}
 
 /**
  * Graceful shutdown handling
@@ -26,9 +21,7 @@ process.on('uncaughtException', console.error);
 process.on('SIGINT', async () => {
   console.log('Shutting down application...');
 
-  if (appContext) {
-    await cleanupApp(appContext);
-  }
+  if (app) await app.stop();
 
   console.log('Shutdown complete.');
   process.exit(0);

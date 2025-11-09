@@ -12,9 +12,11 @@
 // Load .env to run with live API's AND database (use with CAUTION!)
 require('dotenv').config({path: '.env.example'});
 
-const createAppContainer = require("../src/container");
+import App from '../src/app';
 
-global.container =  createAppContainer({});
+const app = new App();
+
+global.container =  app.container;
 
 beforeAll(async () => {
   const config = container.resolve('config');
