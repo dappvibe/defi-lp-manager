@@ -9,10 +9,10 @@ const requiredVars = ['ALCHEMY_API_KEY', 'TELEGRAM_BOT_TOKEN'];
 
 // Check for required environment variables
 for (const varName of requiredVars) {
-    if (!process.env[varName]) {
-        console.error(`Missing ${varName} environment variable.`);
-        process.exit(1);
-    }
+  if (!process.env[varName]) {
+    console.error(`Missing ${varName} environment variable.`);
+    process.exit(1);
+  }
 }
 
 /**
@@ -20,26 +20,26 @@ for (const varName of requiredVars) {
  * Central place for all environment variables and defaults
  */
 const config = {
-    // Blockchain configuration
-    blockchain: {
-        alchemyApiKey: process.env.ALCHEMY_API_KEY,
-        network: process.env.BLOCKCHAIN_NETWORK || 'arbitrum',
-    },
+  // Blockchain configuration
+  blockchain: {
+    alchemyApiKey: process.env.ALCHEMY_API_KEY,
+    network: process.env.BLOCKCHAIN_NETWORK || 'arbitrum',
+  },
 
-    // Telegram bot configuration
-    telegram: {
-        botToken: process.env.TELEGRAM_BOT_TOKEN,
-        timezone: process.env.TELEGRAM_TIMEZONE || 'Asia/Phnom_Penh',
-        rateLimit: {
-            maxRequestsPerSecond: parseInt(process.env.TELEGRAM_MAX_REQUESTS_PER_SECOND || '30', 10),
-            messageEditDelay: parseInt(process.env.TELEGRAM_MESSAGE_EDIT_DELAY || '3000', 10), // 3 seconds between edits
-        },
+  // Telegram bot configuration
+  telegram: {
+    botToken: process.env.TELEGRAM_BOT_TOKEN,
+    timezone: process.env.TELEGRAM_TIMEZONE || 'Asia/Phnom_Penh',
+    rateLimit: {
+      maxRequestsPerSecond: parseInt(process.env.TELEGRAM_MAX_REQUESTS_PER_SECOND || '30', 10),
+      messageEditDelay: parseInt(process.env.TELEGRAM_MESSAGE_EDIT_DELAY || '3000', 10), // 3 seconds between edits
     },
+  },
 
-    // Database configuration
-    db: {
-        uri: process.env.MONGODB_URI || 'mongodb://mongodb:27017/defi-lp-manager',
-    },
+  // Database configuration
+  db: {
+    uri: process.env.MONGODB_URI || 'mongodb://mongodb:27017/defi-lp-manager',
+  },
 };
 
 module.exports = config;
