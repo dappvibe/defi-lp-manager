@@ -27,7 +27,6 @@ class PoolsConfig {
         '0xdaa5b2e06ca117f25c8d62f7f7fbaedcf7a939f4'
       ]
     };
-
   }
 
   /**
