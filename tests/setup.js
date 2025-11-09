@@ -9,7 +9,7 @@
  * See .env.example for details.
  */
 
-// Load .env to run with live API's AND database (use with CAUTION!)
+// To debug with live API's AND database comment out this line (use with CAUTION!)
 require('dotenv').config({path: '.env.example'});
 
 import App from '../src/app';
