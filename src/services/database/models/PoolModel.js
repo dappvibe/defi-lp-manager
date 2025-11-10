@@ -33,25 +33,34 @@ class PoolModel {
       fee
     });
     if (!doc) {
-      const address = await PoolModel.poolFactoryContract.read.getPool([token0, token1, fee]);
-      if (!address || address === '0x0000000000000000000000000000000000000000') {
-        throw new Error(`Pool not found onchain (${chainId}) for tokens ${token0.address}/${token1.address} with fee ${fee}`);
-      }
-
-      token0 = await PoolModel.tokenModel.findOrCreate(chainId, token0);
-      token1 = await PoolModel.tokenModel.findOrCreate(chainId, token1);
-
-      doc = await this.create({
-        _id: PoolModel.id(chainId, address),
-        chainId,
-        address,
-        token0: token0.getId(),
-        token1: token1.getId(),
-        fee
-      });
+      doc = this.fromBlockchain(token0, token1, fee);
+      await doc.save();
     }
 
     return doc;
+  }
+
+  static async fromBlockchain(token0, token1, fee) {
+    const chainId = await PoolModel.poolFactoryContract.provider.getChainId();
+
+    // first find pool contract address from PoolFactoryV3
+    const address = await PoolModel.poolFactoryContract.read.getPool([token0, token1, fee]);
+    if (!address || address === '0x0000000000000000000000000000000000000000') {
+      throw new Error(`Pool not found onchain (${chainId}) for tokens ${token0}/${token1} with fee ${fee}`);
+    }
+
+    // Make sure dependant tokens exists in the db
+    token0 = await PoolModel.tokenModel.findOrCreate(chainId, token0);
+    token1 = await PoolModel.tokenModel.findOrCreate(chainId, token1);
+
+    return await this.create({
+      _id: PoolModel.id(chainId, address),
+      chainId,
+      address,
+      token0: token0.getId(),
+      token1: token1.getId(),
+      fee
+    });
   }
 
   async slot0() {

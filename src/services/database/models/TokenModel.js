@@ -3,17 +3,21 @@ const {Token} = require("@uniswap/sdk-core");
 
 const tokenSchema = new Schema({
   _id: String,
+  chainId: Number,
   name: String,
   symbol: String,
   decimals: Number,
 }, { _id: false });
 
-tokenSchema.virtual('chainId').get(function() { return +this._id.split(':')[0]; });
 tokenSchema.virtual('address').get(function() { return this._id.split(':')[1]; });
 
 class TokenModel {
   static chainId;
   static erc20Factory;
+
+  getId() {
+    return TokenModel.id(this.chainId, this.address);
+  }
 
   /**
    * _id must be manually set on doc creation
@@ -30,17 +34,29 @@ class TokenModel {
 
     let doc = await this.findById(_id);
     if (!doc) {
-      const contract = TokenModel.erc20Factory(address);
-      const [symbol, decimals, name] = await Promise.all([
-        contract.read.symbol(),
-        contract.read.decimals(),
-        contract.read.name()
-      ]);
-      doc = await this.create({ _id, symbol, decimals, name });
+      doc = this.fromBlockchain(address);
+      await doc.save();
     }
 
     // Until app wants to send tokens or check balance ERC20 contract is not attached
 
+    return doc;
+  }
+
+  /**
+   * @param address
+   * @return {Promise<TokenModel>}
+   */
+  static async fromBlockchain(address) {
+    const contract = TokenModel.erc20Factory(address);
+    const doc = new this;
+    await Promise.all([
+      contract.provider.getChainId().then(c => doc.chainId = c),
+      contract.read.symbol().then(s => doc.symbol = s),
+      contract.read.decimals().then(d => doc.decimals = d),
+      contract.read.name().then(n => doc.name = n)
+    ]);
+    doc._id = this.id(doc.chainId, address);
     return doc;
   }
 
