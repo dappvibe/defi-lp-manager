@@ -1,6 +1,7 @@
 const {Schema} = require("mongoose");
+const { EventEmitter } = require('events');
 const { calculatePrice } = require('../../uniswap/utils');
-const { Position: UniswapPosition, Pool: UniswapPool, tickToPrice} = require('@uniswap/v3-sdk');
+const { Pool: UniswapPool, tickToPrice} = require('@uniswap/v3-sdk');
 
 const poolSchema = new Schema({
   _id: String, // chainId:address
@@ -32,6 +33,7 @@ class PoolModel {
   static tokenModel;
 
   contract; // attached instance
+  swapListener = null;
 
   static id(chainId, address) { return `${chainId}:${address.toLowerCase()}`; }
 
@@ -129,6 +131,58 @@ class PoolModel {
     return token0Amount * prices.current + token1Amount;
   }
 
+  /**
+   * Listen for prices and emit 'swap' events on this object for each trade.
+   */
+  async startMonitoring() {
+    if (this.swapListener) throw new Error('Pool is already monitoring');
+
+    this.swapListener = this.contract.watchEvent.Swap(
+      {}, // watch all swaps
+      {
+        onLogs: (logs) => {
+          logs.forEach((log) => {
+            const { args } = log;
+            if (!args) return; // no idea why some perfectly legit Swap's come without parsed arguments, every other event does
+            const { sqrtPriceX96, amount0, amount1, tick, liquidity, protocolFeesToken0, protocolFeesToken1 } = args;
+
+            const event = {
+              tick,
+              liquidity,
+              price: parseFloat(calculatePrice(sqrtPriceX96, this.token0.decimals, this.token1.decimals)),
+              amount0: this.token0.getFloatAmount(amount0),
+              amount1: this.token1.getFloatAmount(amount1),
+              protocolFeesToken0: this.token0.getFloatAmount(protocolFeesToken0),
+              protocolFeesToken1: this.token1.getFloatAmount(protocolFeesToken1),
+            };
+
+            this.emit('swap', event);
+          })
+        },
+        onError: (error) => {
+          console.error(`Error monitoring pool ${this.address}:`, error.message);
+          this.stopMonitoring();
+        }
+      }
+    );
+  }
+
+  /**
+   * Stop monitoring this pool
+   */
+  async stopMonitoring() {
+    if (this.swapListener) {
+      this.swapListener();
+      this.swapListener = null;
+    }
+
+    // Update monitoring state in database
+    /*await this.model.savePoolState(this.address, {
+      priceMonitoringEnabled: false,
+      updatedAt: new Date()
+    });*/
+  }
+
   async toUniswapSDK() {
     await this.populate('token0 token1');
     const [slot0, liquidity] = await Promise.all([
@@ -152,8 +206,9 @@ module.exports = function(mongoose, chainId, poolFactoryContract, poolContract, 
   poolSchema.post('init', function(doc) {
     doc.contract = poolContract(doc.address);
   })
-  poolSchema.post('save', function(doc) {
+  poolSchema.post('save', function(doc, next) {
     doc.contract = poolContract(doc.address);
+    next();
   })
 
   PoolModel.chainId = chainId;
