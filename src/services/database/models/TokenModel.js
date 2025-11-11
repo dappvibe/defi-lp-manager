@@ -71,6 +71,11 @@ class TokenModel {
   toUniswapSDK() {
     return new Token(this.chainId, this.address, this.decimals, this.symbol, this.name);
   }
+
+  getFloatAmount(amount) {
+    const result = Number(amount) / Math.pow(10, this.decimals);
+    return result.toFixed(this.decimals);
+  }
 }
 
 tokenSchema.loadClass(TokenModel);
@@ -78,5 +83,13 @@ tokenSchema.loadClass(TokenModel);
 module.exports = function(mongoose, chainId, erc20Factory) {
   TokenModel.chainId = chainId;
   TokenModel.erc20Factory = erc20Factory;
+
+  const attachContact = function(doc) {
+    doc.contract = erc20Factory(doc.address);
+    return doc;
+  }
+  tokenSchema.post('init', attachContact)
+  tokenSchema.post('save', attachContact)
+
   return mongoose.model('Token', tokenSchema);
 }
