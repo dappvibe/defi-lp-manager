@@ -11,6 +11,14 @@ const tokenSchema = new Schema({
 
 tokenSchema.virtual('address').get(function() { return this._id.split(':')[1]; });
 
+/**
+ * @property {String} _id - Composite key in format chainId:address
+ * @property {Number} chainId - Chain identifier
+ * @property {String} name - Token name
+ * @property {String} symbol - Token symbol
+ * @property {Number} decimals - Token decimals
+ * @property {String} address - Virtual property returning token address
+ */
 class TokenModel {
   static chainId;
   static erc20Factory;
@@ -34,7 +42,7 @@ class TokenModel {
 
     let doc = await this.findById(_id);
     if (!doc) {
-      doc = this.fromBlockchain(address);
+      doc = await this.fromBlockchain(address);
       await doc.save();
     }
 
@@ -50,8 +58,8 @@ class TokenModel {
   static async fromBlockchain(address) {
     const contract = TokenModel.erc20Factory(address);
     const doc = new this;
+    doc.chainId = TokenModel.chainId;
     await Promise.all([
-      contract.provider.getChainId().then(c => doc.chainId = c),
       contract.read.symbol().then(s => doc.symbol = s),
       contract.read.decimals().then(d => doc.decimals = d),
       contract.read.name().then(n => doc.name = n)
@@ -60,7 +68,7 @@ class TokenModel {
     return doc;
   }
 
-  toToken() {
+  toUniswapSDK() {
     return new Token(this.chainId, this.address, this.decimals, this.symbol, this.name);
   }
 }
