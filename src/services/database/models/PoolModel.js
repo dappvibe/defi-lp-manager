@@ -1,6 +1,6 @@
 const {Schema} = require("mongoose");
 const { calculatePrice } = require('../../uniswap/utils');
-const {tickToPrice} = require("@uniswap/v3-sdk");
+const { Position: UniswapPosition, Pool: UniswapPool, tickToPrice} = require('@uniswap/v3-sdk');
 
 const poolSchema = new Schema({
   _id: String, // chainId:address
@@ -102,6 +102,47 @@ class PoolModel {
       feeProtocol: res[5],
       unlocked: res[6]
     };
+  }
+
+  async liquidity() {
+    return await this.contract.read.liquidity();
+  }
+
+  /**
+   * Calculate TVL for this pool
+   * @returns {Promise<number|null>} TVL value or null if calculation fails
+   */
+  async getTVL() {
+    await this.populate('token0 token1');
+    // Get token balances in the pool
+    const [prices, token0Balance, token1Balance] = await Promise.all([
+      this.getPrices(),
+      this.token0.contract.read.balanceOf([this.address]),
+      this.token1.contract.read.balanceOf([this.address])
+    ]);
+
+    // Convert to human readable amounts
+    const token0Amount = Number(token0Balance / BigInt(Math.pow(10, this.token0.decimals)));
+    const token1Amount = Number(token1Balance / BigInt(Math.pow(10, this.token1.decimals)));
+
+    // Calculate TVL (assuming token1 is stablecoin like USDC)
+    return token0Amount * prices.current + token1Amount;
+  }
+
+  async toUniswapSDK() {
+    await this.populate('token0 token1');
+    const [slot0, liquidity] = await Promise.all([
+      this.slot0(),
+      this.liquidity()
+    ]);
+    return new UniswapPool(
+      this.token0.toUniswapSDK(),
+      this.token1.toUniswapSDK(),
+      this.fee,
+      slot0.sqrtPriceX96.toString(),
+      liquidity.toString(),
+      slot0.tick
+    );
   }
 }
 
