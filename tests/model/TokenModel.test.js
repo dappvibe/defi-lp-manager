@@ -5,7 +5,7 @@ describe('TokenModel', () => {
   let USDT = '0xaf88d065e77c8cc2239327c5edb3a432268e5831';
 
   beforeAll(() => {
-    model = container.resolve('tokenModel');
+    model = container.resolve('TokenModel');
     chainId = container.resolve('chainId');
     return model.deleteMany({chainId});
   })
