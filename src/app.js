@@ -20,6 +20,7 @@ class App {
     });
 
     // Load modules
+    require('./model')(this.container);
     require('./services/blockchain')(this.container);
     require('./services/database')(this.container);
     require('./services/telegram')(this.container);
