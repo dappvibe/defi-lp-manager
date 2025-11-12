@@ -21,6 +21,7 @@ module.exports = (container) => {
   const addresses = CONTRACT_ADDRESSES.pancakeswap.arbitrum;
 
   container.register({
+    chainId: awilix.asValue(42161), // TODO: query each time when used so changes are reflected
     positionManager: awilix.asFunction((provider) => {
       return getContract({
         address: addresses.nonfungiblePositionManager,
@@ -35,19 +36,19 @@ module.exports = (container) => {
         client: provider
       })
     }).singleton(),
-    poolFactory: awilix.asFunction((provider) => {
-      return getContract({
-        address: addresses.V3Factory,
-        abi: require('./abis/v3-factory.json'),
-        client: provider
-      })
-    }),
     erc20Factory: awilix.asValue((address) => {
       return getContract({
         address: address,
         abi: require('./abis/erc20.json'),
         client: provider
       });
+    }),
+    poolFactoryContract: awilix.asFunction((provider) => {
+      return getContract({
+        address: addresses.V3Factory,
+        abi: require('./abis/v3-factory.json'),
+        client: provider
+      })
     }),
     poolContract: awilix.asValue((address) => {
       return getContract({
