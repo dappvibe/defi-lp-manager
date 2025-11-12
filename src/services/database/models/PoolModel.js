@@ -63,16 +63,16 @@ class PoolModel {
     }
 
     // Make sure dependant tokens exists in the db
-    token0 = await PoolModel.tokenModel.findOrCreate(PoolModel.chainId, token0);
-    token1 = await PoolModel.tokenModel.findOrCreate(PoolModel.chainId, token1);
+    token0 = await PoolModel.tokenModel.fetch(token0);
+    token1 = await PoolModel.tokenModel.fetch(token1);
 
     const doc = new this;
     Object.assign(doc, {
       _id: PoolModel.id(PoolModel.chainId, address),
       chainId: PoolModel.chainId,
       address,
-      token0: token0.getId(),
-      token1: token1.getId(),
+      token0: token0.id,
+      token1: token1.id,
       fee
     });
     return doc;
