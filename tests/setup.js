@@ -8,12 +8,12 @@
  *
  * See .env.example for details.
  */
-import { asClass, asValue } from "awilix";
-import App from '../src/app';
-import * as mocks from './_mocks/contracts';
-
 // To debug with live API's AND database comment out this line (use with CAUTION! Tests will CLEAR db!)
-require('dotenv').config({path: '.env.example'});
+const res = require('dotenv').config({path: '.env.example'});
+
+import { asClass, asValue } from "awilix";
+import App from '../src/app'; // envvars are loaded here
+import * as mocks from './_mocks/contracts';
 
 const app = new App();
 global.container =  app.container;

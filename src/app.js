@@ -1,5 +1,4 @@
 const awilix = require('awilix');
-const { config } = require('./config');
 const PoolsConfig = require("./config/pools");
 
 /**
@@ -13,7 +12,9 @@ class App {
   constructor(extraServices = {}) {
     this.container.register({
       container: awilix.asValue(this.container), // to be accessed in service constructors, though discouraged
-      config: awilix.asValue(config),
+
+      // require() must be here so that tests can load dotenv before this
+      config: awilix.asValue(require('./config').config),
 
       // FIXME user adds their own pools from UI
       poolsConfig: awilix.asClass(PoolsConfig).singleton()
@@ -30,6 +31,7 @@ class App {
   }
 
   async start() {
+    const config = this.container.resolve('config');
     await this.container.resolve('db').connect(config.db.uri)
       .then(() => console.log('Connected to MongoDB'));
 
