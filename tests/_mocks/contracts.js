@@ -1,5 +1,6 @@
 import { vi } from 'vitest';
-import { encodeSqrtRatioX96 } from '@uniswap/v3-sdk';
+import { encodeSqrtRatioX96, TickMath } from '@uniswap/v3-sdk';
+import JSBI from 'jsbi';
 
 class MockNonfungiblePositionManager {
   constructor() {
@@ -230,8 +231,8 @@ class MockNonfungiblePositionManager {
       nonce: 0n,
       operator: '0x0000000000000000000000000000000000000000',
       poolId: 1n,
-      tickLower: -887220,
-      tickUpper: 887220,
+      tickLower: -10000,
+      tickUpper: -5000,
       liquidity: 1000n,
       feeGrowthInside0LastX128: 0n,
       feeGrowthInside1LastX128: 0n,
@@ -270,7 +271,7 @@ class MockPoolV3 {
     this._token1 = token1;
     this._fee = fee;
     this._sqrtPriceX96 = 79228162514264337593543950336n; // 1:1 price
-    this._tick = 0;
+    this._tick = -7500;
     this._liquidity = 1000000n;
     this._positions = new Map();
 
@@ -333,9 +334,9 @@ class MockPoolV3 {
     return [amount0Requested, amount1Requested];
   }
 
-  setPrice(sqrtPriceX96, tick = 0) {
+  setPrice(sqrtPriceX96, tick = -7500) {
     this._sqrtPriceX96 = sqrtPriceX96;
-    this._tick = tick;
+    this._tick = TickMath.getTickAtSqrtRatio(JSBI.BigInt(sqrtPriceX96.toString()));
   }
 
   setLiquidity(liquidity) {
