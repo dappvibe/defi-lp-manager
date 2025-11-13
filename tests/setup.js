@@ -37,7 +37,7 @@ beforeAll(async () => {
   const poolV3Factory = new MockPoolV3Factory(erc20Factory);
   const poolContractFactory = new MockPoolContractFactory(poolV3Factory);
   container.register({
-    chainId: asValue(11155111), // sepolia
+    chainId: asValue(42161), // Arbitrum
     erc20Factory: asValue(erc20Factory.get.bind(erc20Factory)),
     poolFactoryContract: asValue(poolV3Factory),
     poolContract: asValue(poolContractFactory.get.bind(poolContractFactory)),
