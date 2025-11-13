@@ -268,7 +268,6 @@ class MockNonfungiblePositionManager {
   }
 
   reset() {
-    vi.clearAllMocks();
     this._positionsData.clear();
     this._poolIds.clear();
     this._poolIdToPoolKey.clear();
@@ -422,7 +421,6 @@ class MockPoolV3 {
   }
 
   reset() {
-    vi.clearAllMocks();
     this._positions.clear();
     this._sqrtPriceX96 = 79228162514264337593543950336n;
     this._tick = 0;
@@ -488,7 +486,6 @@ class MockPoolV3Factory {
   }
 
   reset() {
-    vi.clearAllMocks();
     this._pools.forEach(pool => pool.reset());
     this._pools.clear();
   }
@@ -596,7 +593,6 @@ class MockERC20Token {
   }
 
   reset() {
-    vi.clearAllMocks();
     this._balances.clear();
     this._allowances.clear();
   }
