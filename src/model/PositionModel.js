@@ -1,13 +1,13 @@
 const {Schema} = require("mongoose");
-const {EventEmitter} = require('events');
 const {Position: UniswapPosition} = require("@uniswap/v3-sdk");
 
 const positionSchema = new Schema({
   _id: String, // compose key for referencing
   chainId: { type: Number, required: true },
+  owner: { type: String, required: true },
+  positionManager: { type: String, required: true }, // issuer/platform
   tokenId: { type: Number, required: true },
-  messageId: { type: Number, index: true, default: null },
-  pool: { type: String, ref: 'Pool', required: true },
+  pool: { type: String, ref: 'Pool', required: true, autopopulate: true },
   tickLower: { type: Number, required: true },
   tickUpper: { type: Number, required: true },
   liquidity: { type: BigInt, required: true },
@@ -15,61 +15,76 @@ const positionSchema = new Schema({
   createdAt: { type: Date, default: Date.now, index: true },
   updatedAt: { type: Date, default: Date.now }
 }, { _id: false });
-
-positionSchema.virtual('owner').get(function() { return this._id.split(':')[1]; });
-positionSchema.virtual('tokenIndex').get(function() { return +this._id.split(':')[2]; });
+positionSchema.plugin(require('mongoose-autopopulate'));
 
 /**
- * @property _id
- * @property owner
- * @property tokenIndex
- * @property chainId
- * @property tokenId
- * @property messageId
- * @property pool
- * @property tickLower
- * @property tickUpper
- * @property liquidity
- * @property isStaked
- * @property createdAt
- * @property updatedAt
+ * @property {String} _id - Composite key in format chainId:address:tokenId
+ * @property {Number} chainId - Chain identifier
+ * @property {String} owner - Position owner address
+ * @property {String} positionManager - Address of position manager contract
+ * @property {Number} tokenId - NFT token identifier
+ * @property {Pool} pool - Reference to associated pool
+ * @property {Number} tickLower - Lower tick boundary
+ * @property {Number} tickUpper - Upper tick boundary
+ * @property {BigInt} liquidity - Amount of liquidity
+ * @property {Boolean} isStaked - Whether position is staked
+ * @property {Date} createdAt - Creation timestamp
+ * @property {Date} updatedAt - Last update timestamp
  */
 class PositionModel {
-  // Contracts singletons are automatically attached to each instance (see exports)
   static poolModel;
+  static tokenModel;
   static chainId;
   static positionManager;
   static staker;
 
-  static id(chainId, owner, tokenIndex) { return `${chainId}:${owner.toLowerCase()}:${tokenIndex}`; }
+  get id() {
+    return `${PositionModel.chainId}:${PositionModel.positionManager.address}:${this.tokenId}`;
+  }
 
-  static async findOrCreate(chainId, tokenId, tokenIndex) {
-    if (!Number.isFinite(chainId) || !Number.isFinite(tokenId) || !Number.isFinite(tokenIndex)) {
-      throw new Error('chainId, tokenId and tokenIndex must be numbers');
-    }
+  /**
+   * Find doc in the db and if not exists get details from blockchain, save and return doc.
+   *
+   * @param {Number} tokenId
+   * @return {Promise<PositionModel>}
+   */
+  static async fetch(tokenId) {
+    const filter = {
+      chainId: PositionModel.chainId,
+      positionManager: PositionModel.positionManager.address,
+      tokenId
+    };
 
-    let doc = await this.findOne({ chainId, tokenId });
+    let doc = await this.findOne(filter);
     if (!doc) {
-      doc = new this();
-      doc.chainId = chainId;
-      doc.tokenId = tokenId;
-      Object.assign(doc, await this.readBlockchain(tokenId));
-      doc.isStaked = await this.isStaked(tokenId);
-      const owner = await this.getOwner(tokenId);
-      doc._id = PositionModel.id(doc.chainId, owner, tokenIndex);
-
-      // make sure referenced objects exists
-      doc.pool = await PositionModel.poolModel.findOrCreate(doc.chainId, doc.token0, doc.token1, doc.fee);
-
-      await doc.save();
+      doc = await this.fromBlockchain(tokenId);
+      try {
+        await doc.save();
+      } catch (e) {
+        if (e.code === 11000) { // duplicate (race condition)
+          doc = await this.findOne(filter);
+          if (!doc) throw new Error(`Postion (${doc._id}) was concurrently created but not found after retry.`);
+        }
+        else throw e;
+      }
     }
-    await doc.populate('pool');
+
     return doc;
   }
 
-  static async readBlockchain(tokenId) {
-    const data = await PositionModel.positionManager.read.positions([tokenId]);
-    return {
+  /**
+  * Fetch position data from blockchain and return unsaved doc.
+  * Use static chainId in this class, retreived from container.
+  *
+  * @param {Number|BigInt} tokenId
+  * @return {Promise<PositionModel>}
+  */
+  static async fromBlockchain(tokenId) {
+    let [data, owner] = await Promise.all([
+      PositionModel.positionManager.read.positions([tokenId]),
+      this.getOwner(tokenId)
+    ]);
+    data = {
       token0: data[2],
       token1: data[3],
       fee: data[4],
@@ -77,6 +92,25 @@ class PositionModel {
       tickUpper: data[6],
       liquidity: data[7]
     };
+
+    // Ensure dependant tokens exists in the db
+    const pool = await PositionModel.poolModel.fetch(data.token0, data.token1, data.fee);
+
+    const doc = new this;
+    doc.tokenId = tokenId;
+    Object.assign(doc, {
+      _id: doc.id,
+      chainId: PositionModel.chainId,
+      owner: owner,
+      positionManager: PositionModel.positionManager.address,
+      pool: pool,
+      tickLower: data.tickLower,
+      tickUpper: data.tickUpper,
+      liquidity: data.liquidity,
+      isStaked: await PositionModel.isStaked(tokenId)
+    })
+
+    return doc;
   }
 
   static async isStaked(tokenId) {
@@ -85,11 +119,10 @@ class PositionModel {
   }
 
   static async getOwner(tokenId) {
-    return await PositionModel.positionManager.read.ownerOf([tokenId]);
+    return PositionModel.positionManager.read.ownerOf([tokenId]);
   }
 
   async isInRange() {
-    await this.populate('pool');
     const prices = await this.pool.getPrices(this);
     return prices.current >= prices.lower && prices.current <= prices.upper;
   }
@@ -114,11 +147,7 @@ class PositionModel {
   async calculateCombinedValue() {
     const amounts = await this.calculateTokenAmounts();
     const price = await this.pool.getPrices();
-
-    // Convert token0 amount to token1 equivalent using current price
-    const token0AmountInToken1 = amounts[0] * price.current;
-
-    return amounts[1] + token0AmountInToken1;
+    return amounts[1] + amounts[0] * price.current;
   }
 
   /**
@@ -132,9 +161,6 @@ class PositionModel {
       //totalValue: 0
     };
 
-    await this.populate('pool');
-    await this.pool.populate('token0 token1');
-
     // Prepare collect call with max values to simulate fee collection without actually collecting
     const collectParams = {
       tokenId: this.tokenId,
@@ -143,18 +169,12 @@ class PositionModel {
       amount1Max: BigInt('340282366920938463463374607431768211455')  // Max uint128
     };
     const feeAmounts = await PositionModel.positionManager.simulate.collect([collectParams]);
-    const amount0Fees = feeAmounts.result[0];
-    const amount1Fees = feeAmounts.result[1];
-
-    // Convert to human readable amounts
-    const token0FeesFormatted = (parseFloat(amount0Fees.toString()) / Math.pow(10, this.pool.token0.decimals)).toFixed(this.pool.token0.decimals);
-    const token1FeesFormatted = (parseFloat(amount1Fees.toString()) / Math.pow(10, this.pool.token1.decimals)).toFixed(this.pool.token1.decimals);
+    const token0Fees = this.pool.token0.getFloatAmount(feeAmounts.result[0]);
+    const token1Fees = this.pool.token1.getFloatAmount(feeAmounts.result[1]);
 
     // Calculate total value assuming token1 is stablecoin (like USDC)
     const price = await this.pool.getPrices(this);
-    const token0Value = parseFloat(token0FeesFormatted) * (price.current);
-    const token1Value = parseFloat(token1FeesFormatted);
-    let totalValue = token0Value + token1Value;
+    let totalValue = (+token0Fees * price.current + +token1Fees).toFixed(this.pool.token1.decimals);
 
     // Add CAKE rewards if position is staked
     let cakeRewards = null;
@@ -170,12 +190,8 @@ class PositionModel {
     }
 
     return {
-      token0Fees: token0FeesFormatted,
-      token1Fees: token1FeesFormatted,
-      token0Symbol: this.pool.token0.symbol,
-      token1Symbol: this.pool.token1.symbol,
-      token0Value,
-      token1Value,
+      token0Fees: token0Fees,
+      token1Fees: token1Fees,
       totalValue,
       currentPrice: price.current,
       cakeRewards
@@ -241,7 +257,6 @@ class PositionModel {
   }
 
   async toUniswapSDK() {
-    await this.populate('pool');
     const pool = await this.pool.toUniswapSDK();
     return new UniswapPosition({
       pool,
@@ -254,12 +269,13 @@ class PositionModel {
 
 positionSchema.loadClass(PositionModel);
 
-module.exports = function(mongoose, chainId, positionManager, staker, poolModel) {
+module.exports = function(mongoose, chainId, positionManager, staker, PoolModel, TokenModel) {
   const injectDeps = (doc) => Object.assign(doc, { positionManager, staker });
   positionSchema.post('save', injectDeps)
   positionSchema.post('init', injectDeps)
 
-  PositionModel.poolModel = poolModel;
+  PositionModel.poolModel = PoolModel;
+  PositionModel.tokenModel = TokenModel;
   PositionModel.chainId = chainId;
   PositionModel.positionManager = positionManager;
   PositionModel.staker = staker;
