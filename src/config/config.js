@@ -29,16 +29,16 @@ const config = {
   // Telegram bot configuration
   telegram: {
     botToken: process.env.TELEGRAM_BOT_TOKEN,
-    timezone: process.env.TELEGRAM_TIMEZONE || 'Asia/Phnom_Penh',
+    timezone: process.env.TELEGRAM_TIMEZONE,
     rateLimit: {
-      maxRequestsPerSecond: parseInt(process.env.TELEGRAM_MAX_REQUESTS_PER_SECOND || '30', 10),
-      messageEditDelay: parseInt(process.env.TELEGRAM_MESSAGE_EDIT_DELAY || '3000', 10), // 3 seconds between edits
+      maxRequestsPerSecond: parseInt(process.env.TELEGRAM_MAX_REQUESTS_PER_SECOND, 10),
+      messageEditDelay: parseInt(process.env.TELEGRAM_MESSAGE_EDIT_DELAY, 10), // 3 seconds between edits
     },
   },
 
   // Database configuration
   db: {
-    uri: process.env.MONGODB_URI || 'mongodb://mongodb:27017/defi-lp-manager',
+    uri: process.env.MONGODB_URI,
   },
 };
 
