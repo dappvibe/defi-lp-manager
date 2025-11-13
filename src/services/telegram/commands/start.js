@@ -110,6 +110,8 @@ class StartHandler extends AbstractHandler {
   static help() {
     return "/start - Begin using the bot and see welcome message";
   }
+
+  getMyCommand = () => ['start', 'Begin using the bot and see welcome message']
 }
 
 module.exports = StartHandler;

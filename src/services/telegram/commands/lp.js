@@ -525,6 +525,8 @@ class LpHandler extends AbstractHandler {
   static help() {
     return "/lp - List current liquidity pools for monitored wallets";
   }
+
+  getMyCommand = () => ['lp', 'List active liquidity pools for your wallets']
 }
 
 module.exports = LpHandler

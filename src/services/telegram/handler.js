@@ -17,6 +17,17 @@ class AbstractHandler {
     }
     return user;
   }
+
+
+  /**
+   * Get command description for `Menu` list.
+   * @returns {array|null} BotCommand array with structure (see https://core.telegram.org/bots/api#botcommand):
+   *   0 - command {string} Command name without leading slash
+   *   1 - description {string} Command description shown in menu
+   */
+  getMyCommand() {
+    return null;
+  }
 }
 
 module.exports = AbstractHandler;

@@ -180,6 +180,8 @@ class WalletHandler extends AbstractHandler {
   static help() {
     return "/wallet <address> - Monitor Uniswap V3 positions for a wallet";
   }
+
+  getMyCommand = () => ['wallet', 'Manage your addresses']
 }
 
 module.exports = WalletHandler;

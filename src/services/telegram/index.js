@@ -18,15 +18,17 @@ const TelegramMessage = require("./message");
  */
 class Telegram extends TelegramBot
 {
+  commands = [];
+
   // Arguments are provided by awilix
   constructor(config, telegramCommands) {
     // Initialize parent TelegramBot with polling enabled
     super(config.telegram.botToken, {autoStart: false});
 
     this.config = config;
-    this.commands = telegramCommands;
-    Object.keys(this.commands.registrations).forEach((name) => {
-      this.commands.resolve(name).listenOn(this)
+    Object.keys(telegramCommands.registrations).forEach((name) => {
+      const cmd = this.commands[name] = telegramCommands.resolve(name)
+      cmd.listenOn(this);
     })
 
     // Initialize throttling
@@ -38,12 +40,18 @@ class Telegram extends TelegramBot
     this.lastEditTimes = {};
   }
 
-  start() {
-    return this.startPolling();
+  async start() {
+    const commands = [];
+    for (const cmd of Object.values(this.commands)) {
+      const hint = cmd.getMyCommand();
+      if (hint) commands.push({command: hint[0], description: hint[1]});
+    }
+    await this.setMyCommands(commands);
+    await this.startPolling();
   }
 
-  stop() {
-    return this.stopPolling();
+  async stop() {
+    await this.stopPolling();
   }
 
   send(message, chatId = null) {

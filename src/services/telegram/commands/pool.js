@@ -348,6 +348,8 @@ Shows all pre-configured pools as individual messages, each displaying:
 **Related Commands:**
 • \`/wallet\` - Monitor wallet positions instead`;
   }
+
+  getMyCommand = () => ['pool', 'List all configured pools with toggle buttons for monitoring']
 }
 
 module.exports = PoolHandler

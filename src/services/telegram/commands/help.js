@@ -83,47 +83,47 @@ class HelpMessage {
 }
 
 class HelpHandler extends AbstractHandler {
-    static command = '/help';
-    static description = 'Show help information for all commands';
+  static command = '/help';
+  static description = 'Show help information for all commands';
 
-    /**
-     * Register command handlers with the bot
-     */
-    listenOn(bot) {
-      this.bot = bot;
-      this.bot.onText(/\/help/, (msg) => {
-        return this.handle(msg);
-      });
+  /**
+   * Register command handlers with the bot
+   */
+  listenOn(bot) {
+    this.bot = bot;
+    this.bot.onText(/\/help/, (msg) => {
+      return this.handle(msg);
+    });
+  }
+
+  /**
+   * Handle the help command
+   * @param {Object} msg - Message object
+   */
+  async handle(msg) {
+    try {
+      const helpMessage = new HelpMessage(msg.chat.id);
+      await this.bot.send(helpMessage);
+    } catch (error) {
+      console.error('Error in help command:', error);
+      await this.bot.sendMessage(msg.chat.id, 'Sorry, there was an error displaying help information.');
     }
+  }
 
-    /**
-     * Handle the help command
-     * @param {Object} msg - Message object
-     */
-    async handle(msg) {
-        try {
-            const helpMessage = new HelpMessage(msg.chat.id);
-            await this.bot.send(helpMessage);
-        } catch (error) {
-            console.error('Error in help command:', error);
-            await this.bot.sendMessage(msg.chat.id, 'Sorry, there was an error displaying help information.');
-        }
-    }
+  /**
+   * Returns a brief help description with command signatusre
+   * @returns {string} One-line help text
+   */
+  static help() {
+    return "/help - Show this help message with all available commands";
+  }
 
-    /**
-     * Returns a brief help description with command signatusre
-     * @returns {string} One-line help text
-     */
-    static help() {
-        return "/help - Show this help message with all available commands";
-    }
-
-    /**
-     * Returns detailed usage information for the help command
-     * @returns {string} Help text for humans
-     */
-    static usage() {
-        return `❓ **Help Command Help**
+  /**
+   * Returns detailed usage information for the help command
+   * @returns {string} Help text for humans
+   */
+  static usage() {
+    return `❓ **Help Command Help**
 
 **Usage:**
 \`/help\` - Display all available commands and their usage
@@ -135,7 +135,9 @@ Shows a comprehensive list of all bot commands with their descriptions and usage
 • This command lists all available bot functionality
 • Each command includes usage examples and descriptions
 • Commands are organized by category for easy reference`;
-    }
+  }
+
+  getMyCommand = () => ['help', 'Show help information for all commands']
 }
 
 module.exports = HelpHandler;
