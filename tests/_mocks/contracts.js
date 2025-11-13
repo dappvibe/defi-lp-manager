@@ -1,5 +1,6 @@
 import { vi } from 'vitest';
 import { encodeSqrtRatioX96, TickMath } from '@uniswap/v3-sdk';
+//noinspection NpmUsedModulesInstalled uniswap pulls it own OLD version that works, recent break unsiwap sdk
 import JSBI from 'jsbi';
 
 class MockNonfungiblePositionManager {
@@ -18,7 +19,8 @@ class MockNonfungiblePositionManager {
       ownerOf: vi.fn().mockImplementation((args) => this._ownerOf(args[0])),
       getApproved: vi.fn().mockImplementation((args) => this._getApproved(args[0])),
       isApprovedForAll: vi.fn().mockImplementation((args) => this._isApprovedForAll(args[0], args[1])),
-      balanceOf: vi.fn().mockImplementation((args) => this._balanceOf(args[0]))
+      balanceOf: vi.fn().mockImplementation((args) => this._balanceOf(args[0])),
+      tokenOfOwnerByIndex: vi.fn().mockImplementation((args) => this._tokenOfOwnerByIndex(args[0], args[1]))
     };
 
     this.write = {
@@ -185,6 +187,18 @@ class MockNonfungiblePositionManager {
     return count;
   }
 
+  _tokenOfOwnerByIndex(account, index) {
+    const accountLower = account.toLowerCase();
+    let count = 0;
+    for (const [tokenId, owner] of this._owners.entries()) {
+      if (owner.toLowerCase() === accountLower) {
+        if (count === index) return BigInt(tokenId);
+        count++;
+      }
+    }
+    throw new Error('Owner index out of bounds');
+  }
+
   _approve(to, tokenId) {
     if (!this._positionsData.has(tokenId.toString())) {
       throw new Error('Token does not exist');
@@ -264,6 +278,8 @@ class MockNonfungiblePositionManager {
     this._nextPoolId = 1n;
   }
 }
+
+class MockStaker extends MockNonfungiblePositionManager {}
 
 class MockPoolV3 {
   constructor(token0, token1, fee) {
@@ -582,6 +598,7 @@ class MockERC20Factory {
 
 module.exports = {
   MockNonfungiblePositionManager,
+  MockStaker,
   MockERC20Factory,
   MockPoolV3Factory,
   MockPoolContractFactory,

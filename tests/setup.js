@@ -10,7 +10,7 @@
  */
 import { asClass, asValue } from "awilix";
 import App from '../src/app';
-import { MockERC20Factory, MockPoolV3Factory, MockPoolContractFactory, MockNonfungiblePositionManager } from './_mocks/contracts';
+import * as mocks from './_mocks/contracts';
 
 // To debug with live API's AND database comment out this line (use with CAUTION! Tests will CLEAR db!)
 require('dotenv').config({path: '.env.example'});
@@ -33,14 +33,15 @@ beforeAll(async () => {
     } else throw e;
   });
 
-  const erc20Factory = new MockERC20Factory();
-  const poolV3Factory = new MockPoolV3Factory(erc20Factory);
-  const poolContractFactory = new MockPoolContractFactory(poolV3Factory);
+  const erc20Factory = new mocks.MockERC20Factory();
+  const poolV3Factory = new mocks.MockPoolV3Factory(erc20Factory);
+  const poolContractFactory = new mocks.MockPoolContractFactory(poolV3Factory);
   container.register({
     chainId: asValue(42161), // Arbitrum
     erc20Factory: asValue(erc20Factory.get.bind(erc20Factory)),
     poolFactoryContract: asValue(poolV3Factory),
     poolContract: asValue(poolContractFactory.get.bind(poolContractFactory)),
-    positionManager: asValue(new MockNonfungiblePositionManager()),
+    positionManager: asValue(new mocks.MockNonfungiblePositionManager()),
+    staker: asValue(new mocks.MockStaker)
   });
 });
