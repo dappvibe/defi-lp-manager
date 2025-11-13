@@ -30,5 +30,6 @@ process.on('SIGINT', async () => {
 // Start the application
 main().catch(error => {
   console.error('Error during application startup:', error.message);
+  console.error(error.stack)
   process.exit(1);
 });
