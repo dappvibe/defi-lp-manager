@@ -3,18 +3,21 @@ import { encodeSqrtRatioX96 } from '@uniswap/v3-sdk';
 
 class MockNonfungiblePositionManager {
   constructor() {
-    this._positions = new Map();
+    this.address = '0x46A15B0b27311cedF172AB29E4f4766fbE7F4364';
+    this._positionsData = new Map();
     this._poolIds = new Map();
     this._poolIdToPoolKey = new Map();
     this._nextId = 1n;
     this._nextPoolId = 1n;
     this._owners = new Map();
+    this._approvals = new Map();
 
     this.read = {
-      positions: vi.fn().mockImplementation((args) => this._positions(args[0])),
+      positions: vi.fn().mockImplementation((args) => this._getPositionData(args[0])),
       ownerOf: vi.fn().mockImplementation((args) => this._ownerOf(args[0])),
       getApproved: vi.fn().mockImplementation((args) => this._getApproved(args[0])),
-      balanceOf: vi.fn().mockResolvedValue(0n)
+      isApprovedForAll: vi.fn().mockImplementation((args) => this._isApprovedForAll(args[0], args[1])),
+      balanceOf: vi.fn().mockImplementation((args) => this._balanceOf(args[0]))
     };
 
     this.write = {
@@ -22,24 +25,40 @@ class MockNonfungiblePositionManager {
       increaseLiquidity: vi.fn().mockImplementation((args) => this._increaseLiquidity(args[0])),
       decreaseLiquidity: vi.fn().mockImplementation((args) => this._decreaseLiquidity(args[0])),
       collect: vi.fn().mockImplementation((args) => this._collect(args[0])),
-      burn: vi.fn().mockImplementation((args) => this._burn(args[0]))
+      burn: vi.fn().mockImplementation((args) => this._burn(args[0])),
+      safeTransferFrom: vi.fn().mockImplementation((args) => this._safeTransferFrom(args[0], args[1], args[2])),
+      approve: vi.fn().mockImplementation((args) => this._approve(args[0], args[1]))
     };
 
     this.simulate = {
-      collect: vi.fn().mockImplementation((args) => ({ result: this._simulateCollect(args[0]) }))
+      mint: vi.fn().mockImplementation((args) => ({ result: this._simulateMint(args[0]) })),
+      increaseLiquidity: vi.fn().mockImplementation((args) => ({ result: this._simulateIncreaseLiquidity(args[0]) })),
+      decreaseLiquidity: vi.fn().mockImplementation((args) => ({ result: this._simulateDecreaseLiquidity(args[0]) })),
+      collect: vi.fn().mockImplementation((args) => ({ result: this._simulateCollect(args[0]) })),
+      burn: vi.fn().mockImplementation((args) => ({ result: [true] }))
     };
   }
 
-  _positions(tokenId) {
-    const position = this._positions.get(tokenId.toString());
+  _getPositionData(tokenId) {
+    const position = this._positionsData.get(tokenId.toString());
     if (!position) throw new Error('Invalid token ID');
 
     const poolKey = this._poolIdToPoolKey.get(position.poolId);
+    if (!poolKey) throw new Error('Pool key not found');
+
     return [
-      position.nonce, position.operator, poolKey.token0, poolKey.token1,
-      poolKey.fee, position.tickLower, position.tickUpper, position.liquidity,
-      position.feeGrowthInside0LastX128, position.feeGrowthInside1LastX128,
-      position.tokensOwed0, position.tokensOwed1
+      position.nonce,
+      position.operator,
+      poolKey.token0,
+      poolKey.token1,
+      poolKey.fee,
+      position.tickLower,
+      position.tickUpper,
+      position.liquidity,
+      position.feeGrowthInside0LastX128,
+      position.feeGrowthInside1LastX128,
+      position.tokensOwed0,
+      position.tokensOwed1
     ];
   }
 
@@ -48,50 +67,71 @@ class MockNonfungiblePositionManager {
     const poolId = this._getOrCreatePoolId(params.token0, params.token1, params.fee);
 
     const position = {
-      nonce: 0n, operator: '0x0000000000000000000000000000000000000000',
-      poolId, tickLower: params.tickLower, tickUpper: params.tickUpper,
-      liquidity: params.amount0Desired / 2n, feeGrowthInside0LastX128: 0n,
-      feeGrowthInside1LastX128: 0n, tokensOwed0: 0n, tokensOwed1: 0n
+      nonce: 0n,
+      operator: '0x0000000000000000000000000000000000000000',
+      poolId,
+      tickLower: params.tickLower,
+      tickUpper: params.tickUpper,
+      liquidity: params.amount0Desired,
+      feeGrowthInside0LastX128: 0n,
+      feeGrowthInside1LastX128: 0n,
+      tokensOwed0: 0n,
+      tokensOwed1: 0n
     };
 
-    this._positions.set(tokenId.toString(), position);
+    this._positionsData.set(tokenId.toString(), position);
     this._owners.set(tokenId.toString(), params.recipient);
 
-    return [tokenId, position.liquidity, params.amount0Desired / 2n, params.amount1Desired / 2n];
+    return [tokenId, position.liquidity, params.amount0Desired, params.amount1Desired];
+  }
+
+  _simulateMint(params) {
+    return [1n, params.amount0Desired, params.amount1Desired];
   }
 
   _increaseLiquidity(params) {
-    const position = this._positions.get(params.tokenId.toString());
+    const position = this._positionsData.get(params.tokenId.toString());
     if (!position) throw new Error('Invalid token ID');
 
-    const liquidityIncrease = params.amount0Desired / 2n;
+    const liquidityIncrease = params.amount0Desired;
     position.liquidity += liquidityIncrease;
 
-    return [liquidityIncrease, params.amount0Desired / 2n, params.amount1Desired / 2n];
+    return [liquidityIncrease, params.amount0Desired, params.amount1Desired];
+  }
+
+  _simulateIncreaseLiquidity(params) {
+    return [params.amount0Desired, params.amount1Desired];
   }
 
   _decreaseLiquidity(params) {
-    const position = this._positions.get(params.tokenId.toString());
+    const position = this._positionsData.get(params.tokenId.toString());
     if (!position) throw new Error('Invalid token ID');
 
-    if (position.liquidity < params.liquidity) throw new Error('Insufficient liquidity');
+    if (position.liquidity < params.liquidity) {
+      throw new Error('Insufficient liquidity');
+    }
 
     position.liquidity -= params.liquidity;
-    const amount0 = params.liquidity / 2n;
-    const amount1 = params.liquidity / 2n;
+    position.tokensOwed0 += params.liquidity / 2n;
+    position.tokensOwed1 += params.liquidity / 2n;
 
-    position.tokensOwed0 += amount0;
-    position.tokensOwed1 += amount1;
+    return [params.liquidity / 2n, params.liquidity / 2n];
+  }
 
-    return [amount0, amount1];
+  _simulateDecreaseLiquidity(params) {
+    return [params.liquidity / 2n, params.liquidity / 2n];
   }
 
   _collect(params) {
-    const position = this._positions.get(params.tokenId.toString());
+    const position = this._positionsData.get(params.tokenId.toString());
     if (!position) throw new Error('Invalid token ID');
 
-    const amount0 = position.tokensOwed0 > params.amount0Max ? params.amount0Max : position.tokensOwed0;
-    const amount1 = position.tokensOwed1 > params.amount1Max ? params.amount1Max : position.tokensOwed1;
+    const amount0 = position.tokensOwed0 > params.amount0Max
+      ? params.amount0Max
+      : position.tokensOwed0;
+    const amount1 = position.tokensOwed1 > params.amount1Max
+      ? params.amount1Max
+      : position.tokensOwed1;
 
     position.tokensOwed0 -= amount0;
     position.tokensOwed1 -= amount1;
@@ -100,22 +140,23 @@ class MockNonfungiblePositionManager {
   }
 
   _simulateCollect(params) {
-    const position = this._positions.get(params.tokenId.toString());
+    const position = this._positionsData.get(params.tokenId.toString());
     if (!position) return [0n, 0n];
 
     return [position.tokensOwed0, position.tokensOwed1];
   }
 
   _burn(tokenId) {
-    const position = this._positions.get(tokenId.toString());
+    const position = this._positionsData.get(tokenId.toString());
     if (!position) throw new Error('Invalid token ID');
 
     if (position.liquidity > 0n || position.tokensOwed0 > 0n || position.tokensOwed1 > 0n) {
       throw new Error('Position not cleared');
     }
 
-    this._positions.delete(tokenId.toString());
+    this._positionsData.delete(tokenId.toString());
     this._owners.delete(tokenId.toString());
+    this._approvals.delete(tokenId.toString());
   }
 
   _ownerOf(tokenId) {
@@ -125,54 +166,99 @@ class MockNonfungiblePositionManager {
   }
 
   _getApproved(tokenId) {
-    const position = this._positions.get(tokenId.toString());
-    if (!position) throw new Error('Token does not exist');
-    return position.operator;
+    if (!this._positionsData.has(tokenId.toString())) {
+      throw new Error('Token does not exist');
+    }
+    return this._approvals.get(tokenId.toString()) || '0x0000000000000000000000000000000000000000';
+  }
+
+  _isApprovedForAll(owner, operator) {
+    return false;
+  }
+
+  _balanceOf(account) {
+    let count = 0n;
+    for (const owner of this._owners.values()) {
+      if (owner.toLowerCase() === account.toLowerCase()) count++;
+    }
+    return count;
+  }
+
+  _approve(to, tokenId) {
+    if (!this._positionsData.has(tokenId.toString())) {
+      throw new Error('Token does not exist');
+    }
+    this._approvals.set(tokenId.toString(), to);
+    return true;
+  }
+
+  _safeTransferFrom(from, to, tokenId) {
+    const owner = this._owners.get(tokenId.toString());
+    if (!owner || owner.toLowerCase() !== from.toLowerCase()) {
+      throw new Error('Not token owner');
+    }
+
+    this._owners.set(tokenId.toString(), to);
+    this._approvals.delete(tokenId.toString());
+    return true;
   }
 
   _getOrCreatePoolId(token0, token1, fee) {
-    const poolAddress = this._computePoolAddress(token0, token1, fee);
-    let poolId = this._poolIds.get(poolAddress);
+    const poolKey = this._normalizePoolKey(token0, token1, fee);
+    const key = JSON.stringify(poolKey);
 
+    let poolId = this._poolIds.get(key);
     if (!poolId) {
       poolId = this._nextPoolId++;
-      this._poolIds.set(poolAddress, poolId);
-      this._poolIdToPoolKey.set(poolId, { token0, token1, fee });
+      this._poolIds.set(key, poolId);
+      this._poolIdToPoolKey.set(poolId, poolKey);
     }
 
     return poolId;
   }
 
-  _computePoolAddress(token0, token1, fee) {
-    return `0x${token0.slice(2)}${token1.slice(2)}${fee.toString(16).padStart(6, '0')}`.slice(0, 42);
+  _normalizePoolKey(token0, token1, fee) {
+    const [t0, t1] = token0.toLowerCase() < token1.toLowerCase()
+      ? [token0, token1]
+      : [token1, token0];
+
+    return { token0: t0, token1: t1, fee };
   }
 
-  // Test helpers
   setupPosition(tokenId, overrides = {}) {
     const defaults = {
-      nonce: 0n, operator: '0x0000000000000000000000000000000000000000',
-      poolId: 1n, tickLower: -887220, tickUpper: 887220, liquidity: 1000n,
-      feeGrowthInside0LastX128: 0n, feeGrowthInside1LastX128: 0n,
-      tokensOwed0: 100n, tokensOwed1: 200n
+      nonce: 0n,
+      operator: '0x0000000000000000000000000000000000000000',
+      poolId: 1n,
+      tickLower: -887220,
+      tickUpper: 887220,
+      liquidity: 1000n,
+      feeGrowthInside0LastX128: 0n,
+      feeGrowthInside1LastX128: 0n,
+      tokensOwed0: 100n,
+      tokensOwed1: 200n
     };
 
     const position = { ...defaults, ...overrides };
-    this._positions.set(tokenId.toString(), position);
-    this._owners.set(tokenId.toString(), '0x1234567890123456789012345678901234567890');
+    this._positionsData.set(tokenId.toString(), position);
+    this._owners.set(tokenId.toString(), overrides.owner || WALLET);
 
     if (!this._poolIdToPoolKey.has(position.poolId)) {
       this._poolIdToPoolKey.set(position.poolId, {
-        token0: '0xTokenA', token1: '0xTokenB', fee: 3000
+        token0: overrides.token0 || WETH,
+        token1: overrides.token1 || USDT,
+        fee: overrides.fee || 100
       });
     }
   }
 
   reset() {
     vi.clearAllMocks();
-    this._positions.clear();
+    this._positionsData.clear();
     this._poolIds.clear();
     this._poolIdToPoolKey.clear();
     this._owners.clear();
+    this._approvals.clear();
     this._nextId = 1n;
     this._nextPoolId = 1n;
   }

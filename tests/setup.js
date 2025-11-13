@@ -17,7 +17,7 @@ require('dotenv').config({path: '.env.example'});
 
 const app = new App();
 global.container =  app.container;
-
+global.WALLET = '0x1234567890123456789012345678901234567890'; // user
 global.WETH = '0x82af49447d8a07e3bd95bd0d56f35241523fbab1';
 global.USDT = '0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9';
 global.USDC = '0xaf88d065e77c8cC2239327C5EDb3A432268e5831';
@@ -41,6 +41,6 @@ beforeAll(async () => {
     erc20Factory: asValue(erc20Factory.get.bind(erc20Factory)),
     poolFactoryContract: asValue(poolV3Factory),
     poolContract: asValue(poolContractFactory.get.bind(poolContractFactory)),
-    //positionManager: asValue(new MockNonfungiblePositionManager()),
+    positionManager: asValue(new MockNonfungiblePositionManager()),
   });
 });
