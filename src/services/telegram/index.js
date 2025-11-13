@@ -16,18 +16,15 @@ const TelegramMessage = require("./message");
 class Telegram extends TelegramBot
 {
   // Arguments are provided by awilix
-  constructor(config, startHandler, helpHandler, poolHandler, walletHandler, lpHandler) {
+  constructor(config, telegramCommands) {
     // Initialize parent TelegramBot with polling enabled
     super(config.telegram.botToken, {autoStart: false});
 
     this.config = config;
-
-    // Handlers require _this_ to provide output. Can't use awilix to avoid circular dependencies.
-    startHandler.listenOn(this)
-    //helpHandler.listenOn(this)
-    //poolHandler.listenOn(this)
-    //walletHandler.listenOn(this)
-    //lpHandler.listenOn(this)
+    this.commands = telegramCommands;
+    Object.keys(this.commands.registrations).forEach((name) => {
+      this.commands.resolve(name).listenOn(this)
+    })
 
     // Initialize throttling
     this.rateLimit = this.config.telegram.rateLimit;
@@ -131,16 +128,18 @@ class Telegram extends TelegramBot
 }
 
 module.exports = (container) => {
-  container.register({
-    telegram: awilix.asClass(Telegram).singleton(),
-    //throttler: awilix.asClass(Throttler).singleton()
-  });
-  container.loadModules(['./commands/*.js'], {
+  // Dedicated container to iterate over handlers easily
+  const handlers = awilix.createContainer();
+  handlers.loadModules(['./commands/*.js'], {
     cwd: __dirname,
-    formatName: (name) => name + 'Handler',
     resolverOptions: {
       lifetime: awilix.Lifetime.SINGLETON,
     }
   })
+  container.register({
+    telegram: awilix.asClass(Telegram).singleton(),
+    telegramCommands: awilix.asValue(handlers),
+    //throttler: awilix.asClass(Throttler).singleton()
+  });
   return container;
 }
