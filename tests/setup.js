@@ -17,7 +17,7 @@ require('dotenv').config({path: '.env.example'});
 
 const app = new App();
 global.container =  app.container;
-global.WALLET = '0x1234567890123456789012345678901234567890'; // user
+global.USER_WALLET = '0x1234567890123456789012345678901234567890';
 global.WETH = '0x82af49447d8a07e3bd95bd0d56f35241523fbab1';
 global.USDT = '0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9';
 global.USDC = '0xaf88d065e77c8cC2239327C5EDb3A432268e5831';

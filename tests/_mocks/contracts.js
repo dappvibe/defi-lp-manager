@@ -242,7 +242,7 @@ class MockNonfungiblePositionManager {
 
     const position = { ...defaults, ...overrides };
     this._positionsData.set(tokenId.toString(), position);
-    this._owners.set(tokenId.toString(), overrides.owner || WALLET);
+    this._owners.set(tokenId.toString(), overrides.owner || USER_WALLET);
 
     if (!this._poolIdToPoolKey.has(position.poolId)) {
       this._poolIdToPoolKey.set(position.poolId, {
