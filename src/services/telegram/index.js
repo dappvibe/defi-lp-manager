@@ -13,6 +13,9 @@ const TelegramBot = require('node-telegram-bot-api');
 const Throttler = require('./throttler');
 const TelegramMessage = require("./message");
 
+/**
+ * @type {EventEmitter}
+ */
 class Telegram extends TelegramBot
 {
   // Arguments are provided by awilix
