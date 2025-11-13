@@ -103,12 +103,10 @@ class PoolModel {
       _id: PoolModel.id(PoolModel.chainId, address),
       chainId: PoolModel.chainId,
       address,
-      token0: token0.id,
-      token1: token1.id,
+      token0,
+      token1,
       fee
     });
-
-    await doc.populate('token0 token1'); // the plugin won't trigger on unsaved doc
 
     return doc;
   }
