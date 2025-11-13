@@ -27,7 +27,7 @@ describe('PositionModel', () => {
       const tokenId = 31337;
       const doc = await model.fetch(tokenId);
       expect(doc.tokenId).toBe(tokenId);
-      expect(doc.owner).toBe(WALLET);
+      expect(doc.owner).toBe(USER_WALLET);
       expect(doc.pool).toBeDefined();
       expect(doc.isNew).toBe(false);
       expect(doc._id).toBeDefined();
