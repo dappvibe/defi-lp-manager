@@ -24,9 +24,9 @@ class Telegram extends TelegramBot
 
     // Handlers require _this_ to provide output. Can't use awilix to avoid circular dependencies.
     startHandler.listenOn(this)
-    helpHandler.listenOn(this)
-    poolHandler.listenOn(this)
-    walletHandler.listenOn(this)
+    //helpHandler.listenOn(this)
+    //poolHandler.listenOn(this)
+    //walletHandler.listenOn(this)
     //lpHandler.listenOn(this)
 
     // Initialize throttling
