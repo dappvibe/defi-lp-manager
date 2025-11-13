@@ -110,11 +110,11 @@ class PoolHandler {
   /**
    * Create a new PoolHandler instance
    * @param {MessageModel} messageModel
-   * @param poolModel
+   * @param PoolModel
    * @param pools
    * @param poolsConfig
    */
-  constructor(messageModel, poolModel, pools, poolsConfig) {
+  constructor(messageModel, PoolModel) {
     this.messageModel = messageModel;
     this.swapEventListener = (swapInfo, poolData) => {
       return this.onSwap(swapInfo, poolData);
@@ -122,7 +122,7 @@ class PoolHandler {
 
     // store messages to update. each message has its pool as property
     this.messages = new Map();
-    this.pools = poolsConfig.getPools('pancakeswap', 'arbitrum');
+    //this.pools = poolsConfig.getPools('pancakeswap', 'arbitrum');
 
 /*    this.messageModel.getMonitoredPoolMessages().then(monitoredPools => {
       for (const address of configuredPools) {
@@ -158,7 +158,7 @@ class PoolHandler {
       for (const message of this.messages.values()) {
         await message.pool.getPoolInfo(); // fetch from model or blockchain
         const [price, tvl] = await Promise.all([
-          message.pool.getCurrentPrice(),
+          message.pool.getPrice(),
           message.pool.getTVL()
         ]);
         message.price = price;
@@ -299,7 +299,7 @@ class PoolHandler {
   /**
    * Register command handlers with the bot
    */
-  attach(bot) {
+  listenOn(bot) {
     this.bot = bot;
     // Wrap to keep 'this' context of PoolHandler
     this.bot.onText(/\/pool/, (msg) => this.handleText(msg));

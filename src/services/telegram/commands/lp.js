@@ -1,20 +1,7 @@
 const Position = require('../../uniswap/position');
 const TelegramMessage = require("../message");
 const { getTimeInTimezone, moneyFormat } = require('../../../utils');
-
-/**
- * Message classes for different LP command scenarios
- */
-class NoWalletsMessage extends TelegramMessage {
-  constructor(chatId) {
-    super();
-    this.chatId = chatId;
-  }
-
-  toString() {
-    return "💼 No wallets are currently being monitored.\n\nUse /wallet <address> to start monitoring a wallet.";
-  }
-}
+const AbstractHandler = require("../handler");
 
 class WalletLoadingMessage extends TelegramMessage {
   constructor(chatId, walletIndex, walletAddress) {
@@ -73,9 +60,10 @@ class RangeNotificationMessage extends TelegramMessage {
 }
 
 class PositionMessage extends TelegramMessage {
-  constructor(position) {
+  constructor(position, pool) {
     super();
     this.position = position;
+    this.pool = pool;
   }
 
   toString() {
@@ -91,7 +79,7 @@ class PositionMessage extends TelegramMessage {
     const rangeIcon = position.inRange ? '🟢' : '🔴';
     const timestamp = getTimeInTimezone();
 
-    const header = `${rangeIcon} $${moneyFormat(parseFloat(position.currentPrice))}`;
+    const header = `${rangeIcon} $${moneyFormat(this.pool.price)}`;
 
     // Build fees line with CAKE rewards and calculate APY
     let feesLine = '';
@@ -112,7 +100,7 @@ class PositionMessage extends TelegramMessage {
 
         if (ageInSeconds > 0) {
           // Calculate total position value (token amounts in USD)
-          const token0Value = parseFloat(position.token0Amount) * parseFloat(position.currentPrice);
+          const token0Value = parseFloat(position.token0Amount) * this.pool.price;
           const token1Value = parseFloat(position.token1Amount);
           const totalPositionValue = token0Value + token1Value;
 
@@ -156,35 +144,31 @@ class PositionMessage extends TelegramMessage {
     return `${header}\n${feesLine}${timeWithAge}\n${amounts}\n${priceRange}\n${poolInfo}`;
   }
 
-  getOptions() {
+  get options() {
     return { parse_mode: 'Markdown', disable_web_page_preview: true };
-  }
-}
-
-class GeneralErrorMessage extends TelegramMessage {
-  constructor(chatId, error) {
-    super();
-    this.chatId = chatId;
-    this.error = error;
-  }
-
-  toString() {
-    return `❌ Error fetching liquidity positions: ${this.error}`;
   }
 }
 
 /**
  * Handler for /lp command - Lists liquidity positions for monitored wallets
  */
-class LpHandler {
+class LpHandler extends AbstractHandler {
   /**
    * Creates an instance of LpHandler
+   * @param userModel
    * @param messageModel
+   * @param PositionModel
    * @param walletModel
+   * @param positionFactory
+   * @param poolFactoryContract
    */
-  constructor(messageModel, walletModel) {
+  constructor(userModel, messageModel, PositionModel, walletModel, positionFactory, poolFactoryContract) {
+    super(userModel);
     this.messageModel = messageModel;
+    this.positionModel = PositionModel;
     this.walletModel = walletModel;
+    this.positionFactory = positionFactory;
+    this.poolFactory = poolFactoryContract;
     this.positionMessages = new Map(); // tokenId => PositionMessage
     this.rangeNotificationMessages = new Map(); // tokenId => RangeNotificationMessage
     this.swapEventListener = (swapInfo, poolData) => this.onSwap(swapInfo, poolData);
@@ -199,9 +183,9 @@ class LpHandler {
    * Registers bot command handlers for the /lp command
    * @returns {this}
    */
-  attach(bot) {
+  listenOn(bot) {
     this.bot = bot;
-    this.bot.onText(/\/lp/, (msg) => this.handleCommand(msg));
+    this.bot.onText(/\/lp/, this.handleCommand.bind(this));
     return this;
   }
 
@@ -212,91 +196,72 @@ class LpHandler {
    */
   async handleCommand(msg) {
     const chatId = msg.chat.id;
-    const monitoredWallets = this.walletModel.getWalletsForChat(chatId);
 
-    if (monitoredWallets.length === 0) {
-      await this.bot.send(new NoWalletsMessage(chatId));
-      return;
+    const user = await this.getUser(msg);
+    const wallets = user.getWallets('arbitrum');
+
+    if (wallets.length === 0) {
+      return this.bot.send("💼 No wallets are being monitored.\n\nUse /wallet to start monitoring a wallet.", chatId);
     }
 
-    try {
-      await this.processWallets(chatId, monitoredWallets);
-    } catch (error) {
-      console.error('Error in LP handler:', error);
-      await this.bot.send(new GeneralErrorMessage(chatId, error.message)).catch(console.error); // don't crash
-    }
-  }
-
-  /**
-   * Processes all monitored wallets for a chat, fetching and displaying their positions
-   * @param {string} chatId - Telegram chat ID
-   * @param {string[]} wallets - Array of wallet addresses to process
-   * @returns {Promise<void>}
-   */
-  async processWallets(chatId, wallets) {
     for (let i = 0; i < wallets.length; i++) {
-      const walletAddress = wallets[i];
-      const loadingMessage = await this.bot.send(new WalletLoadingMessage(chatId, i, walletAddress));
+      const address = wallets[i];
+      this.bot.sendChatAction(chatId, 'typing');
+      const typing = setInterval(() => this.bot.sendChatAction(chatId, 'typing'), 5000);
 
       try {
-        const positions = await Position.fetchPositions(walletAddress);
-        await this.processPositions(chatId, walletAddress, positions, loadingMessage);
-      } catch (error) {
-        console.error(`Error processing wallet ${walletAddress}:`, error);
-        await this.bot.send(new GeneralErrorMessage(chatId, `Error processing wallet: ${error.message}`));
+        let positionsFound = false;
+        for await (const position of this.positionFactory.fetchPositions(address)) {
+          positionsFound = true;
+          if (!position.isEmpty()) {
+            //await position.fetchPositionDetails();
+            await this.processPosition(chatId, address, position);
+          }
+        }
+
+        if (!positionsFound) {
+          await this.bot.send(new NoPositionsMessage(chatId));
+        }
+      }
+      catch (error) {
+        console.error(`Error processing positions for wallet ${address}:`, error.message);
+      }
+      finally {
+        clearInterval(typing);
       }
     }
   }
 
   /**
-   * Processes positions for a wallet, sending messages and starting monitoring
+   * Processes a single position, sending a message and starting monitoring
    * @param {string} chatId - Telegram chat ID
    * @param {string} walletAddress - Wallet address being processed
-   * @param {Position[]} positions - Array of position objects
-   * @param {Object} loadingMessage - Loading message to replace or reference
+   * @param {Position} position - Position object to process
    * @returns {Promise<void>}
    */
-  async processPositions(chatId, walletAddress, positions, loadingMessage) {
-    if (positions.length === 0) {
-      await this.bot.send(new NoPositionsMessage(chatId, loadingMessage.id));
-      return;
-    }
+  async processPosition(chatId, walletAddress, position) {
+    /*const existingPosition = await this.db.getPosition(position.tokenId, walletAddress);
+    if (existingPosition && existingPosition.createdAt) {
+      position.createdAt = existingPosition.createdAt;
+    }*/
 
-    for (let i = 0; i < positions.length; i++) {
-      const position = positions[i];
+    const pool = await this.poolFactory.getForPosition(position);
 
-      // Get existing position data from database to preserve createdAt
-      const existingPosition = await this.db.getPosition(position.tokenId, walletAddress);
-      if (existingPosition && existingPosition.createdAt) {
-        position.createdAt = existingPosition.createdAt;
-      }
+    //pool.fetchPosition(position); // load current prices and liquidity
 
-      const positionMessage = new PositionMessage(position);
-      positionMessage.chatId = chatId;
+    const positionMessage = new PositionMessage(position, await pool.slot0());
+    positionMessage.chatId = chatId;
 
-      // Replace loading message with first position, send new messages for others
-      if (i === 0) {
-        positionMessage.id = loadingMessage.id;
-      }
+    const sentMessage = await this.bot.send(positionMessage);
+    this.positionMessages.set(position.id, sentMessage);
 
-      const sentMessage = await this.bot.send(positionMessage);
-      this.positionMessages.set(position.tokenId, sentMessage);
-
-      await this.savePositionData(position, walletAddress, chatId, sentMessage.id);
-      this.startMonitoringPosition(position.tokenId);
-    }
+    //await this.savePositionData(position, walletAddress, chatId, sentMessage.id);
+    //this.startMonitoringPosition(position.tokenId);
   }
 
   /**
    * Saves position data to the database for persistence
    * @param {Position} position - Position object to save
-   * @param {string} walletAddress - Wallet address owning the position
-   * @param {string} chatId - Telegram chat ID
-   * @param {string} messageId - Message ID of the position message
-   * @returns {Promise<void>}
-   */
-  async savePositionData(position, walletAddress, chatId, messageId) {
-    try {
       const positionData = {
         ...position.toObject(),
         walletAddress,

@@ -88,7 +88,7 @@ class HelpHandler {
     /**
      * Register command handlers with the bot
      */
-    attach(bot) {
+    listenOn(bot) {
       this.bot = bot;
       this.bot.onText(/\/help/, (msg) => {
         return this.handle(msg);
