@@ -17,7 +17,6 @@ const CONTRACT_ADDRESSES = {
 };
 
 module.exports = (container) => {
-  const provider = container.resolve('provider');
   const addresses = CONTRACT_ADDRESSES.pancakeswap.arbitrum;
 
   container.register({
@@ -40,7 +39,7 @@ module.exports = (container) => {
       return getContract({
         address: address,
         abi: require('./abis/erc20.json'),
-        client: provider
+        client: container.resolve('provider')
       });
     }),
     poolFactoryContract: awilix.asFunction((provider) => {
@@ -54,7 +53,7 @@ module.exports = (container) => {
       return getContract({
         address: address,
         abi: require('./abis/v3-pool.json'),
-        client: provider
+        client: container.resolve('provider')
       });
     })
   })
