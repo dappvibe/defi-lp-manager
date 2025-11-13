@@ -1,11 +1,14 @@
 describe('PositionModel', () => {
   let model;
   let mockPositionManager;
+  let staker;
 
   beforeEach(() => {
     model = container.resolve('PositionModel');
     mockPositionManager = container.resolve('positionManager');
     mockPositionManager.setupPosition(31337);
+    staker = container.resolve('staker');
+    staker.setupUserPositionInfo(31337);
   });
 
   describe('fromBlockchain', () => {
@@ -14,7 +17,7 @@ describe('PositionModel', () => {
       expect(doc).toBeDefined();
       expect(doc.isNew).toBe(true); // unsaved
       expect(doc._id).toBeDefined();
-      expect(doc.owner).eq(WALLET);
+      expect(doc.owner).eq(USER_WALLET);
       expect(doc.pool).toBeDefined();
     });
   });

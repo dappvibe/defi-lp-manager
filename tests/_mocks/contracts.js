@@ -279,7 +279,53 @@ class MockNonfungiblePositionManager {
   }
 }
 
-class MockStaker extends MockNonfungiblePositionManager {}
+class MockStaker extends MockNonfungiblePositionManager {
+  constructor() {
+    super();
+    this._userPositionInfosData = new Map();
+
+    this.read.userPositionInfos = vi.fn().mockImplementation(args => this._getUserPositionInfo(args[0]));
+  }
+
+  _getUserPositionInfo(tokenId) {
+    const position = this._userPositionInfosData.get(tokenId.toString());
+    if (!position) {
+      return [0n, 0n, 0, 0, 0n, 0n, '0x0000000000000000000000000000000000000000', 0n, 0n];
+    }
+
+    return [
+      position.liquidity,
+      position.boostLiquidity,
+      position.tickLower,
+      position.tickUpper,
+      position.rewardGrowthInside,
+      position.reward,
+      position.user,
+      position.pid,
+      position.boostMultiplier
+    ];
+  }
+
+  setupUserPositionInfo(tokenId, overrides = {}) {
+    const defaults = {
+      liquidity: 1000n,
+      boostLiquidity: 0n,
+      tickLower: -100,
+      tickUpper: 100,
+      rewardGrowthInside: 0n,
+      reward: 0n,
+      user: USER_WALLET,
+      pid: 1n,
+      boostMultiplier: 1n
+    };
+    this._userPositionInfosData.set(tokenId.toString(), { ...defaults, ...overrides });
+  }
+
+  reset() {
+    super.reset();
+    this._userPositionInfosData.clear();
+  }
+}
 
 class MockPoolV3 {
   constructor(token0, token1, fee) {
