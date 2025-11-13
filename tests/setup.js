@@ -9,7 +9,7 @@
  * See .env.example for details.
  */
 // To debug with live API's AND database comment out this line (use with CAUTION! Tests will CLEAR db!)
-const res = require('dotenv').config({path: '.env.example'});
+require('dotenv').config({path: '.env.example'});
 
 import { asClass, asValue } from "awilix";
 import { createPublicClient, custom } from "viem";
