@@ -18,7 +18,7 @@ class Telegram extends TelegramBot
   // Arguments are provided by awilix
   constructor(config, startHandler, helpHandler, poolHandler, walletHandler, lpHandler) {
     // Initialize parent TelegramBot with polling enabled
-    super(config.telegram.botToken, {polling: true});
+    super(config.telegram.botToken, {autoStart: false});
 
     this.config = config;
 
@@ -36,6 +36,14 @@ class Telegram extends TelegramBot
       timeWindowMs: 1000
     });
     this.lastEditTimes = {};
+  }
+
+  start() {
+    return this.startPolling();
+  }
+
+  stop() {
+    return this.stopPolling();
   }
 
   send(message, chatId = null) {

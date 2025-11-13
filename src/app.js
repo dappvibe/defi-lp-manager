@@ -35,11 +35,15 @@ class App {
 
     // FIXME do not connect on resolve. connect() instead so that it is controlled in tests
     this.container.resolve('provider');
-    this.container.resolve('telegram');
+
+    const telegram = this.container.resolve('telegram');
+    // lib's polling waits for the first request to finish, so go on here optimistically
+    telegram.start().then(() => console.log('First telegram poll request succeeded. Going on.'));
   }
 
   async stop() {
     await this.container.resolve('db').disconnect();
+    await this.container.resolve('telegram').stop().then(() => console.log('Telegram polling stopped.'));
   }
 }
 
