@@ -2,12 +2,9 @@ describe('PoolModel', () => {
   let model;
   let chainId;
 
-  beforeAll(() => {
+  beforeEach(() => {
     model = container.resolve('PoolModel');
     chainId = container.resolve('chainId');
-  })
-
-  beforeEach(() => {
     return model.deleteMany({chainId});
   })
 

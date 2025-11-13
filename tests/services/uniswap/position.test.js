@@ -2,7 +2,7 @@ describe('PositionFactory', () => {
   let positionFactory;
   let positionManager;
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     positionFactory = container.resolve('positionFactory');
     positionManager = container.resolve('positionManager');
   });

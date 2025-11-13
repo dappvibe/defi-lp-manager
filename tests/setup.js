@@ -45,3 +45,17 @@ beforeAll(async () => {
     staker: asValue(new mocks.MockStaker)
   });
 });
+
+beforeEach(() => {
+  const erc20Factory = new mocks.MockERC20Factory();
+  const poolV3Factory = new mocks.MockPoolV3Factory(erc20Factory);
+  const poolContractFactory = new mocks.MockPoolContractFactory(poolV3Factory);
+  container.register({
+    chainId: asValue(42161), // Arbitrum
+    erc20Factory: asValue(erc20Factory.get.bind(erc20Factory)),
+    poolFactoryContract: asValue(poolV3Factory),
+    poolContract: asValue(poolContractFactory.get.bind(poolContractFactory)),
+    positionManager: asValue(new mocks.MockNonfungiblePositionManager()),
+    staker: asValue(new mocks.MockStaker)
+  });
+});
