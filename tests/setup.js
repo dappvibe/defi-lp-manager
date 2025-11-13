@@ -25,7 +25,13 @@ global.USDC = '0xaf88d065e77c8cC2239327C5EDb3A432268e5831';
 beforeAll(async () => {
   const config = container.resolve('config');
   const db = container.resolve('db');
-  await db.connect(config.db.uri);
+  await db.connect(config.db.uri, {
+    serverSelectionTimeoutMS: 1000
+  }).catch(e => {
+    if (e.message.includes('timed out')) {
+      throw new Error('MongoDB connection timeout. Did you start mongodb docker service?');
+    } else throw e;
+  });
 
   const erc20Factory = new MockERC20Factory();
   const poolV3Factory = new MockPoolV3Factory(erc20Factory);
@@ -35,5 +41,6 @@ beforeAll(async () => {
     erc20Factory: asValue(erc20Factory.get.bind(erc20Factory)),
     poolFactoryContract: asValue(poolV3Factory),
     poolContract: asValue(poolContractFactory.get.bind(poolContractFactory)),
+    //positionManager: asValue(new MockNonfungiblePositionManager()),
   });
 });
