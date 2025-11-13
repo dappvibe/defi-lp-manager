@@ -283,8 +283,10 @@ class MockStaker extends MockNonfungiblePositionManager {
   constructor() {
     super();
     this._userPositionInfosData = new Map();
+    this._pendingCakeData = new Map();
 
     this.read.userPositionInfos = vi.fn().mockImplementation(args => this._getUserPositionInfo(args[0]));
+    this.read.pendingCake = vi.fn().mockImplementation(args => this._getPendingCake(args[0]));
   }
 
   _getUserPositionInfo(tokenId) {
@@ -306,6 +308,10 @@ class MockStaker extends MockNonfungiblePositionManager {
     ];
   }
 
+  _getPendingCake(tokenId) {
+    return this._pendingCakeData.get(tokenId.toString()) || 0n;
+  }
+
   setupUserPositionInfo(tokenId, overrides = {}) {
     const defaults = {
       liquidity: 1000n,
@@ -319,11 +325,17 @@ class MockStaker extends MockNonfungiblePositionManager {
       boostMultiplier: 1n
     };
     this._userPositionInfosData.set(tokenId.toString(), { ...defaults, ...overrides });
+    this.setupPendingCake(tokenId, 314000000n)
+  }
+
+  setupPendingCake(tokenId, amount) {
+    this._pendingCakeData.set(tokenId.toString(), amount);
   }
 
   reset() {
     super.reset();
     this._userPositionInfosData.clear();
+    this._pendingCakeData.clear();
   }
 }
 
