@@ -11,58 +11,33 @@ const awilix = require("awilix");
  */
 class PositionFactory
 {
-  constructor(poolFactory, pools, tokens, staker, tokenModel, positionModel, positionManager, chainId, poolModel) {
-    this.poolFactory = poolFactory;
-    this.pools = pools;
-    this.tokens = tokens;
+  constructor(staker, PositionModel, positionManager, chainId) {
     this.staker = staker;
-    this.tokenModel = tokenModel;
-    this.positionModel = positionModel;
+    this.positionModel = PositionModel;
     this.positionManager = positionManager;
     this.chainId = chainId;
-    this.poolModel = poolModel;
   }
 
-  async *fetchPositions(wallet)
+  /**
+  * Query both NonfungiblePositionManager and Staker contracts for `address` positions.
+  *
+  * @param address
+  * @returns {Promise<Generator>}
+  */
+  async *fetchPositions(address)
   {
-    const iterateContract = async function* (contract, isStaked) {
-      const count = await contract.read.balanceOf([wallet.address]);
+    const iterateContract = async function* (contract) {
+      const count = await contract.read.balanceOf([address]);
 
-      let doc = null;
       // This must be sequential, not Promise.all to not hit Alchemy (free-tier) rate limits
       for (let i = Number(count) - 1; i >= 0; i--) {
-        let position = null;
-        const _id = this.positionModel.id(this.chainId, wallet.address, i);
-        doc = await this.positionModel.findById(_id);
-        if (!doc) {
-          const tokenId = await contract.read.tokenOfOwnerByIndex([wallet.address, i]);
-
-          doc = this.positionModel.findOrCreate(this.chainId, tokenId, i);
-
-          position = new Position(isStaked, this.chainId, tokenId, this.pools, this.tokens, this.positionManager, this.staker);
-          await position.fetchDetails();
-
-          const pool = await this.poolFactory.getPool(position.token0.address, position.token1.address, position.fee);
-
-          doc = await this.positionModel.create({
-            _id,
-            tokenId: Number(position.id),
-            liquidity: position.liquidity,
-            pool: this.poolModel.id(this.chainId, pool.address),
-            tickLower: position.tickLower,
-            tickUpper: position.tickUpper,
-            isStaked: position.isStaked,
-          });
-        }
-
-        await doc.populate('pool');
-
-        yield doc;
+        const tokenId = await contract.read.tokenOfOwnerByIndex([address, i]);
+        yield await this.positionModel.fetch(Number(tokenId));
       }
     };
 
-    yield* iterateContract.call(this, this.positionManager, false);
-    yield* iterateContract.call(this, this.staker, true);
+    yield* iterateContract.call(this, this.positionManager);
+    yield* iterateContract.call(this, this.staker);
   }
 }
 
