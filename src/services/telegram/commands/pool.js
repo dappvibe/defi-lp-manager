@@ -5,6 +5,7 @@
  */
 const TelegramMessage = require("../message");
 const { getTimeInTimezone, moneyFormat} = require('../../../utils');
+const AbstractHandler = require("../handler");
 
 /**
  * Represents a no pools configured message
@@ -106,15 +107,15 @@ class PoolErrorMessage extends TelegramMessage {
   }
 }
 
-class PoolHandler {
+class PoolHandler extends AbstractHandler {
   /**
    * Create a new PoolHandler instance
+   * @param userModel
    * @param {MessageModel} messageModel
    * @param PoolModel
-   * @param pools
-   * @param poolsConfig
    */
-  constructor(messageModel, PoolModel) {
+  constructor(userModel, messageModel, PoolModel) {
+    super(userModel);
     this.messageModel = messageModel;
     this.swapEventListener = (swapInfo, poolData) => {
       return this.onSwap(swapInfo, poolData);

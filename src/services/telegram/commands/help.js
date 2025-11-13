@@ -2,6 +2,7 @@ const StartHandler = require('./start');
 const { PoolHandler } = require('./pool');
 const WalletHandler = require('./wallet');
 const { LpHandler } = require('./lp');
+const AbstractHandler = require("../handler");
 
 /**
  * Represents a help message with its content and formatting
@@ -81,7 +82,7 @@ class HelpMessage {
   }
 }
 
-class HelpHandler {
+class HelpHandler extends AbstractHandler {
     static command = '/help';
     static description = 'Show help information for all commands';
 
