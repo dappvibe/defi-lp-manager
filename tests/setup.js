@@ -19,7 +19,7 @@ import { MockTelegram } from "./services/telegram/_mocks";
 
 const app = new App();
 global.container =  app.container;
-global.USER_WALLET = '0x1234567890123456789012345678901234567890';
+global.USER_WALLET = '0x220866b1a2219f40e72f5c628b65d54268ca3a9d';
 global.WETH = '0x82af49447d8a07e3bd95bd0d56f35241523fbab1';
 global.USDT = '0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9';
 global.USDC = '0xaf88d065e77c8cc2239327c5edb3a432268e5831';
