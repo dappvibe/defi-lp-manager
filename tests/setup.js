@@ -45,7 +45,9 @@ beforeAll(async () => {
         }
       })
     })
-  })))
+  })));
+
+  container.register('telegram', asClass(MockTelegram));
 });
 
 beforeEach(() => {
@@ -59,7 +61,6 @@ beforeEach(() => {
     poolContract: asValue(poolContractFactory.get.bind(poolContractFactory)),
     positionManager: asValue(new mocks.MockNonfungiblePositionManager()),
     staker: asValue(new mocks.MockStaker),
-    telegram: asClass(MockTelegram)
   });
 
   const userModel = container.resolve('UserModel');
