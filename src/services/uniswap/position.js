@@ -36,8 +36,8 @@ class PositionFactory
       }
     };
 
-    yield* iterateContract.call(this, this.positionManager);
     yield* iterateContract.call(this, this.staker);
+    yield* iterateContract.call(this, this.positionManager);
   }
 }
 
