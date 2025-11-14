@@ -158,15 +158,15 @@ class LpHandler extends AbstractHandler {
    * @param userModel
    * @param messageModel
    * @param PositionModel
-   * @param walletModel
+   * @param WalletModel
    * @param positionFactory
    * @param poolFactoryContract
    */
-  constructor(userModel, messageModel, PositionModel, walletModel, positionFactory, poolFactoryContract) {
+  constructor(userModel, messageModel, PositionModel, WalletModel, positionFactory, poolFactoryContract) {
     super(userModel);
     this.messageModel = messageModel;
     this.positionModel = PositionModel;
-    this.walletModel = walletModel;
+    this.WalletModel = WalletModel;
     this.positionFactory = positionFactory;
     this.poolFactory = poolFactoryContract;
     this.positionMessages = new Map(); // tokenId => PositionMessage
@@ -461,7 +461,7 @@ class LpHandler extends AbstractHandler {
   async restoreMonitoredPositions() {
     try {
       console.log('Restoring monitored positions...');
-      const wallets = this.walletModel.getAllMonitoredWallets();
+      const wallets = this.WalletModel.getAllMonitoredWallets();
       let restoredCount = 0;
 
       for (const walletAddress of wallets) {
