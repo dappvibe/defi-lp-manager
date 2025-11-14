@@ -275,6 +275,9 @@ class MockNonfungiblePositionManager {
     this._approvals.clear();
     this._nextId = 1n;
     this._nextPoolId = 1n;
+
+    Object.values(this.read).forEach(fn => fn.mockClear());
+    Object.values(this.write).forEach(fn => fn.mockClear());
   }
 }
 
@@ -335,6 +338,7 @@ class MockStaker extends MockNonfungiblePositionManager {
     super.reset();
     this._userPositionInfosData.clear();
     this._pendingCakeData.clear();
+    Object.values(this.simulate).forEach(fn => fn.mockClear());
   }
 }
 
@@ -425,6 +429,9 @@ class MockPoolV3 {
     this._sqrtPriceX96 = 79228162514264337593543950336n;
     this._tick = 0;
     this._liquidity = 1000000n;
+
+    Object.values(this.read).forEach(fn => fn.mockClear());
+    Object.values(this.write).forEach(fn => fn.mockClear());
   }
 }
 
@@ -593,8 +600,8 @@ class MockERC20Token {
   }
 
   reset() {
-    this._balances.clear();
-    this._allowances.clear();
+    Object.values(this.read).forEach(fn => fn.mockClear());
+    Object.values(this.write).forEach(fn => fn.mockClear());
   }
 }
 
