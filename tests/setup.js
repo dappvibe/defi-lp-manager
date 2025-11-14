@@ -48,6 +48,10 @@ beforeAll(async () => {
   })));
 
   container.register('telegram', asClass(MockTelegram));
+
+  const userModel = container.resolve('UserModel');
+  await userModel.deleteMany({}).then(() => userModel.create({telegramId: 1}));
+  await container.resolve('WalletModel').deleteMany({});
 });
 
 beforeEach(() => {
@@ -62,7 +66,4 @@ beforeEach(() => {
     positionManager: asValue(new mocks.MockNonfungiblePositionManager()),
     staker: asValue(new mocks.MockStaker),
   });
-
-  const userModel = container.resolve('UserModel');
-  userModel.deleteMany({}).then(() => userModel.create({telegramId: 1}));
 });
