@@ -12,9 +12,7 @@ const positionSchema = new Schema({
   tickUpper: { type: Number, required: true },
   liquidity: { type: BigInt, required: true },
   isStaked: { type: Boolean, required: true },
-  createdAt: { type: Date, default: Date.now, index: true },
-  updatedAt: { type: Date, default: Date.now }
-}, { _id: false });
+}, { _id: false, timestamps: true });
 positionSchema.plugin(require('mongoose-autopopulate'));
 
 /**

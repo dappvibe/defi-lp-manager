@@ -10,8 +10,7 @@ const poolSchema = new Schema({
   token1: {type: String, ref: 'Token', required: true, autopopulate: true},
   fee: {type: Number, required: true},
   priceMonitored: {type: Boolean, default: false},
-  updatedAt: {type: Date, default: Date.now}
-}, {_id: false});
+}, {_id: false, timestamps: true});
 poolSchema.plugin(autopopulate);
 
 poolSchema.virtual('address').get(function() {

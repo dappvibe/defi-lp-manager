@@ -5,8 +5,7 @@ const walletSchema = new Schema({
   chainId: { type: Number, required: true },
   address: { type: String, required: true, index: true, set: v => v.toLowerCase() },
   userId: { type: String, required: true, ref: 'User' }, // do not autopopulate as rarely needed
-  createdAt: { type: Date, default: Date.now },
-}, { _id: false });
+}, { _id: false, timestamps: true });
 
 // Auto-generate _id as chainId:address
 walletSchema.pre('validate', function() {
