@@ -15,6 +15,7 @@ import { asClass, asValue } from "awilix";
 import { createPublicClient, custom } from "viem";
 import App from '../src/app'; // envvars are loaded here
 import * as mocks from './_mocks/contracts';
+import { MockTelegram } from "./services/telegram/_mocks";
 
 const app = new App();
 global.container =  app.container;
@@ -57,6 +58,7 @@ beforeEach(() => {
     poolFactoryContract: asValue(poolV3Factory),
     poolContract: asValue(poolContractFactory.get.bind(poolContractFactory)),
     positionManager: asValue(new mocks.MockNonfungiblePositionManager()),
-    staker: asValue(new mocks.MockStaker)
+    staker: asValue(new mocks.MockStaker),
+    telegram: asClass(MockTelegram)
   });
 });
