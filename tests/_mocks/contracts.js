@@ -603,28 +603,28 @@ class MockERC20Factory {
     this._tokens = new Map();
 
     // Register common tokens
-    this.create('0x82aF49447D8a07e3bd95BD0d56f35241523fBab1', {
+    this.create('0x82af49447d8a07e3bd95bd0d56f35241523fbab1', {
       symbol: 'WETH',
       name: 'Wrapped Ether',
       decimals: 18,
       totalSupply: 1000000n * 10n ** 18n
     });
 
-    this.create('0xaf88d065e77c8cC2239327C5EDb3A432268e5831', {
+    this.create('0xaf88d065e77c8cc2239327c5edb3a432268e5831', {
       symbol: 'USDC',
       name: 'USD Coin',
       decimals: 6,
       totalSupply: 1000000000n * 10n ** 6n
     });
 
-    this.create('0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9', {
+    this.create('0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9', {
       symbol: 'USDT',
       name: 'Tether USD',
       decimals: 6,
       totalSupply: 1000000000n * 10n ** 6n
     });
 
-    this.create('0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f', {
+    this.create('0x2f2a2543b76a4166549f7aab2e75bef0aefc5b0f', {
       symbol: 'WBTC',
       name: 'Wrapped Bitcoin',
       decimals: 8,
