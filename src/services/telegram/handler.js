@@ -1,6 +1,6 @@
 class AbstractHandler {
-  constructor(userModel) {
-    this.UserModel = userModel;
+  constructor(UserModel) {
+    this.UserModel = UserModel;
   }
 
   /**
@@ -11,9 +11,11 @@ class AbstractHandler {
    * @return Promise<UserModel>
    */
   async getUser(msg) {
-    let user = await this.UserModel.getByTelegramId(msg.from.id);
+    let user = await this.UserModel.findOne({telegramId: msg.from.id});
     if (!user) { // not registered
-      user = await this.UserModel.addUser(msg.from.id);
+      user = await this.UserModel.create({
+        telegramId: msg.from.id
+      });
     }
     return user;
   }
