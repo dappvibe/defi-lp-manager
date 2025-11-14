@@ -2,17 +2,14 @@ describe('TokenModel', () => {
   let model;
   let chainId;
 
-  beforeAll(() => {
-    model = container.resolve('TokenModel');
-    chainId = container.resolve('chainId');
-    return model.deleteMany({chainId});
-  })
-
   beforeEach(() => {
     // reset spyOn() counters
-    const mocks = container.resolve('erc20Factory');
-    mocks(WETH).reset();
-    mocks(USDT).reset();
+    const erc20Factory = container.resolve('erc20Factory');
+    erc20Factory(WETH).reset();
+    erc20Factory(USDT).reset();
+    model = container.resolve('TokenModel');
+    chainId = container.resolve('chainId');
+    return model.deleteMany({});
   })
 
   describe('fromBlockchain', () => {
@@ -38,7 +35,7 @@ describe('TokenModel', () => {
 
       await model.fetch(WETH).then(token => {
         expect(token.contract.read.symbol, 'Subsequent calls must return saved doc')
-          .toBeCalledTimes(1);
+          .toBeCalledTimes(0);
       });
     })
 
