@@ -27,8 +27,7 @@ class Telegram extends TelegramBot
 
     this.config = config;
     Object.keys(telegramCommands.registrations).forEach((name) => {
-      const cmd = this.commands[name] = telegramCommands.resolve(name)
-      cmd.listenOn(this);
+      this.addCommand(name, telegramCommands.resolve(name));
     })
 
     // Initialize throttling
@@ -52,6 +51,17 @@ class Telegram extends TelegramBot
 
   async stop() {
     await this.stopPolling();
+  }
+
+  /**
+   * Registers a new command handler
+   * @param {String} name
+   * @param {AbstractHandler} handler - Command handler instance
+   */
+  addCommand(name, handler) {
+    this.commands[name] = handler;
+    handler.listenOn(this);
+    return this;
   }
 
   send(message, chatId = null) {

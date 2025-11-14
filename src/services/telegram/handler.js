@@ -18,6 +18,7 @@ class AbstractHandler {
     return user;
   }
 
+  listenOn(bot) {}
 
   /**
    * Get command description for `Menu` list.
