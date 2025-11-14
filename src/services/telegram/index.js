@@ -21,13 +21,15 @@ class Telegram extends TelegramBot
   commands = [];
 
   // Arguments are provided by awilix
-  constructor(config, telegramCommands) {
-    // Initialize parent TelegramBot with polling enabled
+  constructor(container) {
+    const config = container.resolve('config');
     super(config.telegram.botToken, {autoStart: false});
 
-    this.config = config;
-    Object.keys(telegramCommands.registrations).forEach((name) => {
-      this.addCommand(name, telegramCommands.resolve(name));
+    this.config = container.resolve('config');
+
+    const commands = Object.keys(container.registrations).filter((key) => key.startsWith('telegramCommand_'));
+    commands.forEach((name) => {
+      this.addCommand(name.split('_')[1], container.resolve(name));
     })
 
     // Initialize throttling
@@ -149,18 +151,17 @@ class Telegram extends TelegramBot
 }
 
 module.exports = (container) => {
-  // Dedicated container to iterate over handlers easily
-  const handlers = awilix.createContainer();
-  handlers.loadModules(['./commands/*.js'], {
+  container.register({
+    telegram: awilix.asClass(Telegram).singleton(),
+    //throttler: awilix.asClass(Throttler).singleton()
+  });
+  container.loadModules(['./commands/*.js'], {
     cwd: __dirname,
+    formatName: (name) => 'telegramCommand_' + name,
     resolverOptions: {
       lifetime: awilix.Lifetime.SINGLETON,
     }
   })
-  container.register({
-    telegram: awilix.asClass(Telegram).singleton(),
-    telegramCommands: awilix.asValue(handlers),
-    //throttler: awilix.asClass(Throttler).singleton()
-  });
   return container;
 }
+module.exports.Telegram = Telegram;
