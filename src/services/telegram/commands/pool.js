@@ -110,12 +110,12 @@ class PoolErrorMessage extends TelegramMessage {
 class PoolHandler extends AbstractHandler {
   /**
    * Create a new PoolHandler instance
-   * @param userModel
+   * @param UserModel
    * @param {MessageModel} messageModel
    * @param PoolModel
    */
-  constructor(userModel, messageModel, PoolModel) {
-    super(userModel);
+  constructor(UserModel, messageModel, PoolModel) {
+    super(UserModel);
     this.messageModel = messageModel;
     this.swapEventListener = (swapInfo, poolData) => {
       return this.onSwap(swapInfo, poolData);

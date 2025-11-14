@@ -61,4 +61,7 @@ beforeEach(() => {
     staker: asValue(new mocks.MockStaker),
     telegram: asClass(MockTelegram)
   });
+
+  const userModel = container.resolve('UserModel');
+  userModel.deleteMany({}).then(() => userModel.create({telegramId: 1}));
 });

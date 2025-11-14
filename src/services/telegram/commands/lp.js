@@ -155,15 +155,15 @@ class PositionMessage extends TelegramMessage {
 class LpHandler extends AbstractHandler {
   /**
    * Creates an instance of LpHandler
-   * @param userModel
+   * @param UserModel
    * @param messageModel
    * @param PositionModel
    * @param WalletModel
    * @param positionFactory
    * @param poolFactoryContract
    */
-  constructor(userModel, messageModel, PositionModel, WalletModel, positionFactory, poolFactoryContract) {
-    super(userModel);
+  constructor(UserModel, messageModel, PositionModel, WalletModel, positionFactory, poolFactoryContract) {
+    super(UserModel);
     this.messageModel = messageModel;
     this.positionModel = PositionModel;
     this.WalletModel = WalletModel;
