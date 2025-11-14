@@ -52,7 +52,7 @@ class StartMessage extends TelegramMessage {
 
     content += "Your wallets:\n";
     this.wallets.forEach(wallet => {
-      content += `• ${wallet.address} (${wallet.network})\n`;
+      content += `• ${wallet.address}\n`;
     })
 
     return content;
@@ -64,14 +64,6 @@ class StartMessage extends TelegramMessage {
  * Sends welcome message to the user and shows current monitoring status
  */
 class StartHandler extends AbstractHandler {
-  /**
-   * Create a new StartHandler instance
-   * @param userModel
-   */
-  constructor(userModel) {
-    super(userModel);
-  }
-
   /**
    * Register command handlers with the bot
    */
@@ -91,7 +83,8 @@ class StartHandler extends AbstractHandler {
    */
   async handle(msg, user) {
     const chatId = msg.chat.id;
-    const wallets = user.getWallets('arbitrum');
+    await user.populate('wallets');
+    const wallets = user.wallets; // TODO filter by chainId when global chainId management is implemented
     if (!wallets || wallets.length === 0) {
       const walletMessage = new NoWalletsMessage(chatId);
       await this.bot.sendMessage(chatId, walletMessage.toString(), { parse_mode: 'Markdown' });
