@@ -90,6 +90,15 @@ class ListedWalletMessage extends TelegramMessage {
 }
 
 class WalletHandler extends AbstractHandler {
+  wallets;
+  chainId;
+
+  constructor(UserModel, WalletModel, chainId) {
+    super(UserModel);
+    this.wallets = WalletModel;
+    this.chainId = chainId;
+  }
+
   /**
    * Register command handlers with the bot. Separate method to allow testing idividual handlers.
    * @param {object} bot - Telegram bot instance
@@ -100,12 +109,11 @@ class WalletHandler extends AbstractHandler {
 
     this.bot.on('callback_query', (query) => {
       if (query.data === 'add_wallet') {
-        return this.addWallet(query)
+        return this.promptWallet(query)
       }
 
       if (query.data.startsWith('remove_wallet_')) {
         return this.removeWallet(query)
-
       }
     })
   }
@@ -117,15 +125,15 @@ class WalletHandler extends AbstractHandler {
   async listWallets(msg) {
     const chatId = msg.chat.id;
     const user = await this.getUser(msg);
+    await user.populate('wallets');
 
-    const wallets = user.getWallets('arbitrum');
-    await this.bot.send(new WalletListMessage(chatId, wallets));
-    for (const [index, wallet] of wallets.entries()) {
+    await this.bot.send(new WalletListMessage(chatId, user.wallets));
+    for (const [index, wallet] of user.wallets.entries()) {
       await this.bot.send(new ListedWalletMessage(chatId, wallet));
     }
   }
 
-  async addWallet(query) {
+  async promptWallet(query) {
     const chatId = query.message.chat.id;
 
     // ack callback to stop loading animation
@@ -137,25 +145,36 @@ class WalletHandler extends AbstractHandler {
 
     // Listen for reply
     let listenerId;
-    listenerId = this.bot.onReplyToMessage(chatId, promptMsg.id, async (replyMsg) => {
-      const walletAddress = replyMsg.text.trim();
-      if (!isAddress(walletAddress)) {
-        this.bot.sendMessage(chatId, '❌ Invalid Ethereum address', { reply_to_message_id: replyMsg.message_id });
-        return;
+    listenerId = this.bot.onReplyToMessage(chatId, promptMsg.id, async (msg) => {
+      const wallet = await this.saveWallet(msg);
+      if (wallet) {
+        this.bot.removeReplyListener(listenerId);
+        this.bot.deleteMessages(msg.chat.id, [msg.message_id, promptMsg.id]).then();
+        this.bot.send(new ListedWalletMessage(msg.chat.id, wallet));
       }
-
-      const user = await this.getUser(query);
-      const wallet = await user.addWallet('arbitrum', walletAddress);
-
-      if (!wallet) { // failed
-        this.bot.sendMessage(chatId, '❌ Wallet already exists', { reply_to_message_id: replyMsg.message_id });
-        return;
-      }
-
-      this.bot.removeReplyListener(listenerId);
-      this.bot.deleteMessages(chatId, [replyMsg.message_id, promptMsg.id]);
-      this.bot.send(new ListedWalletMessage(chatId, wallet));
     });
+  }
+
+  async saveWallet(msg) {
+    const address = msg.text.trim();
+    if (!isAddress(address)) {
+      this.bot.sendMessage(msg.chat.id, '❌ Invalid Ethereum address', { reply_to_message_id: msg.message_id });
+      return false;
+    }
+
+    const user = await this.getUser(msg);
+    const wallet = await this.wallets.create({
+      chainId: this.chainId,
+      address,
+      userId: user._id,
+    });
+
+    if (!wallet) { // failed
+      this.bot.sendMessage(msg.chat.id, '❌ Wallet already exists', { reply_to_message_id: msg.message_id });
+      return false;
+    }
+
+    return wallet;
   }
 
   async removeWallet(query) {
@@ -167,9 +186,14 @@ class WalletHandler extends AbstractHandler {
       });
     }
 
-    const user = await this.getUser(query);
-    await user.removeWallet('arbitrum', address);
-    this.bot.deleteMessage(query.message.chat.id, query.message.message_id);
+    const user = await this.getUser(query.message);
+    const count = await this.wallets.deleteOne({
+      userId: user._id,
+      chainId: this.chainId,
+      address: address,
+    })
+    if (count === 0) console.warn('Wallet not found for removal: ', address);
+    this.bot.deleteMessage(query.message.chat.id, query.message.message_id).then();
     return this.bot.answerCallbackQuery(query.id, { text: '✅ Wallet removed' });
   }
 
