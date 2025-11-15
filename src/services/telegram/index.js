@@ -67,37 +67,33 @@ class Telegram extends TelegramBot
   }
 
   send(message, chatId = null) {
-    try {
-      if (typeof message === 'string') {
-        if (!chatId) throw new Error('Chat ID is required for text messages');
-        let text = message;
-        message = new class extends TelegramMessage {
-          toString() {
-            return text;
-          }
-        }({chatId: chatId});
-      }
-      if (!message instanceof TelegramMessage) throw new Error('Invalid message type');
+    if (typeof message === 'string') {
+      if (!chatId) throw new Error('Chat ID is required for text messages');
+      let text = message;
+      message = new class extends TelegramMessage {
+        toString() {
+          return text;
+        }
+      }({chatId: chatId});
+    }
+    if (!message instanceof TelegramMessage) throw new Error('Invalid message type');
 
-      if (!message.id) {
-        return this.sendMessage(message.chatId, message.toString(), message.options).then(reply => {
-          message.id = reply.message_id;
-          message.metadata = reply;
-          return message;
-        });
-      } else {
-        const options = {
-          ...message.getOptions(),
-          message_id: message.id,
-          chat_id: message.chatId,
-        };
-        return this.editMessageText(message.toString(), options).then(reply => {
-          message.metadata = reply;
-          return message;
-        });
-      }
-    } catch (error) {
-      console.error('Error sending message:', error);
+    if (!message.id) {
+      return this.sendMessage(message.chatId, message.toString(), message.options).then(reply => {
+        message.id = reply.message_id;
+        message.metadata = reply;
+        return message;
+      });
+    } else {
+      const options = {
+        ...message.getOptions(),
+        message_id: message.id,
+        chat_id: message.chatId,
+      };
+      return this.editMessageText(message.toString(), options).then(reply => {
+        message.metadata = reply;
+        return message;
+      });
     }
   }
 
