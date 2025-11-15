@@ -4,14 +4,14 @@ const { getTimeInTimezone, moneyFormat } = require('../../../utils');
 const AbstractHandler = require("../handler");
 
 class NoPositionsMessage extends TelegramMessage {
-  constructor(chatId, messageId) {
+  constructor(chatId, wallets) {
     super();
     this.chatId = chatId;
-    this.id = messageId;
+    this.wallets = wallets;
   }
 
   toString() {
-    return "No active positions found in this wallet.";
+    return `No active positions found in ${this.wallets.length} wallets.`;
   }
 
   getOptions() {
@@ -166,15 +166,13 @@ class LpHandler extends AbstractHandler {
       try {
         let positionsFound = false;
         for await (const position of this.positionFactory.fetchPositions(wallet.address)) {
-          positionsFound = true;
-          if (!position.isEmpty()) {
+          if (!await position.isEmpty()) {
+            positionsFound = true;
             await this.outputPosition(chatId, wallet, position);
           }
         }
 
-        if (!positionsFound) {
-          await this.bot.send(new NoPositionsMessage(chatId));
-        }
+        if (!positionsFound) this.bot.send(new NoPositionsMessage(chatId, user.wallets)).then();
       }
       finally {
         // FIXME typing is cleared after first message and then inconsistently shown

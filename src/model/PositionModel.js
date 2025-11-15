@@ -61,7 +61,7 @@ class PositionModel {
       } catch (e) {
         if (e.code === 11000) { // duplicate (race condition)
           doc = await this.findOne(filter);
-          if (!doc) throw new Error(`Postion (${doc._id}) was concurrently created but not found after retry.`);
+          if (!doc) throw new Error(`Position (${doc._id}) was concurrently created but not found after retry.`);
         }
         else throw e;
       }
@@ -125,9 +125,12 @@ class PositionModel {
     return prices.current >= prices.lower && prices.current <= prices.upper;
   }
 
-  isEmpty() {
-    // FIXME approx. value calculation with available data. best guess (maybe token names?)
-    return this.liquidity === 0n;
+  async isEmpty() {
+    // maybe? is empty if displayed decimals for both tokens are zeros. Not empty is at least 1 is shown in out precision
+    if (this.liquidity === 0n) return true;
+
+    const value = await this.calculateCombinedValue();
+    return value < 0.01;
   }
 
   async calculateTokenAmounts() {
