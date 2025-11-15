@@ -3,23 +3,6 @@ const TelegramMessage = require("../message");
 const { getTimeInTimezone, moneyFormat } = require('../../../utils');
 const AbstractHandler = require("../handler");
 
-class WalletLoadingMessage extends TelegramMessage {
-  constructor(chatId, walletIndex, walletAddress) {
-    super();
-    this.chatId = chatId;
-    this.walletIndex = walletIndex;
-    this.walletAddress = walletAddress;
-  }
-
-  toString() {
-    return `💼 **Wallet ${this.walletIndex + 1}:** \`${this.walletAddress}\`\n⏳ Loading positions...`;
-  }
-
-  getOptions() {
-    return { parse_mode: 'Markdown' };
-  }
-}
-
 class NoPositionsMessage extends TelegramMessage {
   constructor(chatId, messageId) {
     super();
@@ -60,88 +43,58 @@ class RangeNotificationMessage extends TelegramMessage {
 }
 
 class PositionMessage extends TelegramMessage {
-  constructor(position, pool) {
+  constructor(position, value, fees, amounts, prices) {
     super();
     this.position = position;
-    this.pool = pool;
+    this.value = value;
+    this.fees = fees;
+    this.amounts = amounts;
+    this.prices = prices;
   }
 
   toString() {
-    if (!this.position || this.position.error) {
-      return `❌ Error loading position: ${this.position?.error || 'Unknown error'}`;
-    }
+    const p = this.position;
+    const lines = [];
 
-    const { position } = this;
-    const feePercent = (position.fee / 10000).toFixed(2);
-    const positionLink = `https://pancakeswap.finance/liquidity/${position.tokenId}?chain=arb&persistChain=1`;
+    // Pool price
+    lines.push(p.inRange ? '🟢' : '🔴' + ` $${moneyFormat(this.prices.current)}`);
 
-    // Format components
-    const rangeIcon = position.inRange ? '🟢' : '🔴';
-    const timestamp = getTimeInTimezone();
-
-    const header = `${rangeIcon} $${moneyFormat(this.pool.price)}`;
-
-    // Build fees line with CAKE rewards and calculate APY
+    // Accumulated fees and CAKE rewards
     let feesLine = '';
-    let apyDisplay = '';
+    feesLine = `💸 $${moneyFormat(this.fees.totalValue)}`;
+    feesLine += ` 🍪 $${moneyFormat(this.fees.rewards.value)}`;
+    lines.push(feesLine);
 
-    if (position.fees) {
-      feesLine = `💸 $${moneyFormat(position.fees.totalValue)}`;
-      if (position.fees.cakeRewards) {
-        feesLine += ` 🍪 $${moneyFormat(position.fees.cakeRewards.value)}`;
-      }
+    // last update, age, APY
+    let timeLine = '⏰ ' + getTimeInTimezone(); // current time to show in UI that it is being updated
+    const age = Math.round((new Date() - p.createdAt) / 1000); // seconds
+    const hours = Math.floor(age / 3600);
+    const minutes = Math.floor(age / 60) % 60;
+    timeLine += ' ⏳ ' + `${hours}:${minutes.toString().padStart(2, '0')}`;
+    const secondlyReturn = (this.fees.totalValue + this.fees.rewards.value) / this.value / age;
+    const apy = secondlyReturn * 31536000 * 100; // Annualize (31,536,000 seconds per year) and convert to percentage
+    timeLine += ` 📈 ${apy.toFixed(2)}%`;
+    lines.push(timeLine);
 
-      // Calculate real-time APY if position has createdAt and we have total fees/rewards
-      if (position.createdAt && position.fees.totalValue > 0) {
-        const now = new Date();
-        const created = new Date(position.createdAt);
-        const ageInMs = now - created;
-        const ageInSeconds = ageInMs / 1000;
+    // token amounts
+    let amounts = `💰 ${this.amounts[0].toFixed(6)} ${p.pool.token0.symbol} + `;
+    amounts += `${moneyFormat(this.amounts[1])} ${p.pool.token1.symbol}`;
+    lines.push(amounts);
 
-        if (ageInSeconds > 0) {
-          // Calculate total position value (token amounts in USD)
-          const token0Value = parseFloat(position.token0Amount) * this.pool.price;
-          const token1Value = parseFloat(position.token1Amount);
-          const totalPositionValue = token0Value + token1Value;
+    // Staking status and price range
+    let rangeLine = p.isStaked ? '🥩 STAKED' : '💼 UNSTAKED';
+    rangeLine += ` | $${moneyFormat(this.prices.lower)} - $${moneyFormat(this.prices.upper)}`;
+    lines.push(rangeLine);
 
-          if (totalPositionValue > 0) {
-            // Total profit = fees + CAKE rewards
-            const totalProfit = position.fees.totalValue + (position.fees.cakeRewards?.value || 0);
+    // pool pair and tokenId
+    const feePercent = (p.pool.fee / 10000).toFixed(2);
+    const posLink = `https://pancakeswap.finance/liquidity/${p.tokenId}?chain=arb&persistChain=1`;
+    const poolLink = `https://pancakeswap.finance/liquidity/pool/arb/` + p.pool.address;
+    let poolInfo = `[${p.pool.token0.symbol}/${p.pool.token1.symbol}](${poolLink}) (${feePercent}%)`;
+    poolInfo += ` - [#${p.tokenId}](${posLink})`;
+    lines.push(poolInfo);
 
-            // Calculate per-second return rate
-            const secondlyReturn = totalProfit / totalPositionValue / ageInSeconds;
-
-            // Annualize (31,536,000 seconds per year) and convert to percentage
-            const apy = secondlyReturn * 31536000 * 100;
-
-            apyDisplay = ` 📈 ${apy.toFixed(1)}%`;
-          }
-        }
-      }
-
-      feesLine += `\n`;
-    }
-
-    const amounts = `💰 ${parseFloat(position.token0Amount).toFixed(4)} ${position.token0.symbol} + ${moneyFormat(parseFloat(position.token1Amount))} ${position.token1.symbol}`;
-
-    // Calculate position age with APY
-    let timeWithAge = `⏰ ${timestamp}`;
-    if (position.createdAt) {
-      const now = new Date();
-      const created = new Date(position.createdAt);
-      const ageMs = now - created;
-      const ageMinutes = Math.floor(ageMs / (1000 * 60));
-      const hours = Math.floor(ageMinutes / 60);
-      const minutes = ageMinutes % 60;
-      const ageDisplay = hours > 0 ? `${hours}:${minutes.toString().padStart(2, '0')}` : `0:${minutes.toString().padStart(2, '0')}`;
-      timeWithAge = `⏰ ${timestamp} ⏳ ${ageDisplay}${apyDisplay}`;
-    }
-
-    const stakingStatus = position.isStaked ? '🥩 STAKED' : '💼 UNSTAKED';
-    const priceRange = `${stakingStatus} | $${moneyFormat(parseFloat(position.lowerPrice))} - $${moneyFormat(parseFloat(position.upperPrice))}`;
-    const poolInfo = `${position.token0.symbol}/${position.token1.symbol} (${feePercent}%) - [#${position.tokenId}](${positionLink})`;
-
-    return `${header}\n${feesLine}${timeWithAge}\n${amounts}\n${priceRange}\n${poolInfo}`;
+    return lines.join('\n');
   }
 
   get options() {
@@ -156,15 +109,15 @@ class LpHandler extends AbstractHandler {
   /**
    * Creates an instance of LpHandler
    * @param UserModel
-   * @param messageModel
+   * @param MessageModel
    * @param PositionModel
    * @param WalletModel
    * @param positionFactory
    * @param poolFactoryContract
    */
-  constructor(UserModel, messageModel, PositionModel, WalletModel, positionFactory, poolFactoryContract) {
+  constructor(UserModel, MessageModel, PositionModel, WalletModel, positionFactory, poolFactoryContract) {
     super(UserModel);
-    this.messageModel = messageModel;
+    this.MessageModel = MessageModel;
     this.positionModel = PositionModel;
     this.WalletModel = WalletModel;
     this.positionFactory = positionFactory;
@@ -198,24 +151,24 @@ class LpHandler extends AbstractHandler {
     const chatId = msg.chat.id;
 
     const user = await this.getUser(msg);
-    const wallets = user.getWallets('arbitrum');
+    await user.populate('wallets');
 
-    if (wallets.length === 0) {
+    if (user.wallets.length === 0) {
       return this.bot.send("💼 No wallets are being monitored.\n\nUse /wallet to start monitoring a wallet.", chatId);
     }
 
-    for (let i = 0; i < wallets.length; i++) {
-      const address = wallets[i];
-      this.bot.sendChatAction(chatId, 'typing');
+    for (let i = 0; i < user.wallets.length; i++) {
+      const wallet = user.wallets[i];
+
+      this.bot.sendChatAction(chatId, 'typing').then();
       const typing = setInterval(() => this.bot.sendChatAction(chatId, 'typing'), 5000);
 
       try {
         let positionsFound = false;
-        for await (const position of this.positionFactory.fetchPositions(address)) {
+        for await (const position of this.positionFactory.fetchPositions(wallet.address)) {
           positionsFound = true;
           if (!position.isEmpty()) {
-            //await position.fetchPositionDetails();
-            await this.processPosition(chatId, address, position);
+            await this.outputPosition(chatId, wallet, position);
           }
         }
 
@@ -224,6 +177,7 @@ class LpHandler extends AbstractHandler {
         }
       }
       finally {
+        // FIXME typing is cleared after first message and then inconsistently shown
         clearInterval(typing);
       }
     }
@@ -232,21 +186,24 @@ class LpHandler extends AbstractHandler {
   /**
    * Processes a single position, sending a message and starting monitoring
    * @param {string} chatId - Telegram chat ID
-   * @param {string} walletAddress - Wallet address being processed
-   * @param {Position} position - Position object to process
+   * @param {WalletModel} wallet - Wallet address being processed
+   * @param {PositionModel} position - Position object to process
    * @returns {Promise<void>}
    */
-  async processPosition(chatId, walletAddress, position) {
+  async outputPosition(chatId, wallet, position) {
     /*const existingPosition = await this.db.getPosition(position.tokenId, walletAddress);
     if (existingPosition && existingPosition.createdAt) {
       position.createdAt = existingPosition.createdAt;
     }*/
 
-    const pool = await this.poolFactory.getForPosition(position);
+    const [value, prices, fees, amounts] = await Promise.all([
+      position.calculateCombinedValue(),
+      position.pool.getPrices(position),
+      position.calculateUnclaimedFees(),
+      position.calculateTokenAmounts()
+    ]);
 
-    //pool.fetchPosition(position); // load current prices and liquidity
-
-    const positionMessage = new PositionMessage(position, await pool.slot0());
+    const positionMessage = new PositionMessage(position, value, fees, amounts, prices);
     positionMessage.chatId = chatId;
 
     const sentMessage = await this.bot.send(positionMessage);
@@ -254,31 +211,6 @@ class LpHandler extends AbstractHandler {
 
     //await this.savePositionData(position, walletAddress, chatId, sentMessage.id);
     //this.startMonitoringPosition(position.tokenId);
-  }
-
-  /**
-   * Saves position data to the database for persistence
-   * @param {Position} position - Position object to save
-      const positionData = {
-        ...position.toObject(),
-        walletAddress,
-        poolAddress: position.pool.address,
-        chatId,
-        messageId,
-        isMonitored: true
-      };
-
-      // Only set createdAt if it's not already set (for new positions)
-      if (!position.createdAt) {
-        positionData.createdAt = new Date();
-      } else {
-        positionData.createdAt = position.createdAt;
-      }
-
-      await this.db.savePosition(positionData);
-    } catch (error) {
-      console.error(`Error saving position ${position.tokenId}:`, error);
-    }
   }
 
   /**

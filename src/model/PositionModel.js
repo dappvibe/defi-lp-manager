@@ -156,7 +156,7 @@ class PositionModel {
     if (this.liquidity === 0n) return {
       token0Fees: 0,
       token1Fees: 0,
-      //totalValue: 0
+      totalValue: 0
     };
 
     // Prepare collect call with max values to simulate fee collection without actually collecting
@@ -175,12 +175,12 @@ class PositionModel {
     let totalValue = (+token0Fees * price.current + +token1Fees).toFixed(this.pool.token1.decimals);
 
     // Add CAKE rewards if position is staked
-    let cakeRewards = null;
+    let rewards = { amount: 0, value: 0, price: 0 };
     const cakeRewardAmount = await this.calculateCakeRewards();
     if (cakeRewardAmount > 0) {
       const cakePrice = await this.getCakePrice();
       const cakeValue = cakeRewardAmount * cakePrice;
-      cakeRewards = {
+      rewards = {
         amount: cakeRewardAmount.toFixed(4),
         value: cakeValue,
         price: cakePrice
@@ -192,7 +192,7 @@ class PositionModel {
       token1Fees: token1Fees,
       totalValue,
       currentPrice: price.current,
-      cakeRewards
+      rewards
     };
   }
 

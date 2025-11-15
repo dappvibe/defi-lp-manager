@@ -9,7 +9,11 @@ function getTimeInTimezone(options = { hour12: false }) {
 }
 
 function moneyFormat(price) {
-    return price.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+    return parseFloat(price).toLocaleString('en-US', {
+      useGrouping: true,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
 }
 
 module.exports = {
