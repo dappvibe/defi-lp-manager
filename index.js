@@ -2,8 +2,8 @@
  * Main application entry point
  * This file is responsible for starting the application and handling shutdown
  */
-process.on('unhandledRejection', console.error);
-process.on('uncaughtException', console.error);
+process.on('unhandledRejection', (e) => console.error(e.stack));
+process.on('uncaughtException', (e) => console.error(e.stack));
 
 const App = require('./src/app');
 
