@@ -26,18 +26,24 @@ class PositionFactory
   */
   async *fetchPositions(address)
   {
-    const iterateContract = async function* (contract) {
+    const iterateContract = async function* (contract, isStaked) {
       const count = await contract.read.balanceOf([address]);
 
       // This must be sequential, not Promise.all to not hit Alchemy (free-tier) rate limits
       for (let i = Number(count) - 1; i >= 0; i--) {
         const tokenId = await contract.read.tokenOfOwnerByIndex([address, i]);
-        yield await this.positionModel.fetch(Number(tokenId));
+        const pos = await this.positionModel.fetch(Number(tokenId));
+
+        if (pos.isStaked !== isStaked) {
+          pos.isStaked = isStaked;
+          pos.save(); // nowait
+        }
+        yield pos;
       }
     };
 
-    yield* iterateContract.call(this, this.staker);
-    yield* iterateContract.call(this, this.positionManager);
+    yield* iterateContract.call(this, this.staker, true);
+    yield* iterateContract.call(this, this.positionManager, false);
   }
 }
 
