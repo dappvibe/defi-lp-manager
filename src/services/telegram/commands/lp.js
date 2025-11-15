@@ -178,7 +178,19 @@ class LpHandler extends AbstractHandler {
         for await (const position of this.positionFactory.fetchPositions(wallet.address)) {
           if (!await position.isEmpty()) {
             positionsFound = true;
-            await this.outputPosition(chatId, wallet, position);
+            const sent = await this.outputPosition(chatId, wallet, position);
+
+            // Save message to keep updating after restart
+            this.MessageModel.findOneAndUpdate(
+              {type: 'Position_' + position.tokenId, chatId},
+              {
+                chatId,
+                messageId: sent.id,
+                type: 'Position_' + position.tokenId,
+                metadata: sent
+              },
+              {upsert: true, new: true, setDefaultsOnInsert: true}
+            ).then(doc => this.positionMessages.set(position._id, doc));
           }
         }
 
@@ -199,11 +211,6 @@ class LpHandler extends AbstractHandler {
    * @returns {Promise<void>}
    */
   async outputPosition(chatId, wallet, position) {
-    /*const existingPosition = await this.db.getPosition(position.tokenId, walletAddress);
-    if (existingPosition && existingPosition.createdAt) {
-      position.createdAt = existingPosition.createdAt;
-    }*/
-
     const [value, prices, fees, amounts] = await Promise.all([
       position.calculateCombinedValue(),
       position.pool.getPrices(position),
@@ -215,11 +222,7 @@ class LpHandler extends AbstractHandler {
     const positionMessage = new PositionMessage(position, value, fees, amounts, prices);
     positionMessage.chatId = chatId;
 
-    const sentMessage = await this.bot.send(positionMessage);
-    this.positionMessages.set(position.id, sentMessage);
-
-    //await this.savePositionData(position, walletAddress, chatId, sentMessage.id);
-    //this.startMonitoringPosition(position.tokenId);
+    return await this.bot.send(positionMessage);
   }
 
   /**
