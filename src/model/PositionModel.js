@@ -219,10 +219,6 @@ class PositionModel {
 positionSchema.loadClass(PositionModel);
 
 module.exports = function(mongoose, chainId, positionManager, staker, PoolModel, TokenModel) {
-  const injectDeps = (doc) => Object.assign(doc, { positionManager, staker });
-  positionSchema.post('save', injectDeps)
-  positionSchema.post('init', injectDeps)
-
   PositionModel.poolModel = PoolModel;
   PositionModel.tokenModel = TokenModel;
   PositionModel.chainId = chainId;
