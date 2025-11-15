@@ -177,18 +177,9 @@ class PositionModel {
     const price = await this.pool.getPrices(this);
     let totalValue = (+token0Fees * price.current + +token1Fees).toFixed(this.pool.token1.decimals);
 
-    // Add CAKE rewards if position is staked
-    let rewards = { amount: 0, value: 0, price: 0 };
-    const cakeRewardAmount = await this.calculateCakeRewards();
-    if (cakeRewardAmount > 0) {
-      const cakePrice = await this.getCakePrice();
-      const cakeValue = cakeRewardAmount * cakePrice;
-      rewards = {
-        amount: cakeRewardAmount.toFixed(4),
-        value: cakeValue,
-        price: cakePrice
-      };
-    }
+    const rewards = {
+      amount: await this.calculateCakeRewards(),
+    };
 
     return {
       token0Fees: token0Fees,
@@ -212,49 +203,6 @@ class PositionModel {
 
     // Convert to human readable amount (CAKE has 18 decimals)
     return parseFloat(pendingCake.toString()) / Math.pow(10, 18);
-  }
-
-
-  /**
-   * Get current CAKE price in USD from CAKE/USDT pool
-   * @returns {Promise<number>} CAKE price in USD
-   *
-   * FIXME fetch actual price with good multi-chain design
-   */
-  async getCakePrice() {
-    return 1;
-
-    try {
-      const { Pool } = require('./pool');
-
-      // Find CAKE pools
-      const cakePools = await this._db.findPoolsByTokenSymbol('Cake');
-
-      if (cakePools.length === 0) {
-        throw new Error('No CAKE pools found in database');
-      }
-
-      // Find a CAKE/USDT or CAKE/USDC pool
-      const cakeStablePool = cakePools.find(pool => {
-        const token0Symbol = pool.token0.symbol;
-        const token1Symbol = pool.token1.symbol;
-        return (token0Symbol === 'Cake' && (token1Symbol === 'USDT' || token1Symbol === 'USDC')) ||
-          ((token0Symbol === 'USDT' || token0Symbol === 'USDC') && token1Symbol === 'Cake');
-      });
-
-      if (!cakeStablePool) {
-        throw new Error('No CAKE/USDT or CAKE/USDC pool found');
-      }
-
-      // Get the pool instance
-      const pool = Pool.getPool(cakeStablePool.address);
-
-      // Get current price from the pool
-      return await pool.getPrice();
-    } catch (error) {
-      console.error('(Try /pool) Error fetching CAKE price from pool:', error);
-      return 0; // Fallback price
-    }
   }
 
   async toUniswapSDK() {

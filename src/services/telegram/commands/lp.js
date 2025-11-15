@@ -113,18 +113,19 @@ class LpHandler extends AbstractHandler {
    * @param PositionModel
    * @param WalletModel
    * @param positionFactory
-   * @param poolFactoryContract
+   * @param PoolModel
    */
-  constructor(UserModel, MessageModel, PositionModel, WalletModel, positionFactory, poolFactoryContract) {
+  constructor(UserModel, MessageModel, PositionModel, WalletModel, positionFactory, PoolModel) {
     super(UserModel);
     this.MessageModel = MessageModel;
     this.positionModel = PositionModel;
     this.WalletModel = WalletModel;
     this.positionFactory = positionFactory;
-    this.poolFactory = poolFactoryContract;
     this.positionMessages = new Map(); // tokenId => PositionMessage
     this.rangeNotificationMessages = new Map(); // tokenId => RangeNotificationMessage
     this.swapEventListener = (swapInfo, poolData) => this.onSwap(swapInfo, poolData);
+    this.PoolModel = PoolModel;
+    this.cakePrice = 0;
 
     // Start restoration process asynchronously
     // this.restoreMonitoredPositions().catch(error => {
@@ -156,6 +157,15 @@ class LpHandler extends AbstractHandler {
     if (user.wallets.length === 0) {
       return this.bot.send("💼 No wallets are being monitored.\n\nUse /wallet to start monitoring a wallet.", chatId);
     }
+
+    // CAKE/USDC FIXME somehow in container so that it's chainId aware
+    const cakePool = await this.PoolModel.fetch(
+      '0x1b896893dfc86bb67cf57767298b9073d2c1ba2c',
+      '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
+      2500
+    );
+    this.cakePrice = await cakePool.getPrices();
+    this.cakePrice = this.cakePrice.current;
 
     for (let i = 0; i < user.wallets.length; i++) {
       const wallet = user.wallets[i];
@@ -200,6 +210,7 @@ class LpHandler extends AbstractHandler {
       position.calculateUnclaimedFees(),
       position.calculateTokenAmounts()
     ]);
+    fees.rewards.value = fees.rewards.amount * this.cakePrice;
 
     const positionMessage = new PositionMessage(position, value, fees, amounts, prices);
     positionMessage.chatId = chatId;

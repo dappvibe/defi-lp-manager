@@ -55,6 +55,6 @@ module.exports = (container) => {
         abi: require('./abis/v3-pool.json'),
         client: container.resolve('provider')
       });
-    })
+    }),
   })
 };
