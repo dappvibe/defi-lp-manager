@@ -223,9 +223,6 @@ class LpHandler extends AbstractHandler {
           await this.bot.send(new NoPositionsMessage(chatId));
         }
       }
-      catch (error) {
-        console.error(`Error processing positions for wallet ${address}:`, error.message);
-      }
       finally {
         clearInterval(typing);
       }
