@@ -1,3 +1,5 @@
+return; // disabled until business value is confirmed
+
 /**
  * Handler for /pool command
  * Lists all configured pools with toggle buttons for monitoring
@@ -111,12 +113,12 @@ class PoolHandler extends AbstractHandler {
   /**
    * Create a new PoolHandler instance
    * @param UserModel
-   * @param {MessageModel} messageModel
+   * @param {MessageModel} MessageModel
    * @param PoolModel
    */
-  constructor(UserModel, messageModel, PoolModel) {
+  constructor(UserModel, MessageModel, PoolModel) {
     super(UserModel);
-    this.messageModel = messageModel;
+    this.MessageModel = MessageModel;
     this.swapEventListener = (swapInfo, poolData) => {
       return this.onSwap(swapInfo, poolData);
     };
@@ -125,7 +127,7 @@ class PoolHandler extends AbstractHandler {
     this.messages = new Map();
     //this.pools = poolsConfig.getPools('pancakeswap', 'arbitrum');
 
-/*    this.messageModel.getMonitoredPoolMessages().then(monitoredPools => {
+/*    this.MessageModel.getMonitoredPoolMessages().then(monitoredPools => {
       for (const address of configuredPools) {
         const msg = new PoolInfoMessage(Pool.getPool(address), null);
         this.messages.set(address, msg);
@@ -172,7 +174,7 @@ class PoolHandler extends AbstractHandler {
 
         await this.bot.send(message).then(async (sentMsg) => {
           this.messages.set(message.pool.address, sentMsg);
-          await this.messageModel.saveMessage(sentMsg);
+          await this.MessageModel.saveMessage(sentMsg);
         });
       }
     } catch (error) {
@@ -235,7 +237,7 @@ class PoolHandler extends AbstractHandler {
     try {
       const { info, price } = await message.pool.startMonitoring();
       this.listenSwaps(message.pool);
-      await this.messageModel.saveMessage(message);
+      await this.MessageModel.saveMessage(message);
       return price;
     } catch (error) {
       console.error(`Error starting pool monitoring  ${message.pool.info.token0.symbol}/${message.pool.info.token1.symbol} (${message.pool.info.fee}%)`, error.message);
@@ -250,7 +252,7 @@ class PoolHandler extends AbstractHandler {
     try {
       message.pool.removeListener('swap', this.swapEventListener);
       await message.pool.stopMonitoring();
-      this.messageModel.create(message.pool.address, message.chatId, message.id, false);
+      this.MessageModel.create(message.pool.address, message.chatId, message.id, false);
     } catch (error) {
       console.error(`Error stopping pool monitoring ${message.pool.info.token0.symbol}/${message.pool.info.token1.symbol} (${message.pool.info.fee}%)`, error.message);
     }
@@ -293,7 +295,7 @@ class PoolHandler extends AbstractHandler {
     } catch (error) {
       console.error(`Error handling swap event for pool ${address}:`, error.message);
       msg.pool.removeListener('swap', this.swapEventListener);
-      await this.messageModel.saveMessage(msg);
+      await this.MessageModel.saveMessage(msg);
     }
   }
 
