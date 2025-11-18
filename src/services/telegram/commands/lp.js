@@ -1,4 +1,3 @@
-const Position = require('../../uniswap/position');
 const TelegramMessage = require("../message");
 const { getTimeInTimezone, moneyFormat } = require('../../../utils');
 const AbstractHandler = require("../handler");
@@ -109,6 +108,7 @@ class PositionMessage extends TelegramMessage {
 class LpHandler extends AbstractHandler {
   /**
    * Creates an instance of LpHandler
+   * @param {Mongoose} db
    * @param UserModel
    * @param MessageModel
    * @param PositionModel
@@ -116,8 +116,9 @@ class LpHandler extends AbstractHandler {
    * @param positionFactory
    * @param PoolModel
    */
-  constructor(UserModel, MessageModel, PositionModel, WalletModel, positionFactory, PoolModel) {
+  constructor(db, UserModel, MessageModel, PositionModel, WalletModel, positionFactory, PoolModel) {
     super(UserModel);
+    this.db = db;
     this.MessageModel = MessageModel;
     this.positionModel = PositionModel;
     this.WalletModel = WalletModel;
@@ -125,12 +126,6 @@ class LpHandler extends AbstractHandler {
     this.positionMessages = new Map(); // tokenId => PositionMessage
     this.rangeNotificationMessages = new Map(); // tokenId => RangeNotificationMessage
     this.PoolModel = PoolModel;
-    this.cakePrice = 0;
-
-    // Start restoration process asynchronously
-    // this.restoreMonitoredPositions().catch(error => {
-    //   console.error('Error during position monitoring restoration:', error);
-    // });
   }
 
   /**
@@ -140,6 +135,11 @@ class LpHandler extends AbstractHandler {
   listenOn(bot) {
     this.bot = bot;
     this.bot.onText(/\/lp/, this.handleCommand.bind(this));
+
+    this.restoreMonitoredPositions().catch(error => {
+      console.error('Error during position monitoring restoration:', error);
+    });
+
     return this;
   }
 
@@ -158,15 +158,6 @@ class LpHandler extends AbstractHandler {
       return this.bot.send("💼 No wallets are being monitored.\n\nUse /wallet to start monitoring a wallet.", chatId);
     }
 
-    // CAKE/USDC FIXME somehow in container so that it's chainId aware
-    const cakePool = await this.PoolModel.fetch(
-      '0x1b896893dfc86bb67cf57767298b9073d2c1ba2c',
-      '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
-      2500
-    );
-    this.cakePrice = await cakePool.getPrices();
-    this.cakePrice = this.cakePrice.current;
-
     for (let i = 0; i < user.wallets.length; i++) {
       const wallet = user.wallets[i];
 
@@ -181,20 +172,21 @@ class LpHandler extends AbstractHandler {
             const sent = await this.outputPosition(chatId, wallet, position);
 
             // Save message to keep updating after restart
+            const id = 'Position_' + position.id;
             this.MessageModel.findOneAndUpdate(
-              {type: 'Position_' + position.tokenId, chatId},
+              {_id: 'Position_' + position.id, chatId},
               {
+                _id: 'Position_' + position.id,
                 chatId,
                 messageId: sent.id,
-                type: 'Position_' + position.tokenId,
                 metadata: sent
               },
               {upsert: true, new: true, setDefaultsOnInsert: true}
-            ).then(doc => this.positionMessages.set(position._id, doc));
+            )
+              .then(doc => this.positionMessages.set(position._id, doc));
 
             // subscribe to blockchain events
-            position.pool.startMonitoring();
-            position.pool.on('swap', (e) => this.updatePosition(position, e));
+            this.subscribeToSwaps(position);
           }
         }
 
@@ -221,7 +213,7 @@ class LpHandler extends AbstractHandler {
       position.calculateUnclaimedFees(),
       position.calculateTokenAmounts()
     ]);
-    fees.rewards.value = fees.rewards.amount * this.cakePrice;
+    fees.rewards.value = fees.rewards.amount * (await this.cakePrice());
 
     const positionMessage = new PositionMessage(position, value, fees, amounts, prices);
     positionMessage.chatId = chatId;
@@ -245,12 +237,17 @@ class LpHandler extends AbstractHandler {
       pos.calculateUnclaimedFees(),
       pos.calculateTokenAmounts()
     ]);
-    fees.rewards.value = fees.rewards.amount * this.cakePrice;
+    fees.rewards.value = fees.rewards.amount * (await this.cakePrice());
     const posMessage = new PositionMessage(pos, value, fees, amounts, prices);
     posMessage.id = msg.metadata.id;
     posMessage.chatId = msg.chatId;
 
     this.bot.send(posMessage);
+  }
+
+  subscribeToSwaps(position) {
+    position.startMonitoring();
+    position.on('swap', (e) => this.updatePosition(position, e));
   }
 
   /**
@@ -306,63 +303,35 @@ class LpHandler extends AbstractHandler {
    * @returns {Promise<void>}
    */
   async restoreMonitoredPositions() {
-    try {
-      console.log('Restoring monitored positions...');
-      const wallets = this.WalletModel.getAllMonitoredWallets();
-      let restoredCount = 0;
+    console.log('Restoring monitored positions...');
+    const messages = await this.db.model('Message').find({_id: /^Position_/});
+    let count = 0;
 
-      for (const walletAddress of wallets) {
-        try {
-          const positions = await this.db.getPositionsByWallet(walletAddress);
+    for (const msg of messages) {
+      const pos = await msg.position;
 
-          for (const positionData of positions) {
-            if (positionData.messageId && positionData.chatId) {
-              await this.restorePosition(positionData);
-              restoredCount++;
-            }
-          }
-        } catch (error) {
-          console.error(`Error restoring positions for wallet ${walletAddress}:`, error);
-        }
+      if (pos === null) {
+        console.warn('Position is null for message: ', msg._id);
+        msg.deleteOne(); // FIXME not deleted
+        continue;
       }
 
-      console.log(`Restored monitoring for ${restoredCount} positions`);
-    } catch (error) {
-      console.error('Error restoring monitored positions:', error);
+      this.positionMessages.set(pos._id, msg);
+      this.subscribeToSwaps(pos);
+      count++;
     }
+    console.log(`Restored monitoring for ${count} positions`);
   }
 
-  /**
-   * Restores monitoring for a single position from stored data
-   * @param {Object} positionData - Stored position data from database
-   * @returns {Promise<void>}
-   */
-  async restorePosition(positionData) {
-    try {
-      // Fetch full position details from blockchain
-      const fullPositionData = await Position.fetchPositionDetails(
-        positionData.tokenId,
-        positionData.isStaked || false, // Use the stored isStaked value
-        positionData.walletAddress
-      );
-
-      // Create Position object with full data
-      const position = new Position(fullPositionData);
-      position.walletAddress = positionData.walletAddress; // Ensure wallet address is set
-      position.createdAt = positionData.createdAt; // Preserve original creation time
-
-      const positionMessage = new PositionMessage(position);
-      positionMessage.chatId = positionData.chatId;
-      positionMessage.id = positionData.messageId;
-
-      this.positionMessages.set(positionData.tokenId, positionMessage);
-      this.startMonitoringPosition(positionData.tokenId);
-
-      console.log(`Restored position ${positionData.tokenId} for wallet ${positionData.walletAddress}`);
-    } catch (error) {
-      console.error(`Error restoring position ${positionData.tokenId}:`, error);
-      // Don't throw the error to prevent stopping the restoration of other positions
-    }
+  async cakePrice() {
+    // CAKE/USDC FIXME somehow in container so that it's chainId aware
+    const cakePool = await this.PoolModel.fetch(
+      '0x1b896893dfc86bb67cf57767298b9073d2c1ba2c',
+      '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
+      2500
+    );
+    const cakePrice = await cakePool.getPrices();
+    return cakePrice.current;
   }
 
   getMyCommand = () => ['lp', 'List active liquidity pools for your wallets']

@@ -213,7 +213,7 @@ class PositionModel {
   startMonitoring() {
     this.pool.startMonitoring();
     this.pool.on('swap', (e) => {
-      this.emit('swap');
+      this.emit('swap', e);
     });
   }
 }
