@@ -84,7 +84,9 @@ class PositionModel {
       fee: data[4],
       tickLower: data[5],
       tickUpper: data[6],
-      liquidity: data[7]
+      liquidity: data[7],
+      // NOTE: createdAt on blockchain can be queried only with unlimited logs which is not available in free-tier alchemy.
+      // Thus rely on watching wallet events and save doc approx. the same time when position appears in logs.
     };
 
     // Ensure dependant tokens exists in the db
