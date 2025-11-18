@@ -124,7 +124,6 @@ class LpHandler extends AbstractHandler {
     this.positionFactory = positionFactory;
     this.positionMessages = new Map(); // tokenId => PositionMessage
     this.rangeNotificationMessages = new Map(); // tokenId => RangeNotificationMessage
-    this.swapEventListener = (swapInfo, poolData) => this.onSwap(swapInfo, poolData);
     this.PoolModel = PoolModel;
     this.cakePrice = 0;
 
@@ -192,6 +191,10 @@ class LpHandler extends AbstractHandler {
               },
               {upsert: true, new: true, setDefaultsOnInsert: true}
             ).then(doc => this.positionMessages.set(position._id, doc));
+
+            // subscribe to blockchain events
+            position.pool.startMonitoring();
+            position.pool.on('swap', (e) => this.updatePosition(position, e));
           }
         }
 
@@ -227,46 +230,27 @@ class LpHandler extends AbstractHandler {
   }
 
   /**
-   * Starts monitoring a position for swap events and price changes
-   * @param {string} tokenId - Token ID of the position to monitor
-   * @returns {void}
-   */
-  startMonitoringPosition(tokenId) {
-    const message = this.positionMessages.get(tokenId);
-    if (!message) {
-      console.error(`No position message found for token ID ${tokenId}`);
-      return;
-    }
-
-    const pool = message.position.pool;
-    pool.startMonitoring().then(() => {
-      pool.removeListener('swap', this.swapEventListener);
-      pool.on('swap', this.swapEventListener);
-    }).catch(error => {
-      console.error(`Error starting monitoring for position ${tokenId}:`, error);
-    });
-  }
-
-  /**
-   * Handles swap events by updating affected position messages
-   * @param {Object} swapInfo - Information about the swap event
-   * @param {Object} poolData - Pool data containing address and other details
+   * Updates a position message with fresh data from the blockchain
    * @returns {Promise<void>}
+   * @param pos
+   * @param event
    */
-  async onSwap(swapInfo, poolData) {
-    const affectedPositions = Array.from(this.positionMessages.values())
-      .filter(message => message.position.pool.address === poolData.address);
+  async updatePosition(pos, event) {
+    const msg = this.positionMessages.get(pos._id);
+    if (!msg) return;
 
-    for (const message of affectedPositions) {
-      try {
-        await this.updatePositionMessage(message);
+    const [value, prices, fees, amounts] = await Promise.all([
+      pos.calculateCombinedValue(),
+      pos.pool.getPrices(pos),
+      pos.calculateUnclaimedFees(),
+      pos.calculateTokenAmounts()
+    ]);
+    fees.rewards.value = fees.rewards.amount * this.cakePrice;
+    const posMessage = new PositionMessage(pos, value, fees, amounts, prices);
+    posMessage.id = msg.metadata.id;
+    posMessage.chatId = msg.chatId;
 
-        // Check range notification
-        await this.handleRangeNotification(message);
-      } catch (error) {
-        console.error(`Error updating position ${message.position.tokenId}:`, error);
-      }
-    }
+    this.bot.send(posMessage);
   }
 
   /**
@@ -314,85 +298,6 @@ class LpHandler extends AbstractHandler {
       } catch (error) {
         console.error(`Error deleting range notification for position ${tokenId}:`, error);
       }
-    }
-  }
-
-  /**
-   * Updates a position message with fresh data from the blockchain
-   * @param {PositionMessage} message - Position message to update
-   * @returns {Promise<void>}
-   */
-  async updatePositionMessage(message) {
-    const { position } = message;
-
-    try {
-      // Fetch updated position data
-      const updatedData = await Position.fetchPositionDetails(position.tokenId, position.isStaked);
-      const updatedPosition = new Position(updatedData);
-
-      // Calculate combined token1 value
-      const combinedToken1Value = await updatedPosition.getCombinedToken1Value();
-      if (combinedToken1Value < 0.1) {
-        console.log(`Position ${position.tokenId} liquidity dropped below 0.1 (${combinedToken1Value.toFixed(4)}). Stopping monitoring.`);
-
-        // send last update reflecting 0 liquidity
-        message.position = updatedPosition;
-        await this.bot.send(message);
-
-        // Stop monitoring this position
-        await this.stopMonitoringPosition(position.tokenId);
-        this.positionMessages.delete(position.tokenId);
-        await this.db.removePosition(position.tokenId, position.walletAddress);
-
-        return; // Exit early, don't update the message
-      }
-
-      updatedPosition.walletAddress = position.walletAddress; // FIXME
-      updatedPosition.createdAt = position.createdAt; // Preserve createdAt
-      updatedPosition.fees = await message.position.fetchAccumulatedFees();
-      message.position = updatedPosition;
-
-      await this.bot.send(message);
-
-      await this.db.savePosition({
-        ...updatedPosition.toObject(),
-        walletAddress: updatedPosition.walletAddress,
-        poolAddress: updatedPosition.pool.address,
-        chatId: message.chatId,
-        messageId: message.id,
-        isMonitored: true,
-        createdAt: updatedPosition.createdAt
-      });
-    } catch (error) {
-      console.error(`Error updating position message for ${position.tokenId}:`, error);
-      throw error;
-    }
-  }
-
-  /**
-   * Stops monitoring a position and cleans up related resources
-   * @param {string} tokenId - Token ID of the position to stop monitoring
-   * @returns {Promise<void>}
-   */
-  async stopMonitoringPosition(tokenId) {
-    const message = this.positionMessages.get(tokenId);
-    if (!message) {
-      console.warn(`No position message found for token ID ${tokenId} to stop monitoring`);
-      return;
-    }
-
-    try {
-      // Stop pool monitoring if this was the last position for this pool
-      const pool = message.position.pool;
-      const otherPositionsForPool = Array.from(this.positionMessages.values())
-        .filter(msg => msg.position.pool.address === pool.address && msg.position.tokenId !== tokenId);
-
-      if (otherPositionsForPool.length === 0) {
-        pool.removeListener('swap', this.swapEventListener);
-        console.log(`Stopped monitoring pool ${pool.address} as no more positions are being tracked`);
-      }
-    } catch (error) {
-      console.error(`Error stopping monitoring for position ${tokenId}:`, error);
     }
   }
 

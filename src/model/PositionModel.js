@@ -214,6 +214,13 @@ class PositionModel {
       tickUpper: this.tickUpper
     });
   }
+
+  startMonitoring() {
+    this.pool.startMonitoring();
+    this.pool.on('swap', (e) => {
+      this.emit('swap');
+    });
+  }
 }
 
 positionSchema.loadClass(PositionModel);
