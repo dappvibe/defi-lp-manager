@@ -71,7 +71,7 @@ class PositionMessage extends TelegramMessage {
     const hours = Math.floor(age / 3600);
     const minutes = Math.floor(age / 60) % 60;
     timeLine += ' ⏳ ' + `${hours}:${minutes.toString().padStart(2, '0')}`;
-    const secondlyReturn = (this.fees.totalValue + this.fees.rewards.value) / this.value / age;
+    const secondlyReturn = (+this.fees.totalValue + this.fees.rewards.value) / this.value / age;
     const apy = secondlyReturn * 31536000 * 100; // Annualize (31,536,000 seconds per year) and convert to percentage
     timeLine += ` 📈 ${apy.toFixed(2)}%`;
     lines.push(timeLine);
