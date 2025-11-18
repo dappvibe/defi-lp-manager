@@ -57,7 +57,8 @@ class PositionMessage extends TelegramMessage {
     const lines = [];
 
     // Pool price
-    lines.push(p.inRange ? '🟢' : '🔴' + ` $${moneyFormat(this.prices.current)}`);
+    const inRange = this.prices.current >= this.prices.lower && this.prices.current <= this.prices.upper;
+    lines.push((inRange ? '🟢' : '🔴') + ` $${moneyFormat(this.prices.current)}`);
 
     // Accumulated fees and CAKE rewards
     let feesLine = '';
