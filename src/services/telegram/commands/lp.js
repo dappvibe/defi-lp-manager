@@ -82,7 +82,8 @@ class PositionMessage extends TelegramMessage {
 
     // Staking status and price range
     let rangeLine = p.isStaked ? '🥩 STAKED' : '💼 UNSTAKED';
-    rangeLine += ` | $${moneyFormat(this.prices.lower)} - $${moneyFormat(this.prices.upper)}`;
+    const median = (+this.prices.lower + +this.prices.upper) / 2;
+    rangeLine += ` | $${moneyFormat(this.prices.lower)} - ($${moneyFormat(median)}) - $${moneyFormat(this.prices.upper)}`;
     lines.push(rangeLine);
 
     // pool pair and tokenId
