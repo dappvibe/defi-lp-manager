@@ -86,7 +86,7 @@ class Telegram extends TelegramBot
       });
     } else {
       const options = {
-        ...message.getOptions(),
+        ...message.options,
         message_id: message.id,
         chat_id: message.chatId,
       };
