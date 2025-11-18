@@ -2,7 +2,7 @@ const {Schema} = require("mongoose");
 const {Position: UniswapPosition} = require("@uniswap/v3-sdk");
 
 const positionSchema = new Schema({
-  _id: String, // compose key for referencing
+  _id: String, // chainId:nftManagerAddress:tokenId (manager distinguish DEXes)
   chainId: { type: Number, required: true },
   owner: { type: String, required: true },
   positionManager: { type: String, required: true }, // issuer/platform
@@ -37,7 +37,7 @@ class PositionModel {
   static staker;
 
   get id() {
-    return `${PositionModel.chainId}:${PositionModel.positionManager.address}:${this.tokenId}`;
+    return `${this.chainId}:${this.positionManager}:${this.tokenId}`;
   }
 
   /**
@@ -47,20 +47,16 @@ class PositionModel {
    * @return {Promise<PositionModel>}
    */
   static async fetch(tokenId) {
-    const filter = {
-      chainId: PositionModel.chainId,
-      positionManager: PositionModel.positionManager.address,
-      tokenId
-    };
+    const id = `${PositionModel.chainId}:${PositionModel.positionManager.address}:${tokenId}`;
 
-    let doc = await this.findOne(filter);
+    let doc = await this.findById(id);
     if (!doc) {
       doc = await this.fromBlockchain(tokenId);
       try {
         await doc.save();
       } catch (e) {
         if (e.code === 11000) { // duplicate (race condition)
-          doc = await this.findOne(filter);
+          doc = await this.findById(id);
           if (!doc) throw new Error(`Position (${doc._id}) was concurrently created but not found after retry.`);
         }
         else throw e;
@@ -94,21 +90,18 @@ class PositionModel {
     // Ensure dependant tokens exists in the db
     const pool = await PositionModel.poolModel.fetch(data.token0, data.token1, data.fee);
 
-    const doc = new this;
-    doc.tokenId = tokenId;
-    Object.assign(doc, {
-      _id: doc.id,
+    return new this({ // getter id() will return null even if set doc props before _id, thus copy code
+      _id: `${PositionModel.chainId}:${PositionModel.positionManager.address}:${tokenId}`,
       chainId: PositionModel.chainId,
-      owner: owner,
       positionManager: PositionModel.positionManager.address,
+      tokenId,
+      owner: owner,
       pool: pool,
       tickLower: data.tickLower,
       tickUpper: data.tickUpper,
       liquidity: data.liquidity,
       isStaked: await PositionModel.isStaked(tokenId)
-    })
-
-    return doc;
+    });
   }
 
   static async isStaked(tokenId) {
