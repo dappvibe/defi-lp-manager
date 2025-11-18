@@ -22,10 +22,9 @@ class NoPositionsMessage extends TelegramMessage {
  * Reply to position message notifying price is out of range. Delete when back in range.
  */
 class RangeNotificationMessage extends TelegramMessage {
-  constructor(position, chatId, replyToMessageId) {
+  constructor(chatId, replyToMessageId) {
     super();
     this.chatId = chatId;
-    this.position = position;
     this.replyToMessageId = replyToMessageId;
   }
 
@@ -33,7 +32,7 @@ class RangeNotificationMessage extends TelegramMessage {
     return `⚠️ **Position Out of Range**`;
   }
 
-  getOptions() {
+  get options() {
     return {
       parse_mode: 'Markdown',
       reply_to_message_id: this.replyToMessageId
@@ -248,53 +247,51 @@ class LpHandler extends AbstractHandler {
   subscribeToSwaps(position) {
     position.startMonitoring();
     position.on('swap', (e) => this.updatePosition(position, e));
+    position.on('range', (e) => this.handleRangeNotification(position, e));
   }
 
   /**
    * Handles range notifications by sending alerts when positions go out of range
    * and removing alerts when they come back in range
-   * @param {PositionMessage} positionMessage - Position message to check for range changes
    * @returns {Promise<void>}
+   * @param position
+   * @param inRange
    */
-  async handleRangeNotification(positionMessage) {
-    const { position } = positionMessage;
+  async handleRangeNotification(position, inRange) {
     const tokenId = position.tokenId;
-    const hasNotification = this.rangeNotificationMessages.has(tokenId);
+    const hasNotification = this.rangeNotificationMessages.has(position._id);
 
-    if (!position.inRange && !hasNotification) {
+    if (!inRange && !hasNotification) {
       // Position went out of range - send notification
       // Set a temporary placeholder to prevent race conditions
-      this.rangeNotificationMessages.set(tokenId, { sending: true });
+      this.rangeNotificationMessages.set(position._id, { sending: true });
+
+      const positionMessage = this.positionMessages.get(position._id);
+      if (!positionMessage) return;
 
       const rangeNotification = new RangeNotificationMessage(
-        position,
         positionMessage.chatId,
-        positionMessage.id
+        positionMessage.messageId
       );
 
       try {
         const sentNotification = await this.bot.send(rangeNotification);
-        this.rangeNotificationMessages.set(tokenId, sentNotification);
+        this.rangeNotificationMessages.set(position._id, sentNotification);
       } catch (error) {
         console.error(`Error sending range notification for position ${tokenId}:`, error);
         // Remove placeholder on error
         this.rangeNotificationMessages.delete(tokenId);
       }
-    } else if (position.inRange && hasNotification) {
-      const notificationMessage = this.rangeNotificationMessages.get(tokenId);
+    }
+    else if (inRange && hasNotification) {
+      const notificationMessage = this.rangeNotificationMessages.get(position._id);
 
       // Skip if it's just a placeholder (still sending)
-      if (notificationMessage && notificationMessage.sending) {
-        return;
-      }
+      if (notificationMessage && notificationMessage.sending) return;
 
       // Position came back in range - delete notification
-      try {
-        this.rangeNotificationMessages.delete(tokenId);
-        await this.bot.deleteMessage(notificationMessage.chatId, notificationMessage.id);
-      } catch (error) {
-        console.error(`Error deleting range notification for position ${tokenId}:`, error);
-      }
+      this.rangeNotificationMessages.delete(position._id);
+      await this.bot.deleteMessage(notificationMessage.chatId, notificationMessage.id);
     }
   }
 

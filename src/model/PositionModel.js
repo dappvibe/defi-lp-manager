@@ -214,6 +214,7 @@ class PositionModel {
     this.pool.startMonitoring();
     this.pool.on('swap', (e) => {
       this.emit('swap', e);
+      this.emit('range', e.tick >= this.tickLower && e.tick <= this.tickUpper);
     });
   }
 }
