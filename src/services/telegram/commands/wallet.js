@@ -197,14 +197,6 @@ class WalletHandler extends AbstractHandler {
     return this.bot.answerCallbackQuery(query.id, { text: '✅ Wallet removed' });
   }
 
-  /**
-   * Returns a brief help description with command signature
-   * @returns {string} One-line help text
-   */
-  static help() {
-    return "/wallet <address> - Monitor Uniswap V3 positions for a wallet";
-  }
-
   getMyCommand = () => ['wallet', 'Manage your addresses']
 }
 

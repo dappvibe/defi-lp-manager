@@ -459,14 +459,6 @@ class LpHandler extends AbstractHandler {
     }
   }
 
-  /**
-   * Returns help text for the /lp command
-   * @returns {string} Help text describing the command functionality
-   */
-  static help() {
-    return "/lp - List current liquidity pools for monitored wallets";
-  }
-
   getMyCommand = () => ['lp', 'List active liquidity pools for your wallets']
 }
 

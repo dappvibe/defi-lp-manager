@@ -312,14 +312,6 @@ class PoolHandler extends AbstractHandler {
   }
 
   /**
-   * Returns a brief help description with command signature
-   * @returns {string} One-line help text
-   */
-  static help() {
-    return "/pool - List all configured pools with toggle buttons for monitoring";
-  }
-
-  /**
    * Returns usage information for the pool command
    * @returns {string} Help text for humans
    */

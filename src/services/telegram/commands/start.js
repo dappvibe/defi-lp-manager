@@ -96,14 +96,6 @@ class StartHandler extends AbstractHandler {
     await this.bot.sendMessage(chatId, startMessage.toString(), { parse_mode: 'Markdown' });
   }
 
-  /**
-   * Returns a brief help description with command signature
-   * @returns {string} One-line help text
-   */
-  static help() {
-    return "/start - Begin using the bot and see welcome message";
-  }
-
   getMyCommand = () => ['start', 'Begin using the bot and see welcome message']
 }
 
