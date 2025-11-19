@@ -66,6 +66,11 @@ class Telegram extends TelegramBot
     return this;
   }
 
+  /**
+   * @param {TelegramMessage|string} message
+   * @param {Number|null} chatId - Required if message is string
+   * @return {Promise<unknown>}
+   */
   send(message, chatId = null) {
     if (typeof message === 'string') {
       if (!chatId) throw new Error('Chat ID is required for text messages');
