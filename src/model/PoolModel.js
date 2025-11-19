@@ -14,10 +14,6 @@ const poolSchema = new Schema({
 }, {_id: false, timestamps: true});
 poolSchema.plugin(autopopulate);
 
-poolSchema.virtual('address').get(function() {
-  return this._id.split(':')[1];
-});
-
 /**
  * @property {String} _id - Composite key in format chainId:address
  * @property {Number} chainId - Chain identifier
@@ -37,6 +33,10 @@ class PoolModel {
 
   contract; // attached instance
   swapListener = null;
+
+  get address() {
+    return this._id.split(':')[1];
+  }
 
   static id(chainId, address) {
     return `${chainId}:${address.toLowerCase()}`;
