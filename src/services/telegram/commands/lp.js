@@ -149,7 +149,7 @@ class LpHandler extends AbstractHandler
    * @param {PositionModel} pos
    * @param {Object} event
    * @param {Number|null} chatId - Send a new message to this chatId
-   * @returns {Promise<MessageModel>}
+   * @returns {Promise<MessageModel|void>}
    */
   async outputPosition(pos, event, chatId = null) {
     const _id = 'Position_' + pos._id;
@@ -175,6 +175,7 @@ class LpHandler extends AbstractHandler
     let msg = new PositionMessage(pos, value, fees, amounts, prices);
     msg.chatId = chatId;
     msg.id = doc?.metadata?.id; // update if exists
+    if (doc && msg.toString() === doc.metadata.metadata.text) return; // identical (price didn't change even 0.01)
     msg = await this.bot.send(msg);
 
     // Save message to keep updating after restart
