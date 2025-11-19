@@ -144,6 +144,15 @@ class Telegram extends TelegramBot
     return this.throttler.throttle(() => super.answerCallbackQuery(callbackQueryId, options));
   }
 
+  /**
+   * Set infinite typing... status. clearInterval(returnValue) to stop.
+   * @param {Number} chatId
+   * @returns - Interval ID to clear status.
+   */
+  typing(chatId) {
+    this.sendChatAction(chatId, 'typing').then();
+    return setInterval(() => this.sendChatAction(chatId, 'typing'), 2500) // 5s is max
+  }
 }
 
 module.exports = (container) => {

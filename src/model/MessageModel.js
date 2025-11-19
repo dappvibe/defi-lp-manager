@@ -16,12 +16,12 @@ messageSchema.index({ chatId: 1, messageId: 1 }, { unique: true });
 messageSchema.virtual('type').get(function () { return this._id.split('_')[0]; });
 
 messageSchema.virtual('positionId').get(function () {
-  if (this.type !== 'Position') return null;
+  if (!['Position', 'Range'].includes(this.type)) return null;
   return this._id.split('_')[1];
 });
 
 messageSchema.virtual('position').get(function () {
-  if (this.type !== 'Position') return null;
+  if (!['Position', 'Range'].includes(this.type)) return null;
   return this.model('Position').findById(this.positionId);
 });
 

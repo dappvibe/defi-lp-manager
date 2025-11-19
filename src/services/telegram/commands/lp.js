@@ -2,44 +2,6 @@ const TelegramMessage = require("../message");
 const { getTimeInTimezone, moneyFormat } = require('../../../utils');
 const AbstractHandler = require("../handler");
 
-class NoPositionsMessage extends TelegramMessage {
-  constructor(chatId, wallets) {
-    super();
-    this.chatId = chatId;
-    this.wallets = wallets;
-  }
-
-  toString() {
-    return `No active positions found in ${this.wallets.length} wallets.`;
-  }
-
-  getOptions() {
-    return { parse_mode: 'Markdown', disable_web_page_preview: true };
-  }
-}
-
-/**
- * Reply to position message notifying price is out of range. Delete when back in range.
- */
-class RangeNotificationMessage extends TelegramMessage {
-  constructor(chatId, replyToMessageId) {
-    super();
-    this.chatId = chatId;
-    this.replyToMessageId = replyToMessageId;
-  }
-
-  toString() {
-    return `⚠️ **Position Out of Range**`;
-  }
-
-  get options() {
-    return {
-      parse_mode: 'Markdown',
-      reply_to_message_id: this.replyToMessageId
-    };
-  }
-}
-
 class PositionMessage extends TelegramMessage {
   constructor(position, value, fees, amounts, prices) {
     super();
@@ -106,27 +68,23 @@ class PositionMessage extends TelegramMessage {
 /**
  * Handler for /lp command - Lists liquidity positions for monitored wallets
  */
-class LpHandler extends AbstractHandler {
+class LpHandler extends AbstractHandler
+{
   /**
    * Creates an instance of LpHandler
-   * @param {Mongoose} db
    * @param UserModel
    * @param MessageModel
-   * @param PositionModel
    * @param WalletModel
    * @param positionFactory
    * @param PoolModel
    */
-  constructor(db, UserModel, MessageModel, PositionModel, WalletModel, positionFactory, PoolModel) {
+  constructor(UserModel, MessageModel, WalletModel, positionFactory, PoolModel) {
     super(UserModel);
-    this.db = db;
     this.MessageModel = MessageModel;
-    this.positionModel = PositionModel;
     this.WalletModel = WalletModel;
     this.positionFactory = positionFactory;
-    this.positionMessages = new Map(); // tokenId => PositionMessage
-    this.rangeNotificationMessages = new Map(); // tokenId => RangeNotificationMessage
     this.PoolModel = PoolModel;
+    this.onAir = []; // locks to avoid multiple API calls
   }
 
   /**
@@ -135,11 +93,9 @@ class LpHandler extends AbstractHandler {
    */
   listenOn(bot) {
     this.bot = bot;
-    this.bot.onText(/\/lp/, this.handleCommand.bind(this));
+    this.bot.onText(/\/lp/, this.handle.bind(this));
 
-    this.restoreMonitoredPositions().catch(error => {
-      console.error('Error during position monitoring restoration:', error);
-    });
+    this.restoreEventListeners().then(c => console.log(`Started monitoring ${c} positions`));
 
     return this;
   }
@@ -149,177 +105,142 @@ class LpHandler extends AbstractHandler {
    * @param {Object} msg - Telegram message object
    * @returns {Promise<void>}
    */
-  async handleCommand(msg) {
+  async handle(msg) {
     const chatId = msg.chat.id;
 
     const user = await this.getUser(msg);
     await user.populate('wallets');
-
     if (user.wallets.length === 0) {
       return this.bot.send("💼 No wallets are being monitored.\n\nUse /wallet to start monitoring a wallet.", chatId);
     }
 
+    // multiple interval handlers may be created inside loop, clear all to be safe
+    let typing = [this.bot.typing(chatId)];
+
     for (let i = 0; i < user.wallets.length; i++) {
       const wallet = user.wallets[i];
-
-      this.bot.sendChatAction(chatId, 'typing').then();
-      const typing = setInterval(() => this.bot.sendChatAction(chatId, 'typing'), 5000);
-
       try {
         let positionsFound = false;
         for await (const position of this.positionFactory.fetchPositions(wallet.address)) {
           if (!await position.isEmpty()) {
             positionsFound = true;
-            const sent = await this.outputPosition(chatId, wallet, position);
-
-            // Save message to keep updating after restart
-            const id = 'Position_' + position.id;
-            this.MessageModel.findOneAndUpdate(
-              {_id: 'Position_' + position.id, chatId},
-              {
-                _id: 'Position_' + position.id,
-                chatId,
-                messageId: sent.id,
-                metadata: sent
-              },
-              {upsert: true, new: true, setDefaultsOnInsert: true}
-            )
-              .then(doc => this.positionMessages.set(position._id, doc));
-
-            // subscribe to blockchain events
-            this.subscribeToSwaps(position);
+            try {
+              await this.outputPosition(position, {}, chatId).then();
+              this.setEventListeners(position);
+            } finally {
+              // status is cleared after bot sends a message. Set again. Clear to have single call per chat.
+              typing.forEach(clearInterval);
+              typing.push(this.bot.typing(chatId));
+            }
           }
         }
 
-        if (!positionsFound) this.bot.send(new NoPositionsMessage(chatId, user.wallets)).then();
+        if (!positionsFound) {
+          this.bot.sendMessage(chatId, `No active positions found in ${user.wallets.length} wallets.`);
+        }
       }
       finally {
-        // FIXME typing is cleared after first message and then inconsistently shown
-        clearInterval(typing);
+        typing.forEach(clearInterval);
       }
     }
   }
 
   /**
-   * Processes a single position, sending a message and starting monitoring
-   * @param {string} chatId - Telegram chat ID
-   * @param {WalletModel} wallet - Wallet address being processed
-   * @param {PositionModel} position - Position object to process
-   * @returns {Promise<void>}
+   * @param {PositionModel} pos
+   * @param {Object} event
+   * @param {Number|null} chatId - Send a new message to this chatId
+   * @returns {Promise<MessageModel>}
    */
-  async outputPosition(chatId, wallet, position) {
-    const [value, prices, fees, amounts] = await Promise.all([
-      position.calculateCombinedValue(),
-      position.pool.getPrices(position),
-      position.calculateUnclaimedFees(),
-      position.calculateTokenAmounts()
-    ]);
-    fees.rewards.value = fees.rewards.amount * (await this.cakePrice());
+  async outputPosition(pos, event, chatId = null) {
+    const _id = 'Position_' + pos._id;
+    let doc;
+    if (chatId) { // keep doc null to always send new message if chatId is provided (on /lp command)
+      await this.MessageModel.deleteOne({_id: 'Range_'+pos._id}); // send new alert to appear after position msg
+    } else {
+      doc = await this.MessageModel.findById(_id);
+      if (!doc) throw new Error('chatId must be set for new messages: ' + _id);
+      chatId = doc.chatId;
+    }
 
-    const positionMessage = new PositionMessage(position, value, fees, amounts, prices);
-    positionMessage.chatId = chatId;
-
-    return await this.bot.send(positionMessage);
-  }
-
-  /**
-   * Updates a position message with fresh data from the blockchain
-   * @returns {Promise<void>}
-   * @param pos
-   * @param event
-   */
-  async updatePosition(pos, event) {
-    const msg = this.positionMessages.get(pos._id);
-    if (!msg) return;
-
-    const [value, prices, fees, amounts] = await Promise.all([
+    // Call blockchain to collect current state (FIXME slot0 is not in the event)
+    const [value, fees, amounts, prices] = await Promise.all([
       pos.calculateCombinedValue(),
-      pos.pool.getPrices(pos),
       pos.calculateUnclaimedFees(),
-      pos.calculateTokenAmounts()
+      pos.calculateTokenAmounts(),
+      pos.pool.getPrices(pos)
     ]);
     fees.rewards.value = fees.rewards.amount * (await this.cakePrice());
-    const posMessage = new PositionMessage(pos, value, fees, amounts, prices);
-    posMessage.id = msg.metadata.id;
-    posMessage.chatId = msg.chatId;
 
-    this.bot.send(posMessage);
-  }
+    // Create or update Telegram chat message
+    let msg = new PositionMessage(pos, value, fees, amounts, prices);
+    msg.chatId = chatId;
+    msg.id = doc?.metadata?.id; // update if exists
+    msg = await this.bot.send(msg);
 
-  subscribeToSwaps(position) {
-    position.startMonitoring();
-    position.on('swap', (e) => this.updatePosition(position, e));
-    position.on('range', (e) => this.handleRangeNotification(position, e));
+    // Save message to keep updating after restart
+    return this.MessageModel.findOneAndUpdate(
+      {_id, chatId},
+      {_id, chatId, messageId: msg.id, metadata: msg},
+      {upsert: true, new: true, setDefaultsOnInsert: true}
+    );
   }
 
   /**
    * Handles range notifications by sending alerts when positions go out of range
    * and removing alerts when they come back in range
-   * @returns {Promise<void>}
-   * @param position
+   * @param {PositionModel} pos
    * @param inRange
+   * @returns {Promise<void>}
    */
-  async handleRangeNotification(position, inRange) {
-    const tokenId = position.tokenId;
-    const hasNotification = this.rangeNotificationMessages.has(position._id);
+  async alertPriceRange(pos, inRange) {
+    const _id = 'Range_'+pos._id;
 
-    if (!inRange && !hasNotification) {
-      // Position went out of range - send notification
-      // Set a temporary placeholder to prevent race conditions
-      this.rangeNotificationMessages.set(position._id, { sending: true });
-
-      const positionMessage = this.positionMessages.get(position._id);
-      if (!positionMessage) return;
-
-      const rangeNotification = new RangeNotificationMessage(
-        positionMessage.chatId,
-        positionMessage.messageId
-      );
-
+    let alert = await this.MessageModel.findById(_id);
+    if (!alert && !inRange) { // send alert
+      const posMsg = await this.MessageModel.findById('Position_'+pos._id);
+      if (!posMsg || this.onAir[_id]) return;
+      this.onAir[_id] = true;
       try {
-        const sentNotification = await this.bot.send(rangeNotification);
-        this.rangeNotificationMessages.set(position._id, sentNotification);
-      } catch (error) {
-        console.error(`Error sending range notification for position ${tokenId}:`, error);
-        // Remove placeholder on error
-        this.rangeNotificationMessages.delete(tokenId);
+        const sent = await this.bot.sendMessage(posMsg.chatId, `⚠️ Position Out of Range`, { reply_to_message_id: posMsg.messageId });
+        await this.MessageModel.create({_id, chatId: posMsg.chatId, messageId: sent.message_id});
+      } finally {
+        delete this.onAir[_id];
       }
     }
-    else if (inRange && hasNotification) {
-      const notificationMessage = this.rangeNotificationMessages.get(position._id);
-
-      // Skip if it's just a placeholder (still sending)
-      if (notificationMessage && notificationMessage.sending) return;
-
-      // Position came back in range - delete notification
-      this.rangeNotificationMessages.delete(position._id);
-      await this.bot.deleteMessage(notificationMessage.chatId, notificationMessage.id);
+    else if (alert && inRange) { // back in range - remove alert
+      await this.bot.deleteMessage(alert.chatId, alert.messageId);
+      await this.MessageModel.deleteOne({_id});
     }
   }
 
   /**
-   * Restores monitoring for all previously monitored positions on startup
-   * @returns {Promise<void>}
+   * @param {PositionModel} pos
    */
-  async restoreMonitoredPositions() {
-    console.log('Restoring monitored positions...');
-    const messages = await this.db.model('Message').find({_id: /^Position_/});
-    let count = 0;
+  setEventListeners(pos) {
+    pos.startMonitoring();
+    pos.on('swap',  (swapInfo) => this.outputPosition(pos, swapInfo));
+    pos.on('range', (inRange)  => this.alertPriceRange(pos, inRange));
+  }
 
+  /**
+   * Restores monitoring for all previously monitored positions on startup
+   * @returns {Promise<Number>} - Amount of restored positions
+   */
+  async restoreEventListeners() {
+    const messages = await this.MessageModel.find({_id: /^Position_/});
+
+    let count = 0;
     for (const msg of messages) {
       const pos = await msg.position;
-
-      if (pos === null) {
+      if (pos) {
+        this.setEventListeners(pos);
+        count++;
+      } else {
         console.warn('Position is null for message: ', msg._id);
         msg.deleteOne(); // FIXME not deleted
-        continue;
       }
-
-      this.positionMessages.set(pos._id, msg);
-      this.subscribeToSwaps(pos);
-      count++;
     }
-    console.log(`Restored monitoring for ${count} positions`);
+    return count;
   }
 
   async cakePrice() {
