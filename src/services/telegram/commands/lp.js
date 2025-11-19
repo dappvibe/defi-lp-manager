@@ -70,6 +70,8 @@ class PositionMessage extends TelegramMessage {
  */
 class LpHandler extends AbstractHandler
 {
+  onAir = []; // locks to avoid multiple API calls
+
   /**
    * Creates an instance of LpHandler
    * @param UserModel
@@ -84,7 +86,6 @@ class LpHandler extends AbstractHandler
     this.WalletModel = WalletModel;
     this.positionFactory = positionFactory;
     this.PoolModel = PoolModel;
-    this.onAir = []; // locks to avoid multiple API calls
   }
 
   /**
@@ -153,37 +154,51 @@ class LpHandler extends AbstractHandler
    */
   async outputPosition(pos, event, chatId = null) {
     const _id = 'Position_' + pos._id;
+
+    // prevent race condition and identical messages errors
+    if (this.onAir[_id]) return;
+    this.onAir[_id] = true;
+
     let doc;
-    if (chatId) { // keep doc null to always send new message if chatId is provided (on /lp command)
-      await this.MessageModel.deleteOne({_id: 'Range_'+pos._id}); // send new alert to appear after position msg
-    } else {
-      doc = await this.MessageModel.findById(_id);
-      if (!doc) throw new Error('chatId must be set for new messages: ' + _id);
-      chatId = doc.chatId;
+    try {
+      if (chatId) { // keep doc null to always send new message if chatId is provided (on /lp command)
+        await this.MessageModel.deleteOne({_id: 'Range_' + pos._id}); // send new alert to appear after position msg
+      }
+      else {
+        doc = await this.MessageModel.findById(_id);
+        if (!doc) throw new Error('chatId must be set for new messages: ' + _id);
+        chatId = doc.chatId;
+      }
+
+      // Call blockchain to collect current state (FIXME slot0 is not in the event)
+      const [value, fees, amounts, prices] = await Promise.all([
+        pos.calculateCombinedValue(),
+        pos.calculateUnclaimedFees(),
+        pos.calculateTokenAmounts(),
+        pos.pool.getPrices(pos)
+      ]);
+      fees.rewards.value = fees.rewards.amount * (await this.cakePrice());
+
+      // Create or update Telegram chat message
+      let msg = new PositionMessage(pos, value, fees, amounts, prices);
+      msg.chatId = chatId;
+      msg.id = doc?.metadata?.id; // update if exists
+      if (doc && msg.checksum() === doc.checksum) { // identical to sent (price didn't change even 0.01)
+        return; // avoid rejection by Telegram and wasted call
+      }
+
+      msg = await this.bot.send(msg);
+
+      // Save message to keep updating after restart
+      return this.MessageModel.findOneAndUpdate(
+        {_id, chatId},
+        {_id, chatId, messageId: msg.id, checksum: msg.checksum(), metadata: msg},
+        {upsert: true, new: true, setDefaultsOnInsert: true}
+      );
     }
-
-    // Call blockchain to collect current state (FIXME slot0 is not in the event)
-    const [value, fees, amounts, prices] = await Promise.all([
-      pos.calculateCombinedValue(),
-      pos.calculateUnclaimedFees(),
-      pos.calculateTokenAmounts(),
-      pos.pool.getPrices(pos)
-    ]);
-    fees.rewards.value = fees.rewards.amount * (await this.cakePrice());
-
-    // Create or update Telegram chat message
-    let msg = new PositionMessage(pos, value, fees, amounts, prices);
-    msg.chatId = chatId;
-    msg.id = doc?.metadata?.id; // update if exists
-    if (doc && msg.toString() === doc.metadata.metadata.text) return; // identical (price didn't change even 0.01)
-    msg = await this.bot.send(msg);
-
-    // Save message to keep updating after restart
-    return this.MessageModel.findOneAndUpdate(
-      {_id, chatId},
-      {_id, chatId, messageId: msg.id, metadata: msg},
-      {upsert: true, new: true, setDefaultsOnInsert: true}
-    );
+    finally {
+      delete this.onAir[_id]
+    }
   }
 
   /**

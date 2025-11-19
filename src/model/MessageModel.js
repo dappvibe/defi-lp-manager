@@ -8,6 +8,7 @@ const messageSchema = new Schema({
   _id: String, // Type_refObject (ex: Position_1115111:48592)
   chatId: { type: Number, required: true },
   messageId: { type: Number, required: true },
+  checksum: Number,
   metadata: { type: Schema.Types.Mixed, default: {} },
 }, { _id: false, timestamps: true });
 messageSchema.index({ chatId: 1, messageId: 1 }, { unique: true });
