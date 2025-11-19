@@ -56,5 +56,13 @@ module.exports = (container) => {
         client: container.resolve('provider')
       });
     }),
+    cakePool: awilix.asFunction((PoolModel, chainId) => {
+      if (chainId !== 42161) throw new Error('Cake pool is only available on Arbitrum');
+      return PoolModel.fetch(
+        '0x1b896893dfc86bb67cf57767298b9073d2c1ba2c',
+        '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
+        2500
+      );
+    }).singleton()
   })
 };

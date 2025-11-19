@@ -79,13 +79,15 @@ class LpHandler extends AbstractHandler
    * @param WalletModel
    * @param positionFactory
    * @param PoolModel
+   * @param cakePool
    */
-  constructor(UserModel, MessageModel, WalletModel, positionFactory, PoolModel) {
+  constructor(UserModel, MessageModel, WalletModel, positionFactory, PoolModel, cakePool) {
     super(UserModel);
     this.MessageModel = MessageModel;
     this.WalletModel = WalletModel;
     this.positionFactory = positionFactory;
     this.PoolModel = PoolModel;
+    cakePool.then((pool) => this.cakePool = pool);
   }
 
   /**
@@ -171,13 +173,14 @@ class LpHandler extends AbstractHandler
       }
 
       // Call blockchain to collect current state (FIXME slot0 is not in the event)
-      const [value, fees, amounts, prices] = await Promise.all([
+      const [value, fees, amounts, prices, cake] = await Promise.all([
         pos.calculateCombinedValue(),
         pos.calculateUnclaimedFees(),
         pos.calculateTokenAmounts(),
-        pos.pool.getPrices(pos)
+        pos.pool.getPrices(pos),
+        this.cakePool?.getPrices()
       ]);
-      fees.rewards.value = fees.rewards.amount * (await this.cakePrice());
+      fees.rewards.value = fees.rewards.amount * cake?.current;
 
       // Create or update Telegram chat message
       let msg = new PositionMessage(pos, value, fees, amounts, prices);
@@ -257,17 +260,6 @@ class LpHandler extends AbstractHandler
       }
     }
     return count;
-  }
-
-  async cakePrice() {
-    // CAKE/USDC FIXME somehow in container so that it's chainId aware
-    const cakePool = await this.PoolModel.fetch(
-      '0x1b896893dfc86bb67cf57767298b9073d2c1ba2c',
-      '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
-      2500
-    );
-    const cakePrice = await cakePool.getPrices();
-    return cakePrice.current;
   }
 
   getMyCommand = () => ['lp', 'List active liquidity pools for your wallets']
