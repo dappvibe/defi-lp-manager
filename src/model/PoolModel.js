@@ -127,8 +127,8 @@ class PoolModel {
     };
 
     if (position) {
-      prices.lower = tickToPrice(this.token0.toUniswapSDK(), this.token1.toUniswapSDK(), position.tickLower).toSignificant();
-      prices.upper = tickToPrice(this.token0.toUniswapSDK(), this.token1.toUniswapSDK(), position.tickUpper).toSignificant();
+      prices.lower = this.tickToPrice(position.tickLower);
+      prices.upper = this.tickToPrice(position.tickUpper);
     }
 
     //noinspection JSValidateTypes
@@ -138,7 +138,7 @@ class PoolModel {
   /**
   * Decode sqrtPriceX96 from slot0 and return price in significant digits.
   *
-  * @param {bigint} sqrtPrice
+  * @param {Number} sqrtPrice
   * @return {string}
   */
   decodePrice(sqrtPrice) {
@@ -147,9 +147,13 @@ class PoolModel {
       this.token0.toUniswapSDK(),
       this.token1.toUniswapSDK(),
       (2n ** 192n).toString(),
-      (sqrtPrice ** 2n).toString()
+      (BigInt(sqrtPrice) ** 2n).toString()
     );
     return price.toSignificant();
+  }
+
+  tickToPrice(tick) {
+    return tickToPrice(this.token0.toUniswapSDK(), this.token1.toUniswapSDK(), tick).toSignificant();
   }
 
   /**
@@ -219,7 +223,11 @@ class PoolModel {
             const event = {
               tick,
               liquidity,
-              price: this.decodePrice(sqrtPriceX96),
+              prices: {
+                sqrtPriceX96,
+                tick,
+                current: this.decodePrice(sqrtPriceX96)
+              },
               amount0: this.token0.getFloatAmount(amount0),
               amount1: this.token1.getFloatAmount(amount1),
               protocolFeesToken0: this.token0.getFloatAmount(protocolFeesToken0),

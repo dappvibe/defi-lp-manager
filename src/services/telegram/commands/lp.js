@@ -177,7 +177,7 @@ class LpHandler extends AbstractHandler
         pos.calculateCombinedValue(),
         pos.calculateUnclaimedFees(),
         pos.calculateTokenAmounts(),
-        pos.pool.getPrices(pos),
+        event ? event.prices : pos.pool.getPrices(pos),
         this.cakePool?.getPrices()
       ]);
       fees.rewards.value = fees.rewards.amount * cake?.current;
