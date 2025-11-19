@@ -109,7 +109,10 @@ class PoolErrorMessage extends TelegramMessage {
   }
 }
 
-class PoolHandler extends AbstractHandler {
+class PoolHandler extends AbstractHandler
+{
+  getMyCommand = () => ['pool', 'List all configured pools with toggle buttons for monitoring']
+
   /**
    * Create a new PoolHandler instance
    * @param UserModel
@@ -342,8 +345,6 @@ Shows all pre-configured pools as individual messages, each displaying:
 **Related Commands:**
 • \`/wallet\` - Monitor wallet positions instead`;
   }
-
-  getMyCommand = () => ['pool', 'List all configured pools with toggle buttons for monitoring']
 }
 
 module.exports = PoolHandler

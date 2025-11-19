@@ -70,6 +70,8 @@ class PositionMessage extends TelegramMessage {
  */
 class LpHandler extends AbstractHandler
 {
+  getMyCommand = () => ['lp', 'List active liquidity pools for your wallets']
+
   onAir = []; // locks to avoid multiple API calls
 
   /**
@@ -261,8 +263,6 @@ class LpHandler extends AbstractHandler
     }
     return count;
   }
-
-  getMyCommand = () => ['lp', 'List active liquidity pools for your wallets']
 }
 
 module.exports = LpHandler

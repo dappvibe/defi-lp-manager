@@ -59,11 +59,10 @@ class StartMessage extends TelegramMessage {
   }
 }
 
-/**
- * Handler for /start command
- * Sends welcome message to the user and shows current monitoring status
- */
-class StartHandler extends AbstractHandler {
+class StartHandler extends AbstractHandler
+{
+  getMyCommand = () => ['start', 'Begin using the bot and see welcome message']
+
   /**
    * Register command handlers with the bot
    */
@@ -95,8 +94,7 @@ class StartHandler extends AbstractHandler {
     const startMessage = new StartMessage(chatId, wallets);
     await this.bot.sendMessage(chatId, startMessage.toString(), { parse_mode: 'Markdown' });
   }
-
-  getMyCommand = () => ['start', 'Begin using the bot and see welcome message']
 }
+
 
 module.exports = StartHandler;

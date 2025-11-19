@@ -89,9 +89,9 @@ class ListedWalletMessage extends TelegramMessage {
   }
 }
 
-class WalletHandler extends AbstractHandler {
-  wallets;
-  chainId;
+class WalletHandler extends AbstractHandler
+{
+  getMyCommand = () => ['wallet', 'Manage your addresses']
 
   constructor(UserModel, WalletModel, chainId) {
     super(UserModel);
@@ -196,8 +196,6 @@ class WalletHandler extends AbstractHandler {
     this.bot.deleteMessage(query.message.chat.id, query.message.message_id).then();
     return this.bot.answerCallbackQuery(query.id, { text: '✅ Wallet removed' });
   }
-
-  getMyCommand = () => ['wallet', 'Manage your addresses']
 }
 
 module.exports = WalletHandler;
