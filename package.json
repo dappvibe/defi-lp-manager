@@ -22,6 +22,7 @@
     "lodash": "^4.17.21",
     "mongoose": "^8.16.4",
     "mongoose-autopopulate": "^1.1.0",
+    "node-cache": "^5.1.2",
     "node-telegram-bot-api": "^0.66.0",
     "viem": "^2.31.7"
   },

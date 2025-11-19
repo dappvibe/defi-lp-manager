@@ -2,6 +2,7 @@ const {Schema} = require("mongoose");
 const {Pool: UniswapPool, tickToPrice} = require('@uniswap/v3-sdk');
 const autopopulate = require('mongoose-autopopulate');
 const {Price} = require("@uniswap/sdk-core");
+const NodeCache = require("node-cache");
 
 const poolSchema = new Schema({
   _id: String, // chainId:address
@@ -157,16 +158,21 @@ class PoolModel {
   * @return {Promise<{sqrtPriceX96: bigint, tick: number, observationIndex: bigint, observationCardinality: bigint, observationCardinalityNext: bigint, feeProtocol: number, unlocked: boolean}>}
   */
   async slot0() {
-    const res = await this.contract.read.slot0();
-    return {
-      sqrtPriceX96: res[0],
-      tick: res[1],
-      observationIndex: res[2],
-      observationCardinality: res[3],
-      observationCardinalityNext: res[4],
-      feeProtocol: res[5],
-      unlocked: res[6]
-    };
+    let res = this._cache.get('slot0');
+    if (!res) {
+      res = await this.contract.read.slot0();
+      res = {
+        sqrtPriceX96: res[0],
+        tick: res[1],
+        observationIndex: res[2],
+        observationCardinality: res[3],
+        observationCardinalityNext: res[4],
+        feeProtocol: res[5],
+        unlocked: res[6]
+      };
+      this._cache.set('slot0', res);
+    }
+    return res;
   }
 
   /**
@@ -261,11 +267,13 @@ class PoolModel {
 poolSchema.loadClass(PoolModel);
 
 module.exports = function(mongoose, chainId, poolFactoryContract, poolContract, TokenModel) {
-  poolSchema.post('init', function(doc) {
+  const init = (doc) => {
     doc.contract = poolContract(doc.address);
-  })
+    doc._cache = new NodeCache({stdTTL: 5});
+  }
+  poolSchema.post('init', init)
   poolSchema.post('save', function(doc, next) {
-    doc.contract = poolContract(doc.address);
+    init();
     next();
   })
 
