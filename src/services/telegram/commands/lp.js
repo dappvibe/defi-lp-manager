@@ -174,14 +174,11 @@ class LpHandler extends AbstractHandler
         chatId = doc.chatId;
       }
 
-      // Call blockchain to collect current state (FIXME slot0 is not in the event)
-      const [value, fees, amounts, prices, cake] = await Promise.all([
-        pos.calculateCombinedValue(),
-        pos.calculateUnclaimedFees(),
-        pos.calculateTokenAmounts(),
-        event ? event.prices : pos.pool.getPrices(pos),
-        this.cakePool?.getPrices()
-      ]);
+      const value = pos.calculateCombinedValue();
+      const amounts = pos.calculateTokenAmounts();
+      const prices = pos.pool.getPrices(pos);
+      const fees = await pos.calculateUnclaimedFees();
+      const cake = await this.cakePool?.getPrices();
       fees.rewards.value = fees.rewards.amount * cake?.current;
 
       // Create or update Telegram chat message

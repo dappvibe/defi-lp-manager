@@ -2,6 +2,7 @@ const {Schema} = require("mongoose");
 const {Pool: UniswapPool, tickToPrice} = require('@uniswap/v3-sdk');
 const autopopulate = require('mongoose-autopopulate');
 const {Price} = require("@uniswap/sdk-core");
+const NodeCache = require("node-cache");
 
 const poolSchema = new Schema({
   _id: String, // chainId:address
@@ -9,7 +10,9 @@ const poolSchema = new Schema({
   token0: {type: String, ref: 'Token', required: true, autopopulate: true},
   token1: {type: String, ref: 'Token', required: true, autopopulate: true},
   fee: {type: Number, required: true},
-  priceMonitored: {type: Boolean, default: false},
+  tick: Number,
+  sqrtPriceX96: String,
+  liquidity: String,
 }, {_id: false, timestamps: true});
 poolSchema.plugin(autopopulate);
 
@@ -19,8 +22,11 @@ poolSchema.plugin(autopopulate);
  * @property {TokenModel} token0 - Reference to first token in pool
  * @property {TokenModel} token1 - Reference to second token in pool
  * @property {Number} fee - Pool fee tier
- * @property {Boolean} priceMonitored - Indicates if pool price is being monitored
+ * @property {Number} tick - Current pool tick
+ * @property {String} sqrtPriceX96 - Square root of current price as Q64.96
+ * @property {String} liquidity - Current pool liquidity
  * @property {Date} updatedAt - Last update timestamp
+ * @property {Date} createdAt - Pool creation timestamp
  * @property {String} address - Virtual property returning pool contract address
  * @property {Object} contract - Instance of pool contract
  */
@@ -74,15 +80,17 @@ class PoolModel {
       }
     }
 
-    return doc;
+    await doc.refresh();
+
+    return doc.save();
   }
 
   /**
    * Fetch pool details from blockchain and return unsaved doc.
    * Use static chainId in this class, retreived from container.
    *
-   * @param {String} token0
-   * @param {String} token1
+   * @param {String} token0 - address
+   * @param {String} token1 - address
    * @param {Number} fee
    * @return {Promise<PoolModel>}
    */
@@ -95,18 +103,20 @@ class PoolModel {
     address = address.toLowerCase();
 
     // Ensure dependant tokens exists in the db
-    token0 = await PoolModel.tokenModel.fetch(token0);
-    token1 = await PoolModel.tokenModel.fetch(token1);
+    [token0, token1] = await Promise.all([
+      PoolModel.tokenModel.fetch(token0),
+      PoolModel.tokenModel.fetch(token1)
+    ]);
 
-    const doc = new this;
-    Object.assign(doc, {
+    const doc = new this({
       _id: PoolModel.id(PoolModel.chainId, address),
       chainId: PoolModel.chainId,
       address,
       token0,
       token1,
-      fee
+      fee,
     });
+    doc.contract = PoolModel.poolContract(address);
 
     return doc;
   }
@@ -118,12 +128,11 @@ class PoolModel {
    * @param {PositionModel} [position]
    * @return {Promise<{current: string, lower: string, upper: string, tick: number, sqrtPriceX96: bigint}>}
    */
-  async getPrices(position = null) {
-    const slot0 = await this.slot0();
+  getPrices(position = null) {
     const prices = {
-      sqrtPriceX96: slot0.sqrtPriceX96,
-      tick: slot0.tick,
-      current: this.decodePrice(slot0.sqrtPriceX96)
+      sqrtPriceX96: this.sqrtPriceX96,
+      tick: this.tick,
+      current: this.decodePrice(Number(this.sqrtPriceX96))
     };
 
     if (position) {
@@ -180,15 +189,6 @@ class PoolModel {
   }
 
   /**
-  * Read pool liquidity from blockchain.
-  *
-  * @return {Promise<bigint>}
-  */
-  async liquidity() {
-    return await this.contract.read.liquidity();
-  }
-
-  /**
    * Calculate TVL for this pool
    * @returns {Promise<string>} TVL value or null if calculation fails
    */
@@ -220,6 +220,11 @@ class PoolModel {
             if (!args) return; // no idea why some perfectly legit Swap's come without parsed arguments, every other event does
             const {sqrtPriceX96, amount0, amount1, tick, liquidity, protocolFeesToken0, protocolFeesToken1} = args;
 
+            this.sqrtPriceX96 = sqrtPriceX96.toString();
+            this.tick = tick;
+            this.liquidity = liquidity.toString();
+            this.save();
+
             const event = {
               tick,
               liquidity,
@@ -245,6 +250,17 @@ class PoolModel {
     return this;
   }
 
+  async refresh() {
+    const [slot0, liquidity] = await Promise.all([
+      this.getSlot0(),
+      this.contract.read.liquidity()
+    ]);
+    this.sqrtPriceX96 = slot0.sqrtPriceX96.toString();
+    this.tick = slot0.tick;
+    this.liquidity = liquidity.toString();
+    return this;
+  }
+
   /**
    * Stop monitoring this pool
    */
@@ -256,18 +272,14 @@ class PoolModel {
     return this;
   }
 
-  async toUniswapSDK() {
-    const [slot0, liquidity] = await Promise.all([
-      this.slot0(),
-      this.liquidity()
-    ]);
+  toUniswapSDK() {
     return new UniswapPool(
       this.token0.toUniswapSDK(),
       this.token1.toUniswapSDK(),
       this.fee,
-      slot0.sqrtPriceX96.toString(),
-      liquidity.toString(),
-      slot0.tick
+      this.sqrtPriceX96,
+      this.liquidity,
+      this.tick
     );
   }
 }
@@ -277,7 +289,6 @@ poolSchema.loadClass(PoolModel);
 module.exports = function(mongoose, cache, chainId, poolFactoryContract, poolContract, TokenModel) {
   const init = (doc) => {
     doc.contract = poolContract(doc.address);
-    doc._cache = cache;
   }
   poolSchema.post('init', init)
   poolSchema.post('save', function(doc, next) {

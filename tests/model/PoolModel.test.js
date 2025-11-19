@@ -126,7 +126,7 @@ describe('PoolModel', () => {
 
       expect(event.amount0).eq('0.085177457593895947');
       expect(event.amount1).eq('-304.831867');
-      expect(event.price).eq('3578.97');
+      expect(event.prices.current).eq('3578.97');
       expect(event.tick).toBe(-194492);
       expect(event.protocolFeesToken0).eq('0.000002810856100598');
       expect(event.protocolFeesToken1).eq('0');

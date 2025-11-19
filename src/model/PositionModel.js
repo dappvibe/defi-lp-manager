@@ -129,8 +129,8 @@ class PositionModel {
     return value < 0.01;
   }
 
-  async calculateTokenAmounts() {
-    const sdk = await this.toUniswapSDK();
+  calculateTokenAmounts() {
+    const sdk = this.toUniswapSDK();
     return [
       Number(sdk.amount0.toFixed(this.pool.token0.decimals)),
       Number(sdk.amount1.toFixed(this.pool.token1.decimals)),
@@ -139,11 +139,11 @@ class PositionModel {
 
   /**
    * Calculate combined token1 value for a position. Assumes token1 is a stablecoin.
-   * @returns {Promise<number>} Combined value in token1 units
+   * @returns {Number} Combined value in token1 units
    */
-  async calculateCombinedValue() {
-    const amounts = await this.calculateTokenAmounts();
-    const price = await this.pool.getPrices();
+  calculateCombinedValue() {
+    const amounts = this.calculateTokenAmounts();
+    const price = this.pool.getPrices();
     return amounts[1] + amounts[0] * price.current;
   }
 
@@ -205,10 +205,9 @@ class PositionModel {
     return parseFloat(pendingCake.toString()) / Math.pow(10, 18);
   }
 
-  async toUniswapSDK() {
-    const pool = await this.pool.toUniswapSDK();
+  toUniswapSDK() {
     return new UniswapPosition({
-      pool,
+      pool: this.pool.toUniswapSDK(),
       liquidity: this.liquidity.toString(),
       tickLower: this.tickLower,
       tickUpper: this.tickUpper
