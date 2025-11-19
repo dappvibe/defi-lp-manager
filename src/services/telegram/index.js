@@ -10,7 +10,6 @@
  */
 const awilix = require("awilix");
 const TelegramBot = require('node-telegram-bot-api');
-const Throttler = require('./throttler');
 const TelegramMessage = require("./message");
 
 /**
@@ -31,14 +30,6 @@ class Telegram extends TelegramBot
     commands.forEach((name) => {
       this.addCommand(name.split('_')[1], container.resolve(name));
     })
-
-    // Initialize throttling
-    this.rateLimit = this.config.telegram.rateLimit;
-    this.throttler = new Throttler({
-      maxRequests: this.rateLimit.maxRequestsPerSecond,
-      timeWindowMs: 1000
-    });
-    this.lastEditTimes = {};
   }
 
   async start() {
@@ -103,53 +94,6 @@ class Telegram extends TelegramBot
   }
 
   /**
-   * Throttled version of sendMessage
-   * @param {number} chatId - Chat ID
-   * @param {string} text - Message text
-   * @param {object} options - Message options
-   * @returns {Promise} - Promise resolving to sent message
-   */
-  async sendMessage(chatId, text, options = {}) {
-    return this.throttler.throttle(() => super.sendMessage(chatId, text, options));
-  }
-
-  /**
-   * Throttled version of editMessageText with smart price update handling
-   * @param {string} text - New message text
-   * @param {object} options - Edit options
-   * @returns {Promise} - Promise resolving to edited message
-   */
-  async editMessageText(text, options = {}) {
-    const messageKey = `${options.chat_id || ''}_${options.message_id || ''}`;
-    const lastEdit = this.lastEditTimes[messageKey] || 0;
-    const timeSinceLastEdit = Date.now() - lastEdit;
-    const delayNeeded = Math.max(0, this.rateLimit.messageEditDelay - timeSinceLastEdit);
-    if (delayNeeded > 0) {
-      // Return a resolved promise to maintain interface consistency
-      return Promise.resolve({ message_id: options.message_id });
-    }
-
-    // For non-price updates, wait for the required delay
-    if (delayNeeded > 0) {
-      await new Promise(resolve => setTimeout(resolve, delayNeeded));
-    }
-
-    // Update last edit time and throttle the API call
-    this.lastEditTimes[messageKey] = Date.now();
-    return this.throttler.throttle(() => super.editMessageText(text, options));
-  }
-
-  /**
-   * Throttled version of answerCallbackQuery
-   * @param {string} callbackQueryId - Callback query ID
-   * @param {object} options - Answer options
-   * @returns {Promise} - Promise resolving to callback answer
-   */
-  async answerCallbackQuery(callbackQueryId, options = {}) {
-    return this.throttler.throttle(() => super.answerCallbackQuery(callbackQueryId, options));
-  }
-
-  /**
    * Set infinite typing... status. clearInterval(returnValue) to stop.
    * @param {Number} chatId
    * @returns - Interval ID to clear status.
@@ -163,7 +107,6 @@ class Telegram extends TelegramBot
 module.exports = (container) => {
   container.register({
     telegram: awilix.asClass(Telegram).singleton(),
-    //throttler: awilix.asClass(Throttler).singleton()
   });
   container.loadModules(['./commands/*.js'], {
     cwd: __dirname,
