@@ -2,7 +2,6 @@ const {Schema} = require("mongoose");
 const {Pool: UniswapPool, tickToPrice} = require('@uniswap/v3-sdk');
 const autopopulate = require('mongoose-autopopulate');
 const {Price} = require("@uniswap/sdk-core");
-const NodeCache = require("node-cache");
 
 const poolSchema = new Schema({
   _id: String, // chainId:address
@@ -30,6 +29,7 @@ class PoolModel {
   static poolFactoryContract;
   static poolContract;
   static tokenModel;
+  static cache;
 
   contract; // attached instance
   swapListener = null;
@@ -161,8 +161,8 @@ class PoolModel {
   *
   * @return {Promise<{sqrtPriceX96: bigint, tick: number, observationIndex: bigint, observationCardinality: bigint, observationCardinalityNext: bigint, feeProtocol: number, unlocked: boolean}>}
   */
-  async slot0() {
-    let res = this._cache.get('slot0');
+  async getSlot0() {
+    let res = PoolModel.cache.get('slot0-'+this._id);
     if (!res) {
       res = await this.contract.read.slot0();
       res = {
@@ -174,7 +174,7 @@ class PoolModel {
         feeProtocol: res[5],
         unlocked: res[6]
       };
-      this._cache.set('slot0', res);
+      PoolModel.cache.set('slot0'+this._id, res, 5);
     }
     return res;
   }
@@ -274,14 +274,14 @@ class PoolModel {
 
 poolSchema.loadClass(PoolModel);
 
-module.exports = function(mongoose, chainId, poolFactoryContract, poolContract, TokenModel) {
+module.exports = function(mongoose, cache, chainId, poolFactoryContract, poolContract, TokenModel) {
   const init = (doc) => {
     doc.contract = poolContract(doc.address);
-    doc._cache = new NodeCache({stdTTL: 5});
+    doc._cache = cache;
   }
   poolSchema.post('init', init)
   poolSchema.post('save', function(doc, next) {
-    init();
+    init(doc);
     next();
   })
 
@@ -289,6 +289,7 @@ module.exports = function(mongoose, chainId, poolFactoryContract, poolContract, 
   PoolModel.poolFactoryContract = poolFactoryContract;
   PoolModel.poolContract = poolContract;
   PoolModel.tokenModel = TokenModel;
+  PoolModel.cache = cache;
 
   return mongoose.model('Pool', poolSchema);
 }

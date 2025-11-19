@@ -1,6 +1,5 @@
 const {Schema} = require("mongoose");
 const {Position: UniswapPosition} = require("@uniswap/v3-sdk");
-const NodeCache = require("node-cache");
 
 const positionSchema = new Schema({
   _id: String, // chainId:nftManagerAddress:tokenId (manager distinguish DEXes)
@@ -36,6 +35,7 @@ class PositionModel {
   static chainId;
   static positionManager;
   static staker;
+  static cache;
 
   get id() {
     return `${this.chainId}:${this.positionManager}:${this.tokenId}`;
@@ -193,10 +193,10 @@ class PositionModel {
   async calculateCakeRewards() {
     if (!this.isStaked) return 0; // No rewards for unstaked positions
 
-    let pendingCake = this._cache.get('pendingCake');
+    let pendingCake = PositionModel.cache.get('pendingCake-'+this._id);
     if (!pendingCake) {
       pendingCake = await PositionModel.staker.read.pendingCake([this.tokenId])
-      this._cache.set('pendingCake', pendingCake, 60);
+      PositionModel.cache.set('pendingCake-'+this._id, pendingCake, 60);
     }
 
     if (!pendingCake || pendingCake === 0n) return 0;
@@ -228,21 +228,13 @@ class PositionModel {
 
 positionSchema.loadClass(PositionModel);
 
-module.exports = function(mongoose, chainId, positionManager, staker, PoolModel, TokenModel) {
+module.exports = function(mongoose, cache, chainId, positionManager, staker, PoolModel, TokenModel) {
   PositionModel.poolModel = PoolModel;
   PositionModel.tokenModel = TokenModel;
   PositionModel.chainId = chainId;
   PositionModel.positionManager = positionManager;
   PositionModel.staker = staker;
-
-  const init = (doc) => {
-    doc._cache = new NodeCache({stdTTL: 5});
-  }
-  positionSchema.post('init', init)
-  positionSchema.post('save', function(doc, next) {
-    init();
-    next();
-  })
+  PositionModel.cache = cache;
 
   return mongoose.model('Position', positionSchema);
 }
