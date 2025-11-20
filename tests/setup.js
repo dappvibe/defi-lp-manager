@@ -57,7 +57,11 @@ beforeAll(async () => {
 beforeEach(() => {
   const erc20Factory = new mocks.MockERC20Factory();
   const poolV3Factory = new mocks.MockPoolV3Factory(erc20Factory);
+  poolV3Factory.registerPool(WETH, USDC, 100, '0x17c14d2c404d167802b16c450d3c99f88f2c4f4d', 3500.51);
+  poolV3Factory.registerPool(WETH, USDT, 100, '0x389938cf14be379217570d8e4619e51fbdafaa21', 3499.99);
+  poolV3Factory.registerPool(USDC, USDT, 100, '0x641c00a822e8b671738d32a431a4fb6074e5c79d', 1.01);
   const poolContractFactory = new mocks.MockPoolContractFactory(poolV3Factory);
+
   container.register({
     chainId: asValue(42161), // Arbitrum
     erc20Factory: asValue(erc20Factory.get.bind(erc20Factory)),

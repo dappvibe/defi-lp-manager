@@ -440,10 +440,6 @@ class MockPoolV3Factory {
     this._pools = new Map();
     this._erc20Factory = erc20Factory;
 
-    this._registerPool(WETH, USDC, 100, '0x17c14d2c404d167802b16c450d3c99f88f2c4f4d', 3500.51);
-    this._registerPool(WETH, USDT, 100, '0x389938cf14be379217570d8e4619e51fbdafaa21', 3499.99);
-    this._registerPool(USDC, USDT, 100, '0x641c00a822e8b671738d32a431a4fb6074e5c79d', 1.01);
-
     this.read = {
       getPool: vi.fn().mockImplementation((args) => this._getPool(args[0], args[1], args[2]))
     };
