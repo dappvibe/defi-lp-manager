@@ -3,7 +3,7 @@ const {Token} = require("@uniswap/sdk-core");
 const {formatUnits} = require('viem');
 
 const tokenSchema = new Schema({
-  _id: {type: String, required: true},
+  _id: {type: String, required: true}, // chainId:address
   chainId: {type: Number, required: true},
   name: {type: String, required: true},
   symbol: {type: String, required: true},

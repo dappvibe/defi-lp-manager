@@ -2,8 +2,10 @@ describe('PositionModel', () => {
   let model;
   let mockPositionManager;
   let staker;
+  let chainId;
 
   beforeEach(() => {
+    chainId = container.resolve('chainId');
     model = container.resolve('PositionModel');
     mockPositionManager = container.resolve('positionManager');
     mockPositionManager.setupPosition(31337);
@@ -13,7 +15,8 @@ describe('PositionModel', () => {
 
   describe('fromBlockchain', () => {
     it('should return position data as map', async () => {
-      const doc = await model.fromBlockchain(31337);
+      const id = `${chainId}:${mockPositionManager.address}:31337`;
+      const doc = await model.fromBlockchain(id);
       expect(doc).toBeDefined();
       expect(doc.isNew).toBe(true); // unsaved
       expect(doc._id).toBeDefined();
@@ -28,10 +31,9 @@ describe('PositionModel', () => {
       const doc = await model.fetch(tokenId);
       expect(doc.tokenId).toBe(tokenId);
       expect(doc.owner).toBe(USER_WALLET);
-      expect(doc.pool).toBeDefined();
+      expect(doc.pool).not.toBeNull();
       expect(doc.isNew).toBe(false);
       expect(doc._id).toBeDefined();
-      expect(doc.positionManager).eq(mockPositionManager.address);
     });
   });
 

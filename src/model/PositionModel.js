@@ -3,9 +3,7 @@ const {Position: UniswapPosition} = require("@uniswap/v3-sdk");
 
 const positionSchema = new Schema({
   _id: String, // chainId:nftManagerAddress:tokenId (manager distinguish DEXes)
-  chainId: { type: Number, required: true },
-  owner: { type: String, required: true },
-  positionManager: { type: String, required: true }, // issuer/platform
+  owner: { type: String, required: true },    // address
   tokenId: { type: Number, required: true },
   pool: { type: String, ref: 'Pool', required: true, autopopulate: true },
   tickLower: { type: Number, required: true },
@@ -35,6 +33,7 @@ class PositionModel {
   static chainId;
   static positionManager;
   static staker;
+  static poolFactoryContract;
   static cache;
 
   get id() {
@@ -52,7 +51,7 @@ class PositionModel {
 
     let doc = await this.findById(id);
     if (!doc) {
-      doc = await this.fromBlockchain(tokenId);
+      doc = await this.fromBlockchain(id);
       try {
         await doc.save();
       } catch (e) {
@@ -70,13 +69,12 @@ class PositionModel {
   /**
   * Fetch position data from blockchain and return unsaved doc.
   * Use static chainId in this class, retreived from container.
-  *
-  * @param {Number|BigInt} tokenId
   * @return {Promise<PositionModel>}
   */
-  static async fromBlockchain(tokenId) {
+  static async fromBlockchain(id) {
+    const [chainId, positionManager, tokenId] = id.split(':');
     let [data, owner] = await Promise.all([
-      PositionModel.positionManager.read.positions([tokenId]),
+      PositionModel.positionManager.read.positions([tokenId]), // should create contract with given address
       this.getOwner(tokenId)
     ]);
     data = {
@@ -90,13 +88,11 @@ class PositionModel {
       // Thus rely on watching wallet events and save doc approx. the same time when position appears in logs.
     };
 
-    // Ensure dependant tokens exists in the db
+    // Get pool address for this position
     const pool = await PositionModel.poolModel.fetch(data.token0, data.token1, data.fee);
 
     return new this({ // getter id() will return null even if set doc props before _id, thus copy code
-      _id: `${PositionModel.chainId}:${PositionModel.positionManager.address}:${tokenId}`,
-      chainId: PositionModel.chainId,
-      positionManager: PositionModel.positionManager.address,
+      _id: id,
       tokenId,
       owner: owner,
       pool: pool,
@@ -227,7 +223,8 @@ class PositionModel {
 
 positionSchema.loadClass(PositionModel);
 
-module.exports = function(mongoose, cache, chainId, positionManager, staker, PoolModel, TokenModel) {
+module.exports = function(mongoose, cache, chainId, positionManager, staker, PoolModel, TokenModel, poolFactoryContract) {
+  PositionModel.poolFactoryContract = poolFactoryContract;
   PositionModel.poolModel = PoolModel;
   PositionModel.tokenModel = TokenModel;
   PositionModel.chainId = chainId;

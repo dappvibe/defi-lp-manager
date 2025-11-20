@@ -10,14 +10,17 @@ describe('PoolModel', () => {
 
   describe('fromBlockchain', () => {
     it('should fetch pool details and return new doc', async () => {
-      const fee = 100;
-      const pool = await model.fromBlockchain(WETH, USDT, fee);
+      const pool = await model.fromBlockchain(`${chainId}:0x17c14d2c404d167802b16c450d3c99f88f2c4f4d`);
       expect(pool).toBeDefined();
       expect(pool.isNew).toBe(true); // unsaved
-      expect(pool._id).toBe(`${chainId}:0x389938cf14be379217570d8e4619e51fbdafaa21`);
-      expect(pool.token0.address).toBe(WETH);
-      expect(pool.token1.address).toBe(USDT);
-      expect(pool.fee).toBe(fee);
+      expect(pool._id).toBe(`${chainId}:0x17c14d2c404d167802b16c450d3c99f88f2c4f4d`);
+      expect(pool.chainId).toBe(chainId);
+      expect(pool.address).toBe('0x17c14d2c404d167802b16c450d3c99f88f2c4f4d');
+      expect(pool.token0).toBe(`${chainId}:0x82af49447d8a07e3bd95bd0d56f35241523fbab1`);
+      expect(pool.token1).toBe(`${chainId}:0xaf88d065e77c8cc2239327c5edb3a432268e5831`);
+      expect(pool.sqrtPriceX96).toBe('4687542788683472901042208');
+      expect(pool.liquidity).toBe('1000000');
+      expect(pool.fee).toBe(100);
     })
   });
 

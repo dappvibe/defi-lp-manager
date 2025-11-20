@@ -2,7 +2,6 @@ const {Schema} = require("mongoose");
 const {Pool: UniswapPool, tickToPrice} = require('@uniswap/v3-sdk');
 const autopopulate = require('mongoose-autopopulate');
 const {Price} = require("@uniswap/sdk-core");
-const NodeCache = require("node-cache");
 
 const poolSchema = new Schema({
   _id: String, // chainId:address
@@ -68,7 +67,14 @@ class PoolModel {
     };
     let doc = await this.findOne(filter);
     if (!doc) {
-      doc = await this.fromBlockchain(token0, token1, fee);
+      // first find pool contract address from PoolFactoryV3
+      let address = await PoolModel.poolFactoryContract.read.getPool([token0, token1, fee]);
+      if (!address || address === '0x0000000000000000000000000000000000000000') {
+        throw new Error(`Pool not found onchain (${PoolModel.chainId}) for tokens ${token0}/${token1} with fee ${fee}`);
+      }
+      address = address.toLowerCase();
+
+      doc = await this.fromBlockchain(`${PoolModel.chainId}:${address}`);
       try {
         await doc.save();
       } catch (e) {
@@ -88,37 +94,26 @@ class PoolModel {
   /**
    * Fetch pool details from blockchain and return unsaved doc.
    * Use static chainId in this class, retreived from container.
-   *
-   * @param {String} token0 - address
-   * @param {String} token1 - address
-   * @param {Number} fee
    * @return {Promise<PoolModel>}
+   * @param id Document ID
    */
-  static async fromBlockchain(token0, token1, fee) {
-    // first find pool contract address from PoolFactoryV3
-    let address = await PoolModel.poolFactoryContract.read.getPool([token0, token1, fee]);
-    if (!address || address === '0x0000000000000000000000000000000000000000') {
-      throw new Error(`Pool not found onchain (${PoolModel.chainId}) for tokens ${token0}/${token1} with fee ${fee}`);
-    }
-    address = address.toLowerCase();
-
-    // Ensure dependant tokens exists in the db
-    [token0, token1] = await Promise.all([
-      PoolModel.tokenModel.fetch(token0),
-      PoolModel.tokenModel.fetch(token1)
+  static async fromBlockchain(id) {
+    const [chainId, address] = id.split(':');
+    const contract = PoolModel.poolContract(address);
+    const [token0, token1, fee] = await Promise.all([
+      contract.read.token0(),
+      contract.read.token1(),
+      contract.read.fee(),
     ]);
-
     const doc = new this({
-      _id: PoolModel.id(PoolModel.chainId, address),
-      chainId: PoolModel.chainId,
-      address,
-      token0,
-      token1,
-      fee,
+      _id: id,
+      chainId,
+      token0: `${chainId}:${token0.toLowerCase()}`,
+      token1: `${chainId}:${token1.toLowerCase()}`,
+      fee
     });
-    doc.contract = PoolModel.poolContract(address);
-
-    return doc;
+    doc.contract = contract;
+    return doc.refresh();
   }
 
   /**
