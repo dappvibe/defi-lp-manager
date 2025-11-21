@@ -1,17 +1,6 @@
 const {Schema} = require("mongoose");
 const {Position: UniswapPosition} = require("@uniswap/v3-sdk");
-
-const positionSchema = new Schema({
-  _id: String, // chainId:nftManagerAddress:tokenId (manager distinguish DEXes)
-  owner: { type: String, required: true },    // address
-  tokenId: { type: Number, required: true },
-  pool: { type: String, ref: 'Pool', required: true, autopopulate: true },
-  tickLower: { type: Number, required: true },
-  tickUpper: { type: Number, required: true },
-  liquidity: { type: BigInt, required: true },
-  isStaked: { type: Boolean, required: true },
-}, { _id: false, timestamps: true });
-positionSchema.plugin(require('mongoose-autopopulate'));
+const autopopulate = require('mongoose-autopopulate');
 
 /**
  * @property {String} _id - Composite key in format chainId:address:tokenId
@@ -27,90 +16,26 @@ positionSchema.plugin(require('mongoose-autopopulate'));
  * @property {Date} createdAt - Creation timestamp
  * @property {Date} updatedAt - Last update timestamp
  */
-class PositionModel {
+class PositionModel
+{
+  static schema = new Schema({
+    _id: String, // chainId:nftManagerAddress:tokenId (manager distinguish DEXes)
+    owner: { type: String, required: true },    // address
+    tokenId: { type: Number, required: true },
+    pool: { type: String, ref: 'Pool', required: true, autopopulate: true },
+    tickLower: { type: Number, required: true },
+    tickUpper: { type: Number, required: true },
+    liquidity: { type: BigInt, required: true },
+    isStaked: { type: Boolean, required: true },
+  }, { _id: false, timestamps: true });
+
   static poolModel;
   static tokenModel;
   static chainId;
   static positionManager;
   static staker;
-  static poolFactoryContract;
   static cache;
-
-  get id() {
-    return `${this.chainId}:${this.positionManager}:${this.tokenId}`;
-  }
-
-  /**
-   * Find doc in the db and if not exists get details from blockchain, save and return doc.
-   *
-   * @param {Number} tokenId
-   * @return {Promise<PositionModel>}
-   */
-  static async fetch(tokenId) {
-    const id = `${PositionModel.chainId}:${PositionModel.positionManager.address}:${tokenId}`;
-
-    let doc = await this.findById(id);
-    if (!doc) {
-      doc = await this.fromBlockchain(id);
-      try {
-        await doc.save();
-      } catch (e) {
-        if (e.code === 11000) { // duplicate (race condition)
-          doc = await this.findById(id);
-          if (!doc) throw new Error(`Position (${doc._id}) was concurrently created but not found after retry.`);
-        }
-        else throw e;
-      }
-    }
-
-    return doc;
-  }
-
-  /**
-  * Fetch position data from blockchain and return unsaved doc.
-  * Use static chainId in this class, retreived from container.
-  * @return {Promise<PositionModel>}
-  */
-  static async fromBlockchain(id) {
-    const [chainId, positionManager, tokenId] = id.split(':');
-    let [data, owner] = await Promise.all([
-      PositionModel.positionManager.read.positions([tokenId]), // should create contract with given address
-      this.getOwner(tokenId)
-    ]);
-    data = {
-      token0: data[2],
-      token1: data[3],
-      fee: data[4],
-      tickLower: data[5],
-      tickUpper: data[6],
-      liquidity: data[7],
-      // NOTE: createdAt on blockchain can be queried only with unlimited logs which is not available in free-tier alchemy.
-      // Thus rely on watching wallet events and save doc approx. the same time when position appears in logs.
-    };
-
-    // Get pool address for this position
-    const pool = await PositionModel.poolModel.fetch(data.token0, data.token1, data.fee);
-
-    return new this({ // getter id() will return null even if set doc props before _id, thus copy code
-      _id: id,
-      tokenId,
-      owner: owner,
-      pool: pool,
-      tickLower: data.tickLower,
-      tickUpper: data.tickUpper,
-      liquidity: data.liquidity,
-      isStaked: await PositionModel.isStaked(tokenId)
-    });
-  }
-
-  static async isStaked(tokenId) {
-    const res = await PositionModel.staker.read.userPositionInfos([tokenId]);
-    return res[6] !== '0x0000000000000000000000000000000000000000'; // user (owner)
-  }
-
-  static async getOwner(tokenId) {
-    return PositionModel.positionManager.read.ownerOf([tokenId]);
-  }
+  static cakePool; // promise
 
   async isInRange() {
     const prices = await this.pool.getPrices(this);
@@ -128,8 +53,8 @@ class PositionModel {
   calculateTokenAmounts() {
     const sdk = this.toUniswapSDK();
     return [
-      Number(sdk.amount0.toFixed(this.pool.token0.decimals)),
-      Number(sdk.amount1.toFixed(this.pool.token1.decimals)),
+      sdk.amount0.toSignificant(),
+      sdk.amount1.toSignificant(),
     ];
   }
 
@@ -162,8 +87,8 @@ class PositionModel {
       amount1Max: BigInt('340282366920938463463374607431768211455')  // Max uint128
     };
     const feeAmounts = await PositionModel.positionManager.simulate.collect([collectParams]);
-    const token0Fees = this.pool.token0.getFloatAmount(feeAmounts.result[0]);
-    const token1Fees = this.pool.token1.getFloatAmount(feeAmounts.result[1]);
+    const token0Fees = this.pool.token0.format(feeAmounts.result[0]);
+    const token1Fees = this.pool.token1.format(feeAmounts.result[1]);
 
     // Calculate total value assuming token1 is stablecoin (like USDC)
     const price = await this.pool.getPrices(this);
@@ -197,8 +122,8 @@ class PositionModel {
 
     if (!pendingCake || pendingCake === 0n) return 0;
 
-    // Convert to human readable amount (CAKE has 18 decimals)
-    return parseFloat(pendingCake.toString()) / Math.pow(10, 18);
+    const pool = await PositionModel.cakePool;
+    return pool.token0.format(pendingCake);
   }
 
   toUniswapSDK() {
@@ -219,18 +144,106 @@ class PositionModel {
       this.emit('range', e.tick >= this.tickLower && e.tick <= this.tickUpper);
     });
   }
+
+  stopMonitoring() {
+    // TODO delete registered event on this. do not touch pool monitoring
+  }
+
+  /**
+   * Fetch position data from blockchain and return unsaved doc.
+   * Use static chainId in this class, retreived from container.
+   * @return {Promise<PositionModel>}
+   */
+  static async fromBlockchain(id) {
+    const [chainId, positionManager, tokenId] = id.split(':');
+    if (positionManager !== PositionModel.positionManager.address) {
+      throw new Error('Position manager mismatch: ' + PositionModel.positionManager.address);
+    }
+
+    let [data, owner] = await Promise.all([
+      PositionModel.positionManager.read.positions([tokenId]), // should create contract with given address
+      this.getOwner(tokenId)
+    ]);
+    data = {
+      token0: data[2],
+      token1: data[3],
+      fee: data[4],
+      tickLower: data[5],
+      tickUpper: data[6],
+      liquidity: data[7],
+      // NOTE: createdAt on blockchain can be queried only with unlimited logs which is not available in free-tier alchemy.
+      // Thus rely on watching wallet events and save doc approx. the same time when position appears in logs.
+    };
+
+    const poolAddress = await PositionModel.poolModel.getPoolAddress(data.token0, data.token1, data.fee);
+    return new this({
+      _id: id,
+      tokenId,
+      owner: owner,
+      pool: `${chainId}:${poolAddress}`,
+      tickLower: data.tickLower,
+      tickUpper: data.tickUpper,
+      liquidity: data.liquidity,
+      isStaked: await PositionModel.isStaked(tokenId)
+    });
+  }
+
+  static async isStaked(tokenId) {
+    const res = await PositionModel.staker.read.userPositionInfos([tokenId]);
+    return res[6] !== '0x0000000000000000000000000000000000000000'; // user (owner)
+  }
+
+  static async getOwner(tokenId) {
+    return PositionModel.positionManager.read.ownerOf([tokenId]);
+  }
 }
 
-positionSchema.loadClass(PositionModel);
-
-module.exports = function(mongoose, cache, chainId, positionManager, staker, PoolModel, TokenModel, poolFactoryContract) {
-  PositionModel.poolFactoryContract = poolFactoryContract;
+module.exports = function(mongoose, cache, chainId, cakePool, positionManager, staker, PoolModel, TokenModel) {
   PositionModel.poolModel = PoolModel;
   PositionModel.tokenModel = TokenModel;
   PositionModel.chainId = chainId;
   PositionModel.positionManager = positionManager;
   PositionModel.staker = staker;
   PositionModel.cache = cache;
+  PositionModel.cakePool = cakePool;
 
-  return mongoose.model('Position', positionSchema);
+  // ensure referenced pool exists
+  PositionModel.schema.pre('save', async function() {
+    const id = this.pool;
+    await this.populate('pool');
+    if (this.pool === null) {
+      this.pool = await PoolModel.findById(id);
+      if (!this.pool) {
+        this.pool = await PoolModel.fromBlockchain(id);
+        if (this.pool) await this.pool.save();
+        else throw new Error(`Pool ${id} not found in blockchain`);
+      }
+    }
+  });
+
+  // post find fallback - if tokens not populated fetch from blockchain
+  const events = ['findOne', 'findById', 'find', 'findOneAndUpdate', 'findOneAndReplace', 'findOneAndDelete'];
+  PositionModel.schema.post(events, async function(doc)  {
+    if (!doc) return;
+
+    async function populatePool(doc) {
+      if (doc.pool === null) {
+        doc.depopulate('pool');
+        doc.pool = await PoolModel.fromBlockchain(doc.pool);
+        try {
+          await doc.pool.save();
+        } catch (e) {
+          if (e.code !== 11000) throw e; // duplicate is ok
+        }
+      }
+    }
+
+    if (Array.isArray(doc)) {
+      await Promise.all(doc.map(populatePool));
+    } else {
+      await populatePool(doc);
+    }
+  });
+
+  return mongoose.model('Position', PositionModel.schema.loadClass(PositionModel).plugin(autopopulate));
 }

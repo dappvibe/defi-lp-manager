@@ -32,7 +32,11 @@ class PositionFactory
       // This must be sequential, not Promise.all to not hit Alchemy (free-tier) rate limits
       for (let i = Number(count) - 1; i >= 0; i--) {
         const tokenId = await contract.read.tokenOfOwnerByIndex([address, i]);
-        const pos = await this.positionModel.fetch(Number(tokenId));
+        const id = `${this.chainId}:${this.positionManager.address}:${tokenId}`;
+        let pos = await this.positionModel.findById(id);
+        if (!pos) {
+          pos = await this.positionModel.fromBlockchain(id);
+        }
 
         if (pos.isStaked !== isStaked) {
           pos.isStaked = isStaked;

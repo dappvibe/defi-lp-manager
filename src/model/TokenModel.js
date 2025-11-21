@@ -2,18 +2,6 @@ const {Schema} = require("mongoose");
 const {Token} = require("@uniswap/sdk-core");
 const {formatUnits} = require('viem');
 
-const tokenSchema = new Schema({
-  _id: {type: String, required: true}, // chainId:address
-  chainId: {type: Number, required: true},
-  name: {type: String, required: true},
-  symbol: {type: String, required: true},
-  decimals: {type: Number, required: true},
-}, {_id: false});
-
-tokenSchema.virtual('address').get(function() {
-  return this._id.split(':')[1];
-});
-
 /**
  * @property {String} _id - Composite key in format chainId:address
  * @property {Number} chainId - Chain identifier
@@ -21,95 +9,80 @@ tokenSchema.virtual('address').get(function() {
  * @property {String} symbol - Token symbol
  * @property {Number} decimals - Token decimals
  * @property {String} address - Virtual property returning token address
+ * @property {Object} contract - Instance of ERC20 contract
+ * @static {Function} erc20Factory - ERC20 contract factory function
+ * @static {Schema} schema - Mongoose schema
  */
-class TokenModel {
-  static chainId;
+class TokenModel
+{
+  static schema = new Schema({
+    _id: {type: String, required: true}, // chainId:address
+    name: {type: String, required: true},
+    symbol: {type: String, required: true},
+    decimals: {type: Number, required: true},
+  }, {_id: false});
+
   static erc20Factory;
 
-  get id() {
-    return TokenModel.id(this.chainId, this.address);
+  get chainId() {
+    return Number(this._id.split(':')[0]);
+  }
+  get address() {
+    return this._id.split(':')[1];
+  }
+
+  format(amount) {
+    return formatUnits(amount, this.decimals);
   }
 
   /**
-   * _id must be manually set on doc creation
-   * @param chainId
+   * Read token balance from blockchain.
    * @param address
-   * @return {string}
+   * @return {Promise<string>}
    */
-  static id(chainId, address) {
-    return `${chainId}:${address.toLowerCase()}`;
-  }
-
-  /**
-   * Find doc in the db and if not exists get details from blockchain, save and return doc.
-   *
-   * @param address
-   * @return {Promise<TokenModel>}
-   */
-  static async fetch(address) {
-    address = address.toLowerCase();
-
-    const _id = this.id(TokenModel.chainId, address);
-    let doc = await this.findById(_id);
-    if (!doc) {
-      doc = await this.fromBlockchain(address);
-      try {
-        await doc.save();
-      } catch (e) {
-        if (e.code === 11000) { // duplicate (race condition)
-          doc = await this.findById(_id);
-          if (!doc) throw new Error(`Token with _id ${_id} was concurrently created but not found after retry.`);
-        }
-        else throw e;
-      }
-    }
-
-    // ERC20 contract is attached in hooks (see exports)
-    return doc;
-  }
-
-  /**
-   * Fetch token details from blockchain and return unsaved doc.
-   * Use static chainId in this class, retreived from container.
-   *
-   * @param {String} address Case-insensitive
-   * @return {Promise<TokenModel>}
-   */
-  static async fromBlockchain(address) {
-    const doc = new this;
-    doc.chainId = TokenModel.chainId;
-    doc._id = this.id(doc.chainId, address);
-
-    const contract = TokenModel.erc20Factory(address);
-    await Promise.all([
-      contract.read.symbol().then(s => doc.symbol = s),
-      contract.read.decimals().then(d => doc.decimals = d),
-      contract.read.name().then(n => doc.name = n)
-    ]);
-
-    return doc;
+  async getBalance(address) {
+    return this.contract.read.balanceOf([address]);
   }
 
   toUniswapSDK() {
     return new Token(this.chainId, this.address, this.decimals, this.symbol, this.name);
   }
 
-  getFloatAmount(amount) {
-    return formatUnits(amount, this.decimals);
+  /**
+   * Fetch token details from blockchain and return unsaved doc.
+   * @return {Promise<TokenModel>}
+   * @param id
+   */
+  static async fromBlockchain(id) {
+    const [chainId, address] = id.split(':');
+
+    const contract = TokenModel.erc20Factory(address);
+    const [name, symbol, decimals] = await Promise.all([
+      contract.read.name(),
+      contract.read.symbol(),
+      contract.read.decimals()
+    ]);
+
+    return new this({
+      _id: id,
+      name,
+      symbol,
+      decimals
+    });
   }
 }
 
-tokenSchema.loadClass(TokenModel);
-
-module.exports = function(mongoose, chainId, erc20Factory) {
-  TokenModel.chainId = chainId;
+/**
+  * @param mongoose - Mongoose connection
+  * @param erc20Factory - ERC20 contract factory function
+  * @return {TokenModel}
+  */
+module.exports = function(mongoose, erc20Factory) {
   TokenModel.erc20Factory = erc20Factory;
 
-  const attachContract = function(doc) {
+  TokenModel.schema.post(['init', 'save'], function(doc) {
     doc.contract = erc20Factory(doc.address);
-  }
-  tokenSchema.post('init', attachContract)
-  tokenSchema.post('save', attachContract)
+  })
 
-  return mongoose.model('Token', tokenSchema);
-}
+  return mongoose.model('Token', TokenModel.schema.loadClass(TokenModel));
+};

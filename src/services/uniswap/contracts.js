@@ -56,13 +56,13 @@ module.exports = (container) => {
         client: container.resolve('provider')
       });
     }),
+    // can't use db.model() here because PositionModel depends on cakePool
     cakePool: awilix.asFunction((PoolModel, chainId) => {
       if (chainId !== 42161) throw new Error('Cake pool is only available on Arbitrum');
-      return PoolModel.fetch(
-        '0x1b896893dfc86bb67cf57767298b9073d2c1ba2c',
-        '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
-        2500
-      );
+      const id = `${chainId}:0xdaa5b2e06ca117f25c8d62f7f7fbaedcf7a939f4`;
+      return PoolModel.findById(id).then(pool => {
+        return pool ? pool : PoolModel.fromBlockchain(id).then(pool => pool?.save());
+      });
     }).singleton()
   })
 };

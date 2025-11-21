@@ -21,6 +21,7 @@ global.USER_WALLET = '0x220866b1a2219f40e72f5c628b65d54268ca3a9d';
 global.WETH = '0x82af49447d8a07e3bd95bd0d56f35241523fbab1';
 global.USDT = '0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9';
 global.USDC = '0xaf88d065e77c8cc2239327c5edb3a432268e5831';
+global.CAKE = '0x1b896893dfc86bb67Cf57767298b9073D2c1bA2c';
 
 function mockBlockchain(container) {
   const provider = createPublicClient({
@@ -38,6 +39,7 @@ function mockBlockchain(container) {
   poolV3Factory.registerPool(WETH, USDC, 100, '0x17c14d2c404d167802b16c450d3c99f88f2c4f4d', 3500.51);
   poolV3Factory.registerPool(WETH, USDT, 100, '0x389938cf14be379217570d8e4619e51fbdafaa21', 3499.99);
   poolV3Factory.registerPool(USDC, USDT, 100, '0x641c00a822e8b671738d32a431a4fb6074e5c79d', 1.01);
+  poolV3Factory.registerPool(CAKE, USDC, 2500, '0xdaa5b2e06ca117f25c8d62f7f7fbaedcf7a939f4', 2.65);
   const poolContractFactory = new mocks.MockPoolContractFactory(poolV3Factory);
   container.register({
     provider: asValue(provider),

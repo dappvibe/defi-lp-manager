@@ -76,19 +76,15 @@ class LpHandler extends AbstractHandler
 
   /**
    * Creates an instance of LpHandler
-   * @param UserModel
-   * @param MessageModel
-   * @param WalletModel
+   * @param db
    * @param positionFactory
-   * @param PoolModel
    * @param cakePool
    */
-  constructor(UserModel, MessageModel, WalletModel, positionFactory, PoolModel, cakePool) {
-    super(UserModel);
-    this.MessageModel = MessageModel;
-    this.WalletModel = WalletModel;
+  constructor(db, positionFactory, cakePool) {
+    super(db.model('User'));
+    this.db = db;
+    this.model = db.model('Message');
     this.positionFactory = positionFactory;
-    this.PoolModel = PoolModel;
     cakePool.then((pool) => this.cakePool = pool);
   }
 
@@ -166,16 +162,16 @@ class LpHandler extends AbstractHandler
     let doc;
     try {
       if (chatId) { // keep doc null to always send new message if chatId is provided (on /lp command)
-        await this.MessageModel.deleteOne({_id: 'Range_' + pos._id}); // send new alert to appear after position msg
+        await this.model.deleteOne({_id: 'Range_' + pos._id}); // send new alert to appear after position msg
       }
       else {
-        doc = await this.MessageModel.findById(_id);
+        doc = await this.model.findById(_id);
         if (!doc) throw new Error('chatId must be set for new messages: ' + _id);
         chatId = doc.chatId;
       }
 
       const value = pos.calculateCombinedValue();
-      const amounts = pos.calculateTokenAmounts();
+      const amounts = pos.calculateTokenAmounts().map(parseFloat);
       const prices = pos.pool.getPrices(pos);
       const fees = await pos.calculateUnclaimedFees();
       const cake = await this.cakePool?.getPrices();
@@ -192,7 +188,7 @@ class LpHandler extends AbstractHandler
       msg = await this.bot.send(msg);
 
       // Save message to keep updating after restart
-      return this.MessageModel.findOneAndUpdate(
+      return this.model.findOneAndUpdate(
         {_id, chatId},
         {_id, chatId, messageId: msg.id, checksum: msg.checksum(), metadata: msg},
         {upsert: true, new: true, setDefaultsOnInsert: true}
@@ -213,21 +209,21 @@ class LpHandler extends AbstractHandler
   async alertPriceRange(pos, inRange) {
     const _id = 'Range_'+pos._id;
 
-    let alert = await this.MessageModel.findById(_id);
+    let alert = await this.model.findById(_id);
     if (!alert && !inRange) { // send alert
-      const posMsg = await this.MessageModel.findById('Position_'+pos._id);
+      const posMsg = await this.model.findById('Position_'+pos._id);
       if (!posMsg || this.onAir[_id]) return;
       this.onAir[_id] = true;
       try {
         const sent = await this.bot.sendMessage(posMsg.chatId, `⚠️ Position Out of Range`, { reply_to_message_id: posMsg.messageId });
-        await this.MessageModel.create({_id, chatId: posMsg.chatId, messageId: sent.message_id});
+        await this.model.create({_id, chatId: posMsg.chatId, messageId: sent.message_id});
       } finally {
         delete this.onAir[_id];
       }
     }
     else if (alert && inRange) { // back in range - remove alert
       await this.bot.deleteMessage(alert.chatId, alert.messageId);
-      await this.MessageModel.deleteOne({_id});
+      await this.model.deleteOne({_id});
     }
   }
 
@@ -245,7 +241,7 @@ class LpHandler extends AbstractHandler
    * @returns {Promise<Number>} - Amount of restored positions
    */
   async restoreEventListeners() {
-    const messages = await this.MessageModel.find({_id: /^Position_/});
+    const messages = await this.model.find({_id: /^Position_/});
 
     let count = 0;
     for (const msg of messages) {

@@ -247,7 +247,7 @@ class MockNonfungiblePositionManager {
       poolId: 1n,
       tickLower: -10000,
       tickUpper: -5000,
-      liquidity: 1000n,
+      liquidity: 123345678909887641n,
       feeGrowthInside0LastX128: 0n,
       feeGrowthInside1LastX128: 0n,
       tokensOwed0: 100n,
@@ -316,7 +316,7 @@ class MockStaker extends MockNonfungiblePositionManager {
 
   setupUserPositionInfo(tokenId, overrides = {}) {
     const defaults = {
-      liquidity: 1000n,
+      liquidity: 1000000000000000n,
       boostLiquidity: 0n,
       tickLower: -100,
       tickUpper: 100,
@@ -633,6 +633,13 @@ class MockERC20Factory {
       decimals: 8,
       totalSupply: 21000000n * 10n ** 8n
     });
+
+    this.create('0x1b896893dfc86bb67Cf57767298b9073D2c1bA2c', {
+      symbol: 'CAKE',
+      name: 'PancakeSwap Token',
+      decimals: 18,
+      totalSupply: 1000000000000000000000000000n
+    })
   }
 
   create(address, overrides = {}) {
@@ -642,9 +649,11 @@ class MockERC20Factory {
   }
 
   get(address) {
-    let mock = this._tokens.get(address.toLowerCase());
-    if (!mock) mock = this.create(address);
-    return mock;
+    const mock = this._tokens.get(address.toLowerCase());
+    if (mock) return mock;
+    // FIXME this is incorrect because contract will be created, but exception thrown on any method call
+    // hence need to return always-fail ERC20 mock
+    else throw new Error('returned no data');
   }
 
   reset() {
