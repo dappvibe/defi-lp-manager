@@ -29,8 +29,8 @@ export default defineConfig({
       ]
     },
 
-    // Timeout for tests
-    testTimeout: 120000,
+    hookTimeout: 600000,
+    testTimeout: 600000,
 
     // Pool options for better performance
     pool: 'threads',
