@@ -9,10 +9,12 @@ services:
       - .env
 
   mongodb:
-    # required earlier to run on PI4
+    # requires earlier version to run on PI4
     image: mongo:4.4.18
     volumes:
       - mongodb_data:/data/db
+    ports:
+      - "127.0.0.1:27017:27107"
 
 volumes:
   mongodb_data:
