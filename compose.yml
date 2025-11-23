@@ -1,12 +1,12 @@
 services:
   app:
-    build: .
+    image: node:lts
+    working_dir: /srv
+    volumes:
+      - .:/srv
     depends_on:
       - mongodb
-    environment:
-      - MONGODB_URI=mongodb://mongodb:27017/defi-lp-manager
-    env_file:
-      - .env
+    command: ["node", "index.js"]  # run npm install manually first
 
   mongodb:
     # requires earlier version to run on PI4
