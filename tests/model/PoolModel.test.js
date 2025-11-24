@@ -11,7 +11,7 @@ describe('PoolModel', () => {
   })
 
   beforeEach(async () => {
-    await model.deleteMany({chainId});
+    await model.deleteMany({_id: new RegExp(`^${chainId}`)});
     pool = await model.fromBlockchain(`${chainId}:0x17c14d2c404d167802b16c450d3c99f88f2c4f4d`);
     try {pool = await pool.save();} catch (e) { if (e.code !== 11000) throw e;}
   })

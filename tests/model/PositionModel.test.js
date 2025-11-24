@@ -16,7 +16,7 @@ describe('PositionModel', () => {
   })
 
   beforeEach(async () => {
-    await model.deleteMany({ chainId });
+    await model.deleteMany({_id: new RegExp(`^${chainId}`)});
     id = `${chainId}:0x46a15b0b27311cedf172ab29e4f4766fbe7f4364:31337`;
     position = await model.fromBlockchain(id);
     try {
