@@ -43,7 +43,7 @@ function mockBlockchain(container) {
   const poolContractFactory = new mocks.MockPoolContractFactory(poolV3Factory);
   container.register({
     provider: asValue(provider),
-      erc20Factory: asValue(erc20Factory.get.bind(erc20Factory)),
+    erc20Factory: asValue(erc20Factory.get.bind(erc20Factory)),
     poolFactoryContract: asValue(poolV3Factory),
     poolContract: asValue(poolContractFactory.get.bind(poolContractFactory)),
     positionManager: asValue(new mocks.MockNonfungiblePositionManager()),
