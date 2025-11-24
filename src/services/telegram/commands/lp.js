@@ -170,6 +170,7 @@ class LpHandler extends AbstractHandler
         chatId = doc.chatId;
       }
 
+      await pos.populate('pool');
       const value = pos.calculateCombinedValue();
       const amounts = pos.calculateTokenAmounts().map(parseFloat);
       const prices = pos.pool.getPrices(pos);
