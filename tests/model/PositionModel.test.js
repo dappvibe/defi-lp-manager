@@ -31,10 +31,10 @@ describe('PositionModel', () => {
       await model.deleteMany({});
 
       const query = {
-        _id: `${chainId}:0x46a15b0b27311cedf172ab29e4f4766fbe7f4364:12345`,
-        tokenId: 12345,
+        _id: `${chainId}:0x46a15b0b27311cedf172ab29e4f4766fbe7f4364:31337`,
+        tokenId: 31337,
         owner: 'testOwner',
-        pool: `${chainId}:0x17c14d2c404d167802b16c450d3c99f88f2c4f4d`,
+        pool: `${chainId}:0x389938cf14be379217570d8e4619e51fbdafaa21`,
         tickLower: -10,
         tickUpper: 10,
         liquidity: BigInt(10000000),

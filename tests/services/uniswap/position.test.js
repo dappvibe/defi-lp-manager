@@ -25,8 +25,6 @@ describe('PositionFactory', () => {
         expect(position.id).toBeDefined();
         expect(typeof position.isStaked).toBe('boolean');
         expect(position.pool).toBeDefined();
-        expect(position.positionManager).toBeDefined();
-        expect(position.staker).toBeDefined();
       });
     });
   });

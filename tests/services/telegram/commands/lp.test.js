@@ -350,6 +350,8 @@ describe('Telegram command: Lp', () => {
       staker.setupUserPositionInfo(31337);
 
       const position = await positionModel.fromBlockchain(positionId);
+      await position.save();
+      await position.populate('pool');
       const startMonitoringSpy = vi.spyOn(position, 'startMonitoring');
       const onSpy = vi.spyOn(position, 'on');
 

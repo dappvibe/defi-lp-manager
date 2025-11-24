@@ -452,10 +452,7 @@ class MockPoolV3Factory {
   }
 
   _getPoolKey(token0, token1, fee) {
-    const [t0, t1] = token0.toLowerCase() < token1.toLowerCase()
-      ? [token0.toLowerCase(), token1.toLowerCase()]
-      : [token1.toLowerCase(), token0.toLowerCase()];
-    return `${t0}-${t1}-${fee}`;
+    return `${token0}-${token1}-${fee}`;
   }
 
   _registerPool(token0, token1, fee, address, price) {
