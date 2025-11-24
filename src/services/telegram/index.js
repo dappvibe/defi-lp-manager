@@ -67,9 +67,8 @@ class Telegram extends TelegramBot
       if (!chatId) throw new Error('Chat ID is required for text messages');
       let text = message;
       message = new class extends TelegramMessage {
-        toString() {
-          return text;
-        }
+        options = {}
+        toString = () => text;
       }({chatId: chatId});
     }
     if (!message instanceof TelegramMessage) throw new Error('Invalid message type');

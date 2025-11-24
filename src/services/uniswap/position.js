@@ -36,12 +36,11 @@ class PositionFactory
         let pos = await this.positionModel.findById(id);
         if (!pos) {
           pos = await this.positionModel.fromBlockchain(id);
+          await pos.populate('pool');
         }
+        pos.isStaked = isStaked;
+        pos.save(); // nowait
 
-        if (pos.isStaked !== isStaked) {
-          pos.isStaked = isStaked;
-          pos.save(); // nowait
-        }
         yield pos;
       }
     };

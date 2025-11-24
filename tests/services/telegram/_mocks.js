@@ -8,6 +8,7 @@ class MockTelegram extends Telegram {
     this.start = vi.fn().mockResolvedValue(this);
     this.stop = vi.fn().mockResolvedValue(this);
     this.sendMessage = vi.fn(this._mockSendMessage.bind(this));
+    this.deleteMessage = vi.fn().mockResolvedValue(true);
     this.editMessageText = vi.fn(this._mockEditMessageText.bind(this));
     this.answerCallbackQuery = vi.fn(this._mockAnswerCallbackQuery.bind(this));
   }

@@ -250,7 +250,7 @@ class LpHandler extends AbstractHandler
         this.setEventListeners(pos);
         count++;
       } else {
-        console.warn('Position is null for message: ', msg._id);
+        console.warn('Position does not exist in message: ', msg._id);
         msg.deleteOne(); // FIXME not deleted
       }
     }

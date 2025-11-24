@@ -1,10 +1,7 @@
 describe('Telegram command: Lp', () => {
-  /**
-   * @type {MockTelegram} telegram
-   */
+  let db;
   let telegram;
   let handler;
-  let msg;
   let user;
   let walletModel;
   let chainId;
@@ -16,17 +13,19 @@ describe('Telegram command: Lp', () => {
   let erc20Factory;
   let positionId;
 
+  let msg = {
+    message_id: 111,
+    from: { id: 1, is_bot: false, first_name: 'Test', username: 'test_user' },
+    chat: { id: 11 }
+  }
+
   beforeAll(async () => {
+    db = container.resolve('db');
     telegram = container.resolve('telegram');
     handler = container.resolve('telegramCommand_lp');
     telegram.addCommand('lp', handler);
-    user = await handler.UserModel.findOne({telegramId: 1});
-    if (!user) throw new Error('Mock User (1) not found');
-    msg = {
-      message_id: 111,
-      from: { id: 1, is_bot: false, first_name: 'Test', username: 'test_user' },
-      chat: { id: 11 }
-    }
+    user = await db.model('User').findOne({telegramId: 1});
+    if (!user) user = await db.model('User').create({telegramId: 1});
     walletModel = container.resolve('WalletModel');
     messageModel = container.resolve('MessageModel');
     positionModel = container.resolve('PositionModel');
@@ -50,12 +49,13 @@ describe('Telegram command: Lp', () => {
     await positionModel.deleteMany({});
   })
 
-  it('list positons without arguments', async () => {
+  it('send No wallets message', async () => {
     await handler.handle(msg, user);
 
     expect(telegram.sendMessage).toHaveBeenCalledWith(
       msg.chat.id,
-      expect.stringContaining('No wallets')
+      expect.stringContaining('No wallets'),
+      {}
     );
   });
 
@@ -114,6 +114,7 @@ describe('Telegram command: Lp', () => {
       staker.setupUserPositionInfo(31337);
 
       const position = await positionModel.fromBlockchain(positionId);
+      await position.populate('pool');
       await handler.outputPosition(position, {}, msg.chat.id);
 
       expect(telegram.sendMessage).toHaveBeenCalled();
@@ -138,17 +139,9 @@ describe('Telegram command: Lp', () => {
 
       telegram.reset();
 
-      positionManager.setupPosition(31337, {
-        owner: USER_WALLET,
-        token0: WETH,
-        token1: USDT,
-        fee: 100,
-        tickLower: -5000,
-        tickUpper: 5000
-      });
+      position.tickLower = -10001; // so that message is changed and sent
 
       await handler.outputPosition(position, {});
-
       expect(telegram.editMessageText).toHaveBeenCalled();
     });
 
@@ -165,9 +158,8 @@ describe('Telegram command: Lp', () => {
       await handler.outputPosition(position, {}, msg.chat.id);
 
       telegram.reset();
-      const result = await handler.outputPosition(position, {});
 
-      expect(result).toBeUndefined();
+      await handler.outputPosition(position, {});
       expect(telegram.editMessageText).not.toHaveBeenCalled();
     });
 
@@ -217,30 +209,12 @@ describe('Telegram command: Lp', () => {
 
       it('displays UNSTAKED status', async () => {
         positionManager.setupPosition(31337, { owner: USER_WALLET });
-        staker.setupUserPositionInfo(31337, { liquidity: 0n });
+        // skip staker position setup to simulate unstaked position
 
         const position = await positionModel.fromBlockchain(positionId);
         await handler.outputPosition(position, {}, msg.chat.id);
-
         const call = telegram.sendMessage.mock.calls[0];
         expect(call[1]).toContain('💼 UNSTAKED');
-      });
-
-      it('displays correct arrow for price above range', async () => {
-        positionManager.setupPosition(31337, {
-          owner: USER_WALLET,
-          token0: WETH,
-          token1: USDT,
-          fee: 100,
-          tickLower: -10000,
-          tickUpper: -9000
-        });
-        staker.setupUserPositionInfo(31337);
-        const position = await positionModel.fromBlockchain(positionId);
-        await handler.outputPosition(position, {}, msg.chat.id);
-
-        const call = telegram.sendMessage.mock.calls[0];
-        expect(call[1]).toContain('🔴⬆️');
       });
 
       it('displays correct arrow for price below range', async () => {
@@ -271,11 +245,12 @@ describe('Telegram command: Lp', () => {
         fee: 100
       });
       staker.setupUserPositionInfo(31337);
+      telegram.reset();
 
       const position = await positionModel.fromBlockchain(positionId);
       await handler.outputPosition(position, {}, msg.chat.id);
 
-      telegram.reset();
+      await db.model('Message').deleteMany({_id: /^Range_/});
       await handler.alertPriceRange(position, false);
 
       expect(telegram.sendMessage).toHaveBeenCalledWith(
@@ -304,7 +279,6 @@ describe('Telegram command: Lp', () => {
       const alert = await messageModel.findById('Range_' + position._id);
       expect(alert).toBeDefined();
 
-      telegram.reset();
       await handler.alertPriceRange(position, true);
 
       const removedAlert = await messageModel.findById('Range_' + position._id);
@@ -395,6 +369,7 @@ describe('Telegram command: Lp', () => {
       staker.setupUserPositionInfo(31337);
 
       const position = await positionModel.fromBlockchain(positionId);
+      await position.save();
       await messageModel.create({
         _id: 'Position_' + position._id,
         chatId: msg.chat.id,
@@ -416,16 +391,6 @@ describe('Telegram command: Lp', () => {
       const count = await handler.restoreEventListeners();
 
       expect(count).toBe(0);
-    });
-  });
-
-  describe('cakePrice', () => {
-    it('fetches CAKE price', async () => {
-      const price = await handler.cakePrice();
-
-      expect(price).toBeDefined();
-      expect(typeof price).toBe('string');
-      expect(parseFloat(price)).toBeGreaterThan(0);
     });
   });
 

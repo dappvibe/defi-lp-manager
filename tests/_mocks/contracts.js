@@ -5,7 +5,7 @@ import JSBI from 'jsbi';
 
 class MockNonfungiblePositionManager {
   constructor() {
-    this.address = '0x46A15B0b27311cedF172AB29E4f4766fbE7F4364';
+    this.address = '0x46a15b0b27311cedf172ab29e4f4766fbe7f4364';
     this._positionsData = new Map();
     this._poolIds = new Map();
     this._poolIdToPoolKey = new Map();
