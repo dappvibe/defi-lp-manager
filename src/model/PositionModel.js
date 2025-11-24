@@ -42,12 +42,9 @@ class PositionModel
     return prices.current >= prices.lower && prices.current <= prices.upper;
   }
 
-  async isEmpty() {
-    // maybe? is empty if displayed decimals for both tokens are zeros. Not empty is at least 1 is shown in out precision
+  isEmpty() {
     if (this.liquidity === 0n) return true;
-
-    const value = await this.calculateCombinedValue();
-    return value < 0.01;
+    return this.calculateCombinedValue() < 0.01;
   }
 
   calculateTokenAmounts() {
