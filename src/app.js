@@ -1,5 +1,4 @@
 const awilix = require('awilix');
-const PoolsConfig = require("./config/pools");
 const NodeCache = require("node-cache");
 const {mongoose} = require("mongoose");
 
@@ -30,9 +29,6 @@ class App {
 
         return mongoose; // alias
       }),
-
-      // FIXME user adds their own pools from UI
-      poolsConfig: awilix.asClass(PoolsConfig).singleton(),
 
       cache: awilix.asValue(new NodeCache({stdTTL: 0}))
     });
