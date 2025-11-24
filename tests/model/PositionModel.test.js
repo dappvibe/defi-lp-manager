@@ -17,7 +17,7 @@ describe('PositionModel', () => {
 
   beforeEach(async () => {
     await model.deleteMany({ chainId });
-    id = `${chainId}:0x46A15B0b27311cedF172AB29E4f4766fbE7F4364:31337`;
+    id = `${chainId}:0x46a15b0b27311cedf172ab29e4f4766fbe7f4364:31337`;
     position = await model.fromBlockchain(id);
     try {
       position = await position.save();
@@ -31,7 +31,7 @@ describe('PositionModel', () => {
       await model.deleteMany({});
 
       const query = {
-        _id: `${chainId}:mockManagerAddress:12345`,
+        _id: `${chainId}:0x46a15b0b27311cedf172ab29e4f4766fbe7f4364:12345`,
         tokenId: 12345,
         owner: 'testOwner',
         pool: `${chainId}:0x17c14d2c404d167802b16c450d3c99f88f2c4f4d`,
@@ -65,7 +65,7 @@ describe('PositionModel', () => {
       check(position, 'findOneAndUpdate()');
 
       // Find multiple
-      await model.create({ ...query, _id: `${chainId}:mockManagerAddress:67890` });
+      await model.create({ ...query, _id: `${chainId}:0x46a15b0b27311cedf172ab29e4f4766fbe7f4364:67890` });
       await db.model('Pool').deleteMany({});
       const positions = await model.find({ isStaked: false });
       expect(positions.length).toBe(2);
