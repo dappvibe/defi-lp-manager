@@ -123,7 +123,7 @@ class LpHandler extends AbstractHandler
       try {
         let positionsFound = false;
         for await (const position of this.positionFactory.fetchPositions(wallet.address)) {
-          if (!await position.isEmpty()) {
+          if (!position.isEmpty()) {
             positionsFound = true;
             try {
               await this.outputPosition(position, {}, chatId).then();
