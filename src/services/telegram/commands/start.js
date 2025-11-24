@@ -61,7 +61,7 @@ class StartMessage extends TelegramMessage {
 
 class StartHandler extends AbstractHandler
 {
-  getMyCommand = () => ['start', 'Begin using the bot and see welcome message']
+  getMyCommand = () => null
 
   /**
    * Register command handlers with the bot
