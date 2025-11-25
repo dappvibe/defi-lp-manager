@@ -1,19 +1,35 @@
 describe('PositionFactory', () => {
-  let positionFactory;
-  let positionManager;
+  let positionFactory, positionManager, staker;
+  let ethnode;
+  let positions;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     positionFactory = container.resolve('positionFactory');
     positionManager = container.resolve('positionManager');
+    staker = container.resolve('staker');
+    ethnode = container.resolve('ethnode');
+    positions = container.resolve('db').model('Position');
   });
+
+  beforeEach(async () => {
+    await positions.deleteMany({});
+  })
 
   describe('fetchPositions', () => {
     it('should fetch positions from both position manager and staker', async () => {
-      const positions = [];
+      await ethnode.forCall(positionManager.address)
+        .forFunction('function balanceOf(address account) external view returns (uint256)')
+        .withParams([USER_WALLET])
+        .thenReturn([0]);
+      await ethnode.forCall(staker.address)
+        .forFunction('function balanceOf(address account) external view returns (uint256)')
+        .withParams([USER_WALLET])
+        .thenReturn([1]);
+      await ethnode.forCall(staker.address)
+        .forFunction('function tokenOfOwnerByIndex(address owner, uint256 index) external view returns (uint256)')
+        .thenReturn([31337n]);
 
-      positionManager.setupPosition(31337, {
-        owner: USER_WALLET
-      });
+      const positions = [];
 
       for await (const position of positionFactory.fetchPositions(USER_WALLET)) {
         positions.push(position);
