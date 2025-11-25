@@ -1,10 +1,7 @@
 /**
- * Wallet command handler for Telegram bot
- * Handles monitoring wallet positions
- * Usage: /wallet <address>
+ * Allows to add and remove wallets for current user.
  */
-
- const {isAddress} = require("viem");
+const {isAddress} = require("viem");
 const AbstractHandler = require("../handler");
 const TelegramMessage = require("../message");
 
