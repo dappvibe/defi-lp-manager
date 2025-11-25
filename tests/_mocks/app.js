@@ -1,18 +1,24 @@
 const App = require("../../src/app");
 const {createPublicClient, http} = require("viem");
 const {arbitrum} = require("viem/chains");
-const {asValue, asClass} = require("awilix");
+const {asValue, asClass, asFunction} = require("awilix");
 const {MockTelegram} = require("../services/telegram/_mocks");
+const {getLocal} = require("mockthereum");
 
 class MockApp extends App {
+  ethnodeConfig = {
+    //debug: true,
+    unmatchedRequests: { proxyTo: 'https://arbitrum.drpc.org' } // paths are not allowed - limitation of mockttp
+  }
+
   constructor() {
     super({
-      // Use public endpoint for tests
-      provider: asValue(createPublicClient({
-        chain: arbitrum,
-        transport: http()
-      })),
-      telegram: asClass(MockTelegram)
+      // Mock specific replies in tests. By default proxy to public endpoint.
+      ethnode: asFunction(() => getLocal()).singleton(),
+      provider: asFunction(() => {
+        throw new Error('Mock ethereum node is node started. Call MockApp.start()');
+      }),
+      telegram: asClass(MockTelegram).singleton(),
     });
   }
 
@@ -27,8 +33,18 @@ class MockApp extends App {
         throw new Error('MongoDB connection timeout. Did you start mongodb docker service?');
       } else throw e;
     });
-  }
 
+    // Start a proxying mockthereum node and rewrite viem client to request it
+    const ethnode = getLocal(this.ethnodeConfig);
+    await ethnode.start();
+    this.container.register({
+      ethnode: asValue(ethnode),
+      provider: asValue(createPublicClient({
+        chain: arbitrum,
+        transport: http(ethnode.url)
+      }))
+    })
+  }
   async stop() {}
 }
 
