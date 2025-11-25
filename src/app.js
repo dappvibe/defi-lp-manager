@@ -20,15 +20,7 @@ class App {
       mongoose: awilix.asValue(mongoose),
 
       // allows services to dep only on 'db' and refer models with db.model()
-      db: awilix.asFunction((container, mongoose) => {
-        // resolve all just registered Models so that they are available with just db.model('Name')
-        // It allows other services to depend just on 'db' service and have access to all the models
-        Object.keys(container.registrations)
-          .filter(name => name.endsWith('Model'))
-          .forEach(name => container.resolve(name));
-
-        return mongoose; // alias
-      }),
+      db: awilix.asFunction((mongoose) => this._resolveAllModels(mongoose)),
 
       cache: awilix.asValue(new NodeCache({stdTTL: 0}))
     });
@@ -58,6 +50,22 @@ class App {
   async stop() {
     await this.container.resolve('db').disconnect();
     await this.container.resolve('telegram').stop().then(() => console.log('Telegram polling stopped.'));
+  }
+
+  /**
+   * Resolve all just registered Models so that they are available with just db.model('Name')
+   * It allows other services to depend just on 'db' service and have access to all the models
+   */
+  _resolveAllModels(mongoose) {
+    Object.keys(this.container.registrations)
+      .filter(name => name.endsWith('Model'))
+      .forEach(name => {
+        try { this.container.resolve(name) } catch (e) {
+          throw new Error(`Failed to resolve model ${name}. Make sure its deps are resolvable.`);
+        }
+      });
+
+    return mongoose; // alias
   }
 }
 
