@@ -31,6 +31,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   container.resolve('cache').flushAll();
+  const positionManager = container.resolve('positionManager');
 
   const ethnode = container.resolve('ethnode');
   await ethnode.stop(); // reset() will clear url and provider will fail
@@ -42,4 +43,25 @@ beforeEach(async () => {
   await ethnode.forCall(WETH_USDC)
     .forFunction('function slot0() external view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint32 feeProtocol, bool unlocked)')
     .thenReturn(['4292666912078857421875000', -196474, 88, 100, 100, 216272100, true]);
+  await ethnode.forCall(positionManager.address)
+    .forFunction('function positions(uint256 tokenId) external view returns (uint96 nonce, address operator, address token0, address token1, uint24 fee, int24 tickLower, int24 tickUpper, uint128 liquidity, uint256 feeGrowthInside0LastX128, uint256 feeGrowthInside1LastX128, uint128 tokensOwed0, uint128 tokensOwed1)')
+    .withParams([31337])
+    .thenReturn([
+      0n,
+      '0x0000000000000000000000000000000000000000',
+      WETH,
+      USDC,
+      100n,
+      -195678,
+      -195611,
+      16858489095148n,
+      115792089237316195423570985008687907835793674145050514846788177623488322407647n,
+      115792089237316195423570985008687907853269984603353251375712494359446420094239n,
+      0n,
+      0n
+    ]);
+  await ethnode.forCall(positionManager.address)
+    .forFunction('function ownerOf(uint256 tokenId) external view returns (address)')
+    .withParams([31337])
+    .thenReturn([USER_WALLET]);
 })
