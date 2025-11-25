@@ -34,12 +34,17 @@ class PositionFactory
         const tokenId = await contract.read.tokenOfOwnerByIndex([address, i]);
         const id = `${this.chainId}:${this.positionManager.address}:${tokenId}`;
         let pos = await this.positionModel.findById(id);
-        if (!pos) {
+        if (pos) {
+          if (pos.isStaked !== isStaked) {
+            pos.isStaked = isStaked;
+            this.positionModel.findOneAndUpdate({_id: pos._id}, {isStaked});
+          }
+        } else {
           pos = await this.positionModel.fromBlockchain(id);
           await pos.populate('pool');
+          pos.isStaked = isStaked;
+          pos.save(); // nowait
         }
-        pos.isStaked = isStaked;
-        pos.save(); // nowait
 
         yield pos;
       }
