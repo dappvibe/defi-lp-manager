@@ -20,7 +20,7 @@ class App {
       mongoose: awilix.asValue(mongoose),
 
       // allows services to dep only on 'db' and refer models with db.model()
-      db: awilix.asFunction((mongoose) => this._resolveAllModels(mongoose)),
+      db: awilix.asFunction((mongoose) => this._resolveAllModels(mongoose)).singleton(),
 
       cache: awilix.asValue(new NodeCache({stdTTL: 0}))
     });
