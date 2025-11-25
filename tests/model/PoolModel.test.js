@@ -1,23 +1,32 @@
 describe('PoolModel', () => {
-  let db;
-  let model;
+  let pools, tokens;
   let chainId;
-  let pool; // WETH/USDC instance
+  let pool; // SUT - WETH/USDC instance
+  let ethnode;
 
   beforeAll(() => {
-    db = container.resolve('db');
-    model = db.model('Pool');
+    const db = container.resolve('db');
+    pools = db.model('Pool');
+    tokens = db.model('Token');
     chainId = container.resolve('chainId');
+    ethnode = container.resolve('ethnode');
   })
 
   beforeEach(async () => {
-    await model.deleteMany({_id: new RegExp(`^${chainId}`)});
-    pool = await model.fromBlockchain(`${chainId}:0x17c14d2c404d167802b16c450d3c99f88f2c4f4d`);
-    try {pool = await pool.save();} catch (e) { if (e.code !== 11000) throw e;}
+    await pools.deleteMany({_id: new RegExp(`^${chainId}`)});
+    pool = await pools.create({
+      _id: `${chainId}:${WETH_USDC}`,
+      token0: `${chainId}:${WETH}`,
+      token1: `${chainId}:${USDC}`,
+      fee: 100,
+      tick: -196659,
+      sqrtPriceX96: '4260508967995045000000000',
+      liquidity: '70000000000000000'
+    });
   })
 
   it('populates tokens even if they not exist in db', async () => {
-    await model.deleteMany({});
+    await pools.deleteMany({});
 
     const query = {
       token0: `${chainId}:${WETH}`,
@@ -32,16 +41,16 @@ describe('PoolModel', () => {
       expect(pool.token1?.address, msg).toBe(USDT);
     }
 
-    await db.model('Token').deleteMany({});
-    let pool = await model.create({...query, _id: chainId+':0xfoobar'});
+    await tokens.deleteMany({});
+    let pool = await pools.create({...query, _id: chainId+':0xfoobar'});
     check(pool, 'create()');
 
-    await db.model('Token').deleteMany({});
-    pool = await model.findOne(query);
+    await tokens.deleteMany({});
+    pool = await pools.findOne(query);
     check(pool, 'findOne()');
 
-    await db.model('Token').deleteMany({});
-    pool = await model.findOneAndUpdate(
+    await tokens.deleteMany({});
+    pool = await pools.findOneAndUpdate(
       {_id: pool._id},
       {_id: pool._id, liquidity: 999},
       {upsert: true, new: true, setDefaultsOnInsert: true}
@@ -49,30 +58,37 @@ describe('PoolModel', () => {
     check(pool, 'findOneAndUpdate()');
 
     // find multiple
-    await model.create({...query, _id: chainId+':0xbarbaz'});
-    await db.model('Token').deleteMany({});
-    pool = await model.find({fee: 100});
+    await pools.create({...query, _id: chainId+':0xbarbaz'});
+    await tokens.deleteMany({});
+    pool = await pools.find({fee: 100});
     expect(pool.length).toBe(2);
     pool.forEach(check, 'find() with filter');
 
     // not found
-    pool = await model.findById('notexist');
+    pool = await pools.findById('notexist');
     expect(pool).toBeNull(); // no exceptions
   });
 
   describe('fromBlockchain', () => {
     it('should fetch pool details and return new pool', async () => {
-      const pool = await model.fromBlockchain(`${chainId}:0x17c14d2c404d167802b16c450d3c99f88f2c4f4d`);
-      expect(pool).toBeDefined();
-      expect(pool.isNew).toBe(true); // unsaved
-      expect(pool._id).toBe(`${chainId}:0x17c14d2c404d167802b16c450d3c99f88f2c4f4d`);
-      expect(pool.chainId).toBe(chainId);
-      expect(pool.address).toBe('0x17c14d2c404d167802b16c450d3c99f88f2c4f4d');
-      expect(pool.token0).toBe(`${chainId}:0x82af49447d8a07e3bd95bd0d56f35241523fbab1`);
-      expect(pool.token1).toBe(`${chainId}:0xaf88d065e77c8cc2239327c5edb3a432268e5831`);
-      expect(pool.sqrtPriceX96).toBe('4687542788683472901042208');
-      expect(pool.liquidity).toBe('1000000');
-      expect(pool.fee).toBe(100);
+      await ethnode.forCall(WETH_USDC)
+        .forFunction('function liquidity() external view returns (uint128)')
+        .thenReturn([pool.liquidity]);
+      await ethnode.forCall(WETH_USDC)
+        .forFunction('function slot0() external view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint32 feeProtocol, bool unlocked)')
+        .thenReturn([pool.sqrtPriceX96, pool.tick, 88, 100, 100, 216272100, true]);
+
+      const obj = await pools.fromBlockchain(`${chainId}:${WETH_USDC}`);
+      expect(obj).toBeDefined();
+      expect(obj.isNew).toBe(true); // unsaved
+      expect(obj._id).toBe(`${chainId}:${WETH_USDC}`);
+      expect(obj.chainId).toBe(chainId);
+      expect(obj.address).toBe(WETH_USDC);
+      expect(obj.token0).toBe(`${chainId}:${WETH}`);
+      expect(obj.token1).toBe(`${chainId}:${USDC}`);
+      expect(obj.sqrtPriceX96).toBe(pool.sqrtPriceX96);
+      expect(obj.liquidity).toBe(pool.liquidity);
+      expect(obj.fee).toBe(100);
     })
   });
 
@@ -80,30 +96,33 @@ describe('PoolModel', () => {
     it('should return current price without position', async () => {
       let prices = await pool.getPrices();
       expect(prices).toBeDefined();
-      expect(prices.current).eq('3500.51');
+      expect(prices.current).eq('2891.77');
       expect(prices.lower).toBeUndefined();
       expect(prices.upper).toBeUndefined();
     });
 
     it('should return current and position prices with position', async () => {
-      const pool = await model.fromBlockchain(`${chainId}:0x641c00a822e8b671738d32a431a4fb6074e5c79d`);
-      await pool.save();
       const prices = await pool.getPrices({
-        tickLower: -10, tickUpper: 10
+        tickLower: -197000, tickUpper: -196000
       });
       expect(prices).toBeDefined();
-      expect(prices.current).eq('1.01');
-      expect(prices.lower).eq('0.999001');
-      expect(prices.upper).eq('1.001');
+      expect(prices.current).eq('2891.77');
+      expect(prices.lower).eq('2785.01');
+      expect(prices.upper).eq('3077.89');
     });
   });
 
   describe('getTVL', () => {
     it('should return values', async () => {
-      pool.token0.contract.setBalance(pool.address, 1000_000000012432075234n);
-      pool.token1.contract.setBalance(pool.address, 100000_000538n);
+      await ethnode.forCall(WETH)
+        .forFunction('function balanceOf(address account) external view returns (uint256)')
+        .thenReturn([1000_000000012432075234n]);
+      await ethnode.forCall(USDC)
+        .forFunction('function balanceOf(address account) external view returns (uint256)')
+        .thenReturn([100000_000538n]);
+
       const tvl = await pool.getTVL();
-      expect(tvl).eq('3600510.000582');
+      expect(tvl).eq('2991770.000574');
     })
   });
 
