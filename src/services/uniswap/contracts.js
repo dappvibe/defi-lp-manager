@@ -9,9 +9,9 @@ const { getContract } = require('viem');
 const CONTRACT_ADDRESSES = {
   pancakeswap: {
     arbitrum: {
-      nonfungiblePositionManager: '0x46A15B0b27311cedF172AB29E4f4766fbE7F4364',
+      nonfungiblePositionManager: '0x46a15b0b27311cedf172ab29e4f4766fbe7f4364',
       masterChefV3: '0x5e09acf80c0296740ec5d6f643005a4ef8daa694',
-      V3Factory: '0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865'
+      V3Factory: '0x0bfbcf9fa4f9c56b0f40a671ad40e0805a091865'
     }
   }
 };
