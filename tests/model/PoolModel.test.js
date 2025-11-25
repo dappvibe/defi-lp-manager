@@ -13,6 +13,7 @@ describe('PoolModel', () => {
   })
 
   beforeEach(async () => {
+    await tokens.deleteMany({_id: new RegExp(`^${chainId}`)});
     await pools.deleteMany({_id: new RegExp(`^${chainId}`)});
     pool = await pools.create({
       _id: `${chainId}:${WETH_USDC}`,
@@ -40,7 +41,10 @@ describe('PoolModel', () => {
     }
 
     await tokens.deleteMany({});
-    let pool = await pools.create({...query, _id: chainId+':0xfoobar'});
+    let pool;
+    try {
+      pool = await pools.create({...query, _id: chainId+':0xfoobar'});
+    } catch (e) { if(e.code !== 11000) throw e; }
     check(pool, 'create()');
 
     await tokens.deleteMany({});
@@ -107,9 +111,11 @@ describe('PoolModel', () => {
     it('should return values', async () => {
       await ethnode.forCall(WETH)
         .forFunction('function balanceOf(address account) external view returns (uint256)')
+        .withParams([pool.address])
         .thenReturn([1000_000000012432075234n]);
       await ethnode.forCall(USDC)
         .forFunction('function balanceOf(address account) external view returns (uint256)')
+        .withParams([pool.address])
         .thenReturn([100000_000538n]);
 
       const tvl = await pool.getTVL();
