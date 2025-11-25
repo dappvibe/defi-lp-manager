@@ -17,8 +17,9 @@ global.USER_WALLET = '0x220866b1a2219f40e72f5c628b65d54268ca3a9d';
 global.WETH = '0x82af49447d8a07e3bd95bd0d56f35241523fbab1';
 global.USDT = '0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9';
 global.USDC = '0xaf88d065e77c8cc2239327c5edb3a432268e5831';
-global.CAKE = '0x1b896893dfc86bb67Cf57767298b9073D2c1bA2c';
+global.CAKE = '0x1b896893dfc86bb67cf57767298b9073d2c1ba2c';
 global.WETH_USDC = '0x7fcdc35463e3770c2fb992716cd070b63540b947'; // 0.01%
+global.CAKE_USDC = '0xdaa5b2e06ca117f25c8d62f7f7fbaedcf7a939f4'; // 0.25%
 
 // mocks must be registered before resolve('db') because it resolves all models which may have deps
 const app = new MockApp();
@@ -27,7 +28,6 @@ global.container =  app.container;
 beforeAll(async () => {
   return app.start(); // connect to db
 });
-
 
 beforeEach(async () => {
   container.resolve('cache').flushAll();
