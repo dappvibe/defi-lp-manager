@@ -19,10 +19,8 @@ describe('PoolModel', () => {
       token0: `${chainId}:${WETH}`,
       token1: `${chainId}:${USDC}`,
       fee: 100,
-      tick: -196659,
-      sqrtPriceX96: '4260508967995045000000000',
-      liquidity: '70000000000000000'
     });
+    await pool.refresh().then(p => p.save()); // liquidity and price
   })
 
   it('populates tokens even if they not exist in db', async () => {
@@ -71,13 +69,6 @@ describe('PoolModel', () => {
 
   describe('fromBlockchain', () => {
     it('should fetch pool details and return new pool', async () => {
-      await ethnode.forCall(WETH_USDC)
-        .forFunction('function liquidity() external view returns (uint128)')
-        .thenReturn([pool.liquidity]);
-      await ethnode.forCall(WETH_USDC)
-        .forFunction('function slot0() external view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint32 feeProtocol, bool unlocked)')
-        .thenReturn([pool.sqrtPriceX96, pool.tick, 88, 100, 100, 216272100, true]);
-
       const obj = await pools.fromBlockchain(`${chainId}:${WETH_USDC}`);
       expect(obj).toBeDefined();
       expect(obj.isNew).toBe(true); // unsaved
@@ -96,7 +87,7 @@ describe('PoolModel', () => {
     it('should return current price without position', async () => {
       let prices = await pool.getPrices();
       expect(prices).toBeDefined();
-      expect(prices.current).eq('2891.77');
+      expect(prices.current).eq('2935.59');
       expect(prices.lower).toBeUndefined();
       expect(prices.upper).toBeUndefined();
     });
@@ -106,7 +97,7 @@ describe('PoolModel', () => {
         tickLower: -197000, tickUpper: -196000
       });
       expect(prices).toBeDefined();
-      expect(prices.current).eq('2891.77');
+      expect(prices.current).eq('2935.59');
       expect(prices.lower).eq('2785.01');
       expect(prices.upper).eq('3077.89');
     });
@@ -122,7 +113,7 @@ describe('PoolModel', () => {
         .thenReturn([100000_000538n]);
 
       const tvl = await pool.getTVL();
-      expect(tvl).eq('2991770.000574');
+      expect(tvl).eq('3035590.000574');
     })
   });
 
