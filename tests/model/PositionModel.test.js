@@ -88,12 +88,6 @@ describe('PositionModel', () => {
 
   describe('calculateUnclaimedFees()', () => {
     it('should calculate unclaimed fees', async () => {
-      await ethnode.forCall(positionManager.address)
-        //.forFunction('function collect(uint256 tokenId, address recipient, uint128 amount0Max, uint128 amount1Max) external payable returns (uint256 amount0, uint256 amount1)')
-        .thenReturn(['uint256', 'uint256'], [
-          10000000000000000n, 20000n // 0.01 WETH, 0.02 USDC
-        ])
-
       const fees = await position.calculateUnclaimedFees();
 
       expect(fees).toBeDefined();

@@ -32,6 +32,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   container.resolve('cache').flushAll();
   const positionManager = container.resolve('positionManager');
+  const staker = container.resolve('staker');
 
   const ethnode = container.resolve('ethnode');
   await ethnode.stop(); // reset() will clear url and provider will fail
@@ -64,4 +65,20 @@ beforeEach(async () => {
     .forFunction('function ownerOf(uint256 tokenId) external view returns (address)')
     .withParams([31337])
     .thenReturn([USER_WALLET]);
+  await ethnode.forCall(positionManager.address)
+    .forFunction('function balanceOf(address account) external view returns (uint256)')
+    .withParams([USER_WALLET])
+    .thenReturn([0]);
+  await ethnode.forCall(staker.address)
+    .forFunction('function balanceOf(address account) external view returns (uint256)')
+    .withParams([USER_WALLET])
+    .thenReturn([1]);
+  await ethnode.forCall(staker.address)
+    .forFunction('function tokenOfOwnerByIndex(address owner, uint256 index) external view returns (uint256)')
+    .thenReturn([31337n]);
+  await ethnode.forCall(positionManager.address)
+    .forFunction('function collect((uint256 tokenId, address recipient, uint128 amount0Max, uint128 amount1Max))')
+    .thenReturn(['uint256', 'uint256'], [
+      10000000000000000n, 20000n // 0.01 WETH, 0.02 USDC
+    ])
 })

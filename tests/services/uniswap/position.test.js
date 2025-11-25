@@ -17,18 +17,6 @@ describe('PositionFactory', () => {
 
   describe('fetchPositions', () => {
     it('should fetch positions from both position manager and staker', async () => {
-      await ethnode.forCall(positionManager.address)
-        .forFunction('function balanceOf(address account) external view returns (uint256)')
-        .withParams([USER_WALLET])
-        .thenReturn([0]);
-      await ethnode.forCall(staker.address)
-        .forFunction('function balanceOf(address account) external view returns (uint256)')
-        .withParams([USER_WALLET])
-        .thenReturn([1]);
-      await ethnode.forCall(staker.address)
-        .forFunction('function tokenOfOwnerByIndex(address owner, uint256 index) external view returns (uint256)')
-        .thenReturn([31337n]);
-
       const positions = [];
 
       for await (const position of positionFactory.fetchPositions(USER_WALLET)) {
