@@ -226,7 +226,10 @@ class PoolModel
    * @param id Document ID
    */
   static async fromBlockchain(id) {
-    const [chainId, address] = id.split(':');
+    let chainId, address;
+    try { [chainId, address] = id.split(':'); }
+    catch (e) { throw new Error('Invalid PoolModel: ' + id); }
+
     const contract = PoolModel.poolContractFactory(address);
     const [token0, token1, fee] = await Promise.all([
       contract.read.token0(),

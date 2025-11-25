@@ -152,7 +152,10 @@ class PositionModel
    * @return {Promise<PositionModel>}
    */
   static async fromBlockchain(id) {
-    const [chainId, positionManager, tokenId] = id.split(':');
+    let chainId, positionManager, tokenId;
+    try { [chainId, positionManager, tokenId] = id.split(':'); }
+    catch (e) { throw new Error('Invalid PositionModel: ' + id); }
+
     if (positionManager !== PositionModel.positionManager.address) {
       throw new Error('Position manager mismatch: ' + PositionModel.positionManager.address);
     }

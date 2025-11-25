@@ -54,7 +54,9 @@ class TokenModel
    * @param id
    */
   static async fromBlockchain(id) {
-    const [chainId, address] = id.split(':');
+    let chainId, address;
+    try { [chainId, address] = id.split(':'); }
+    catch (e) { throw new Error('Invalid TokenModel: ' + id); }
 
     const contract = TokenModel.erc20Factory(address);
     const [name, symbol, decimals] = await Promise.all([
