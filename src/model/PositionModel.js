@@ -21,7 +21,6 @@ class PositionModel
   static schema = new Schema({
     _id: String, // chainId:nftManagerAddress:tokenId (manager distinguish DEXes)
     owner: { type: String, required: true },    // address
-    tokenId: { type: Number, required: true },
     pool: { type: String, ref: 'Pool', required: true, autopopulate: true },
     tickLower: { type: Number, required: true },
     tickUpper: { type: Number, required: true },
@@ -36,6 +35,10 @@ class PositionModel
   static staker;
   static cache;
   static cakePool; // promise
+
+  get chainId() { return Number(this._id.split(':')[0]); }
+  get positionManagerAddress() { return this._id.split(':')[1]; }
+  get tokenId() { return Number(this._id.split(':')[2]); }
 
   async isInRange() {
     const prices = await this.pool.getPrices(this);
@@ -177,9 +180,9 @@ class PositionModel
 
     const poolAddress = await PositionModel.poolModel.getPoolAddress(data.token0, data.token1, data.fee);
     return new this({
-      _id: id,
+      _id: id.toLowerCase(),
       tokenId,
-      owner: owner,
+      owner: owner.toLowerCase(),
       pool: `${chainId}:${poolAddress}`,
       tickLower: data.tickLower,
       tickUpper: data.tickUpper,
