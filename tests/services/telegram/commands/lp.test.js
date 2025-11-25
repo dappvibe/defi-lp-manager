@@ -44,7 +44,7 @@ describe('Telegram command: Lp', () => {
 
     positionId = '42161:0x46a15b0b27311cedf172ab29e4f4766fbe7f4364:31337';
 
-    await walletModel.deleteMany({userId: user._id});
+    await walletModel.deleteMany({});
     await messageModel.deleteMany({});
     await positionModel.deleteMany({});
   })

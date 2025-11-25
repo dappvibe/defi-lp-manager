@@ -24,6 +24,10 @@ describe('Telegram command: Wallet', () => {
     chainId = container.resolve('chainId');
   });
 
+  beforeEach(async () => {
+    await walletModel.deleteMany({});
+  })
+
   it('list wallets on /wallet and provide button to add', async () => {
     await handler.listWallets(msg);
 

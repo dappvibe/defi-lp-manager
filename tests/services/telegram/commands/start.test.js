@@ -22,6 +22,10 @@ describe('Telegram command: Start', () => {
     walletModel = container.resolve('WalletModel');
   });
 
+  beforeEach(async () => {
+    await walletModel.deleteMany({});
+  })
+
   it('invite to add wallets if user has no wallets', async () => {
     await handler.handle(msg, user);
 
