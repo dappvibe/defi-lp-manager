@@ -1,26 +1,39 @@
 describe('MessageModel', () => {
-  let db;
-  let model;
+  let messages, positions;
+  let position;
+  let positionManager;
+  let chainId;
 
   beforeAll(async () => {
-    // Resolve dependencies from the container
-    db = container.resolve('db');
-    model = db.model('Message');
-    await model.deleteMany({}); // Clean-up before tests
-    container.resolve('positionManager').setupPosition(31337);
+    const db = container.resolve('db');
+    messages = db.model('Message');
+    positions = db.model('Position');
+    positionManager = container.resolve('positionManager');
+    chainId = container.resolve('chainId');
+  });
+
+  beforeEach(async () => {
+    await messages.deleteMany({}); // Clean-up before tests
+    await positions.deleteMany({_id: new RegExp(`^${chainId}`)});
+    position = await positions.fromBlockchain(`${chainId}:${positionManager.address}:31337`);
+    try {
+      position = await position.save();
+    } catch (e) {
+      if (e.code !== 11000) throw e;
+    }
   });
 
   describe('schema & instance methods', () => {
     it('should correctly extract the type from _id', async () => {
       const data = {
-        _id: 'Position_42161:0xexampleAddress:12345',
+        _id: 'Position_' + position.id,
         chatId: 42,
         messageId: 123,
         checksum: 456789,
         metadata: { key: 'value' },
       };
 
-      const message = await model.create(data);
+      const message = await messages.create(data);
       expect(message.type).toBe('Position'); // Derived from the _id prefix
     });
 
@@ -31,7 +44,7 @@ describe('MessageModel', () => {
         messageId: 22,
       };
 
-      const message = await model.create(data);
+      const message = await messages.create(data);
       expect(message.positionId).toBe('1:0xtest:7890'); // Extracted based on allowed types
     });
 
@@ -42,7 +55,7 @@ describe('MessageModel', () => {
         messageId: 44,
       };
 
-      const message = await model.create(data);
+      const message = await messages.create(data);
       expect(message.positionId).toBeNull(); // Invalid types do not have positionId
     });
   });
@@ -55,10 +68,10 @@ describe('MessageModel', () => {
         messageId: 123,
       };
 
-      await model.create(data);
+      await messages.create(data);
 
       // Attempt a duplicate entry
-      await expect(model.create(data)).rejects.toThrow(/duplicate key error/i);
+      await expect(messages.create(data)).rejects.toThrow(/duplicate key error/i);
     });
 
     it('should populate metadata correctly', async () => {
@@ -69,7 +82,7 @@ describe('MessageModel', () => {
         metadata: { testKey: 'testValue' },
       };
 
-      const message = await model.create(data);
+      const message = await messages.create(data);
       expect(message.metadata.testKey).toBe('testValue');
     });
   });
@@ -84,7 +97,7 @@ describe('MessageModel', () => {
         messageId: 99,
       };
 
-      const message = await model.create(data);
+      const message = await messages.create(data);
 
       expect(message.createdAt).toBeDefined();
       expect(message.updatedAt).toBeDefined();
@@ -100,7 +113,7 @@ describe('MessageModel', () => {
         messageId: 55,
       };
 
-      const message = await model.create(data);
+      const message = await messages.create(data);
       const originalUpdatedAt = message.updatedAt;
 
       // Wait for 1 second to ensure updatedAt field changes
@@ -128,10 +141,10 @@ describe('MessageModel', () => {
         messageId: 456, // Duplicate messageId in the same chatId
       };
 
-      await model.create(data1);
+      await messages.create(data1);
 
       // Ensure duplicate submission throws an error
-      await expect(model.create(data2)).rejects.toThrow(/duplicate key error/i);
+      await expect(messages.create(data2)).rejects.toThrow(/duplicate key error/i);
     });
   });
 });
