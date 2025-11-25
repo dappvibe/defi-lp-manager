@@ -1,27 +1,22 @@
 describe('TokenModel', () => {
-  let db;
-  let model;
+  let tokens, eth, usd;
   let chainId;
-  let erc20Factory;
+
+  beforeAll(() => {
+    chainId = container.resolve('chainId');
+    tokens = container.resolve('db').model('Token');
+  })
 
   beforeEach(async() => {
-    chainId = container.resolve('chainId');
-    erc20Factory = container.resolve('erc20Factory');
-    //erc20Factory(WETH).reset(); // reset spyOn() counters
-    //erc20Factory(USDT).reset();
-
-    db = container.resolve('db');
-    model = db.model('Token');
-
-    await model.deleteMany({});
-    await model.create({
+    await tokens.deleteMany({});
+    eth = await tokens.create({
       _id: `${chainId}:${WETH}`,
       address: WETH,
       decimals: 18,
       symbol: 'WETH',
       name: 'Wrapped Ether',
     });
-    await model.create({
+    usd = await tokens.create({
       _id: `${chainId}:${USDT}`,
       address: USDT,
       decimals: 6,
@@ -31,7 +26,7 @@ describe('TokenModel', () => {
   })
 
   it('fromBlockchain() should fetch token details and return new doc', async () => {
-    const token = await model.fromBlockchain(`${chainId}:${WETH}`);
+    const token = await tokens.fromBlockchain(`${chainId}:${WETH}`);
     expect(token).toBeDefined();
     expect(token.address).toBe(WETH);
     expect(token.decimals).eq(18);
@@ -39,32 +34,25 @@ describe('TokenModel', () => {
     expect(token.isNew).toBe(true); // unsaved
 
     // expect throws on unknown token
-    await expect(model.fromBlockchain(`${chainId}:0x000000000000000000000000000000000000abcd`))
+    await expect(tokens.fromBlockchain(`${chainId}:0x000000000000000000000000000000000000abcd`))
       .rejects.toThrow('returned no data');
+
+    expect(token.contract).toBeDefined();
   })
 
   it('instances have ERC20 contract', async () => {
-    let token = await model.findById(`${chainId}:${WETH}`);
+    let token = await tokens.findById(`${chainId}:${WETH}`);
+    expect(token).not.toBeNull();
     expect(token.contract).toBeDefined();
 
-    token = await model.findOne({symbol: 'USDT'});
+    token = await tokens.findOne({symbol: 'USDT'});
     expect(token.contract).toBeDefined();
 
-    await model.deleteOne({_id: `${chainId}:${USDT}`});
-    token = await model.create({
-      _id: `${chainId}:${USDT}`,
-      address: USDT,
-      decimals: 6,
-      symbol: 'USDT',
-      name: 'Tether USD',
-    });
+    await tokens.deleteOne({_id: `${chainId}:${USDT}`});
     expect(token.contract).toBeDefined();
   })
 
   it('format() should return human-friendly string', async () => {
-    const eth = await model.findById(`${chainId}:${WETH}`);
-    const usd = await model.findById(`${chainId}:${USDT}`);
-
     expect(eth.format(-141165908562470027n), 'Convert BigInt')
       .toBe('-0.141165908562470027'); // 18 decimals
 

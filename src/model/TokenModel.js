@@ -65,12 +65,14 @@ class TokenModel
       contract.read.decimals()
     ]);
 
-    return new this({
+    const token = new this({
       _id: id,
       name,
       symbol,
       decimals
     });
+    token.contract = contract;
+    return token;
   }
 }
 
