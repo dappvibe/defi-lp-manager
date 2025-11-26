@@ -17,6 +17,7 @@ describe('PositionModel', () => {
   })
 
   beforeEach(async () => {
+    await pools.deleteMany({_id: new RegExp(`^${chainId}`)});
     await positions.deleteMany({_id: new RegExp(`^${chainId}`)});
     id = `${chainId}:${positionManager.address}:31337`;
     position = await positions.fromBlockchain(id);
@@ -39,7 +40,7 @@ describe('PositionModel', () => {
       const query = {
         _id: id,
         owner: 'testOwner',
-        pool: `${chainId}:0x389938cf14be379217570d8e4619e51fbdafaa21`,
+        pool: `${chainId}:${WETH_USDC}`,
         tickLower: -10,
         tickUpper: 10,
         liquidity: BigInt(10000000),
@@ -47,12 +48,11 @@ describe('PositionModel', () => {
       };
 
       await pools.deleteMany({});
-      let position = await positions.create(query);
       check(position, 'create()');
 
       await pools.deleteMany({});
-      position = await positions.findOne(query);
-      check(position, 'findOne()');
+      position = await positions.findById({_id: query._id});
+      check(position, 'findById()');
 
       await pools.deleteMany({});
       position = await positions.findOneAndUpdate(
@@ -64,6 +64,11 @@ describe('PositionModel', () => {
 
       // Find multiple
       await pools.deleteMany({});
+      await positions.create({
+        ...query,
+        _id: `${chainId}:anotherPool`,
+        isStaked: false
+      });
       const found = await positions.find({ isStaked: false });
       expect(found.length).toBe(2);
       found.forEach((p) => check(p, 'find() with filter'));
