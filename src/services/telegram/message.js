@@ -22,6 +22,10 @@ class TelegramMessage {
     }
     return sum;
   }
+
+  round(num, decimals) {
+    return parseFloat(num.toFixed(decimals));
+  }
 }
 
 module.exports = TelegramMessage;

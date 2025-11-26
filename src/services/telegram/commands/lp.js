@@ -39,7 +39,7 @@ class PositionMessage extends TelegramMessage {
     lines.push(timeLine);
 
     // token amounts
-    let amounts = `💰 ${this.amounts[0].toFixed(6)} ${p.pool.token0.symbol} + `;
+    let amounts = `💰 ${this.round(this.amounts[0], 5)} ${p.pool.token0.symbol} + `;
     amounts += `${moneyFormat(this.amounts[1])} ${p.pool.token1.symbol}`;
     lines.push(amounts);
 
