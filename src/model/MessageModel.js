@@ -26,6 +26,11 @@ class MessageModel
     metadata: { type: Schema.Types.Mixed, default: {} },
   }, { _id: false, timestamps: true });
 
+  static {
+    MessageModel.schema.index({ chatId: 1, messageId: 1 }, { unique: true });
+    MessageModel.schema.plugin(autopopulate);
+  }
+
   get type() {
     return this._id.split('_')[0];
   }
@@ -42,7 +47,5 @@ class MessageModel
 }
 
 module.exports = (mongoose) => {
-  MessageModel.schema.index({ chatId: 1, messageId: 1 }, { unique: true });
-  MessageModel.schema.plugin(autopopulate);
   return mongoose.model('Message', MessageModel.schema.loadClass(MessageModel));
 }
