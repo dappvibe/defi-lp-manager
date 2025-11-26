@@ -1,5 +1,5 @@
 const {Schema} = require("mongoose");
-const autopopulate = require('mongoose-autopopulate');
+const {isAddress} = require('viem');
 
 /**
  * Store chat messages that is to be updated on blockchain changes.
@@ -18,17 +18,28 @@ const autopopulate = require('mongoose-autopopulate');
  */
 class MessageModel
 {
+  static TYPES = ['position', 'range'];
   static schema = new Schema({
-    _id: String, // Type_refObject (ex: Position_1115111:nftManagerAddress:48592)
-    chatId: { type: Number, required: true },
-    messageId: { type: Number, required: true },
+    _id: { // TYPE_positionId (ex: position_1115111:nftManagerAddress:48592)
+      type: String,
+      lowercase: true,
+      validate: function(v) {
+        const [type, ref] = v.split('_');
+        if (!MessageModel.TYPES.includes(type)) throw new Error('Invalid type: ' + v);
+        const [chainId, address, tokenId] = ref.split(':');
+        if (!/^\d+$/.test(chainId)) throw new Error('chainId is not numeric: ' + v);
+        if (!isAddress(address)) throw new Error('Invalid address: ' + v);
+        if (!/^\d+$/.test(tokenId)) throw new Error('Invalid tokenId: ' + v);
+      }
+    },
+    chatId: { type: Number, required: true, min: 1 },
+    messageId: { type: Number, required: true, min: 1 },
     checksum: Number,
     metadata: { type: Schema.Types.Mixed, default: {} },
   }, { _id: false, timestamps: true });
 
   static {
     MessageModel.schema.index({ chatId: 1, messageId: 1 }, { unique: true });
-    MessageModel.schema.plugin(autopopulate);
   }
 
   get type() {
@@ -36,12 +47,12 @@ class MessageModel
   }
 
   get positionId() {
-    if (!['Position', 'Range'].includes(this.type)) return null;
+    if (!['position', 'range'].includes(this.type)) return null;
     return this._id.split('_')[1];
   }
 
   get position() {
-    if (!['Position', 'Range'].includes(this.type)) return null;
+    if (!['position', 'range'].includes(this.type)) return null;
     return this.model('Position').findById(this.positionId);
   }
 }

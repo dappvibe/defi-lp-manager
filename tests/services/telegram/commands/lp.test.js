@@ -221,7 +221,7 @@ describe('Telegram command: Lp', () => {
       const position = await positionModel.fromBlockchain(positionId);
       await handler.outputPosition(position, {}, msg.chat.id);
 
-      handler.onAir['Range_' + position._id] = true;
+      handler.onAir['range_' + position._id] = true;
 
       telegram.reset();
       await handler.alertPriceRange(position, false);
@@ -266,13 +266,12 @@ describe('Telegram command: Lp', () => {
 
     it('handles missing positions gracefully', async () => {
       await messageModel.create({
-        _id: 'Position_42161:0xnonexistent',
+        _id: `Position_42161:0x0000000000000000000000000000000000000000:31338`,
         chatId: msg.chat.id,
         messageId: 123
       });
 
       const count = await handler.restoreEventListeners();
-
       expect(count).toBe(0);
     });
   });

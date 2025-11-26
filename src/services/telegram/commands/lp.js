@@ -153,7 +153,7 @@ class LpHandler extends AbstractHandler
    * @returns {Promise<MessageModel|void>}
    */
   async outputPosition(pos, event, chatId = null) {
-    const _id = 'Position_' + pos._id;
+    const _id = 'position_' + pos._id;
 
     // prevent race condition and identical messages errors
     if (this.onAir[_id]) return;
@@ -162,7 +162,7 @@ class LpHandler extends AbstractHandler
     let doc;
     try {
       if (chatId) { // keep doc null to always send new message if chatId is provided (on /lp command)
-        await this.model.deleteOne({_id: 'Range_' + pos._id}); // send new alert to appear after position msg
+        await this.model.deleteOne({_id: 'range_' + pos._id}); // send new alert to appear after position msg
       }
       else {
         doc = await this.model.findById(_id);
@@ -208,11 +208,11 @@ class LpHandler extends AbstractHandler
    * @returns {Promise<void>}
    */
   async alertPriceRange(pos, inRange) {
-    const _id = 'Range_'+pos._id;
+    const _id = 'range_'+pos._id;
 
     let alert = await this.model.findById(_id);
     if (!alert && !inRange) { // send alert
-      const posMsg = await this.model.findById('Position_'+pos._id);
+      const posMsg = await this.model.findById('position_'+pos._id);
       if (!posMsg || this.onAir[_id]) return;
       this.onAir[_id] = true;
       try {
@@ -242,7 +242,7 @@ class LpHandler extends AbstractHandler
    * @returns {Promise<Number>} - Amount of restored positions
    */
   async restoreEventListeners() {
-    const messages = await this.model.find({_id: /^Position_/});
+    const messages = await this.model.find({_id: /^position_/});
 
     let count = 0;
     for (const msg of messages) {
