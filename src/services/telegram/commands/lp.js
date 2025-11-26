@@ -172,10 +172,9 @@ class LpHandler extends AbstractHandler
         chatId = doc.chatId;
       }
 
-      await pos.populate('pool');
       const value = pos.calculateCombinedValue();
       const amounts = pos.calculateTokenAmounts().map(parseFloat);
-      const prices = pos.pool.getPrices(pos);
+      const prices = Object.keys(event) > 0 ? event.prices : await pos.pool.getPrices(pos);
       const fees = await pos.calculateUnclaimedFees();
       const cake = await this.cakePool?.getPrices();
       fees.rewards.value = fees.rewards.amount * cake?.current;
