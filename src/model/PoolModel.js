@@ -264,7 +264,10 @@ module.exports = function(mongoose, cache, poolFactoryContract, poolContract, To
       let token = await TokenModel.findById(id);
       if (token === null) {
         token = await TokenModel.fromBlockchain(id);
-        if (token) await token.save();
+        if (token) {
+          try {await token.save(); }
+          catch (e) { if (e.code !== 11000) throw e; }
+        }
         else throw new Error(`Token ${id} not found in blockchain`);
       }
       return token;
