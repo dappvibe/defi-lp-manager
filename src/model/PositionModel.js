@@ -84,6 +84,8 @@ class PositionModel
     });
   }
 
+  swapListener = null; // keep reference to removeListeners()
+
   get chainId() { return Number(this._id.split(':')[0]); }
   get positionManagerAddress() { return this._id.split(':')[1]; }
   get tokenId() { return Number(this._id.split(':')[2]); }
@@ -184,17 +186,24 @@ class PositionModel
   }
 
   startMonitoring() {
+    if (this.swapListener) return;
+
     this.pool.startMonitoring();
-    this.pool.on('swap', (e) => {
+    this.swapListener = (e) => {
       e.prices.lower = this.pool.tickToPrice(this.tickLower);
       e.prices.upper = this.pool.tickToPrice(this.tickUpper);
       this.emit('swap', e);
       this.emit('range', e.tick >= this.tickLower && e.tick <= this.tickUpper);
-    });
+    }
+
+    this.pool.on('swap', this.swapListener);
   }
 
   stopMonitoring() {
-    // TODO delete registered event on this. do not touch pool monitoring
+    if (this.swapListener) {
+      this.pool.removeListener('swap', this.swapListener);
+      this.swapListener = null;
+    }
   }
 
   /**

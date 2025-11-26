@@ -187,7 +187,22 @@ class LpHandler extends AbstractHandler
         return; // avoid rejection by Telegram and wasted call
       }
 
-      msg = await this.bot.send(msg);
+      try {
+        msg = await this.bot.send(msg);
+      } catch (e) {
+        if (/message to edit not found/.test(e.message)) {
+          pos.stopMonitoring();
+          await this.model.deleteMany({messageId: msg.id, chatId: msg.chatId});
+          const range = await this.model.findById('range_'+pos._id);
+          if (range) {
+            await this.model.deleteOne({_id: range._id});
+            await this.bot.deleteMessage(range.chatId, range.messageId);
+          }
+          console.log('Stopped monitoring position: ' + pos._id);
+          return; // to not save the message again below
+        }
+        else throw e;
+      }
 
       // Save message to keep updating after restart
       return this.model.findOneAndUpdate(
@@ -219,13 +234,21 @@ class LpHandler extends AbstractHandler
       try {
         const sent = await this.bot.sendMessage(posMsg.chatId, `⚠️ Position Out of Range`, { reply_to_message_id: posMsg.messageId });
         await this.model.create({_id, chatId: posMsg.chatId, messageId: sent.message_id});
-      } finally {
+      }
+      catch (e) {
+        if (/message to be replied not found/.test(e.message)) {
+          pos.stopMonitoring();
+          console.log('Stopped sending range replies for: ' + pos._id);
+        }
+        else throw e;
+      }
+      finally {
         delete this.onAir[_id];
       }
     }
     else if (alert && inRange) { // back in range - remove alert
-      await this.bot.deleteMessage(alert.chatId, alert.messageId);
       await this.model.deleteOne({_id});
+      await this.bot.deleteMessage(alert.chatId, alert.messageId);
     }
   }
 
