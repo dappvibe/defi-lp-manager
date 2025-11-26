@@ -1,32 +1,41 @@
 const {Schema} = require("mongoose");
 
-const walletSchema = new Schema({
-  _id: { type: String },
-  chainId: { type: Number, required: true },
-  address: { type: String, required: true, index: true, set: v => v.toLowerCase() },
-  userId: { type: String, required: true, ref: 'User' }, // do not autopopulate as rarely needed
-}, { _id: false, timestamps: true });
-
-// Auto-generate _id as chainId:address
-walletSchema.pre('validate', function() {
-  if (!this._id) {
-    this._id = `${this.chainId}:${this.address}`;
-  }
-});
-
-walletSchema.index({ userId: 1, createdAt: -1 });
-
-// Lowercase address in query
-walletSchema.pre(['find', 'findOne'], function (next) {
-  if (this._conditions.address) {
-    this._conditions.address = this._conditions.address.toLowerCase();
-  }
-  next();
-});
-
+/**
+ * Store wallet information linked to users.
+ *
+ * @property {String} _id - Composite key in format chainId:address
+ * @property {Number} chainId - Blockchain chain ID
+ * @property {String} address - Wallet address (lowercase)
+ * @property {String} userId - Associated user ID
+ * @property {Date} createdAt - Creation timestamp
+ * @property {Date} updatedAt - Last update timestamp
+ */
 class WalletModel {
+  static schema = new Schema({
+    _id: String, // chainId:address
+    chainId: { type: Number, required: true },
+    address: { type: String, required: true, index: true, set: v => v.toLowerCase() },
+    userId: { type: String, required: true, ref: 'User' },
+  }, { _id: false, timestamps: true });
+
+  static {
+    WalletModel.schema.index({ userId: 1, createdAt: -1 });
+
+    WalletModel.schema.pre('validate', function() {
+      if (!this._id) {
+        this._id = `${this.chainId}:${this.address}`;
+      }
+    });
+
+    WalletModel.schema.pre(['find', 'findOne'], function (next) {
+      if (this._conditions.address) {
+        this._conditions.address = this._conditions.address.toLowerCase();
+      }
+      next();
+    });
+  }
 }
 
-walletSchema.loadClass(WalletModel);
-
-module.exports = (mongoose) => mongoose.model('Wallet', walletSchema);
+module.exports = (mongoose) => {
+  return mongoose.model('Wallet', WalletModel.schema.loadClass(WalletModel));
+}
