@@ -1,20 +1,6 @@
-# DeFi LP Manager
+# Position Monitor for PancakeSwap
 
-Automations to provide liquidity for Uniswap V3 pools with Telegram bot integration.
-
-## Project Structure
-
-```
-defi-lp-manager/
-├── src/              # Application source code
-│   ├── config/       # Configuration files
-│   ├── services/     # Business logic services
-│   ├── utils/        # Utility functions
-│   └── app.js        # Application entry point
-├── data/             # Static data files
-│   └── abis/         # Contract ABIs
-└── tests/            # Test files
-```
+Telegram bot to display DeFi positions, its prices, range and notify if position is out of range.
 
 ## Setup
 
@@ -28,21 +14,3 @@ defi-lp-manager/
    ```
    npm start
    ```
-
-## Environment Variables
-
-- `ALCHEMY_API_KEY`: Your Alchemy API key for blockchain access
-- `TELEGRAM_BOT_TOKEN`: Your Telegram bot token
-- `TELEGRAM_TIMEZONE`: Timezone for displaying times (default: 'Asia/Phnom_Penh')
-- `TELEGRAM_MAX_REQUESTS_PER_SECOND`: Maximum API requests per second (default: 30)
-- `TELEGRAM_MESSAGE_EDIT_DELAY`: Minimum milliseconds between message edits (default: 3000)
-
-## Features
-
-- Monitor Uniswap V3 pool prices via Telegram
-- Set price alerts for specific thresholds
-- Real-time updates on pool activity
-
-## License
-
-ISC
