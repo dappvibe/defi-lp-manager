@@ -166,7 +166,9 @@ class LpHandler extends AbstractHandler
       }
       else {
         doc = await this.model.findById(_id);
-        if (!doc) throw new Error('chatId must be set for new messages: ' + _id);
+        if (!doc) {
+          throw new Error('chatId must be set for new messages: ' + _id);
+        }
         chatId = doc.chatId;
       }
 

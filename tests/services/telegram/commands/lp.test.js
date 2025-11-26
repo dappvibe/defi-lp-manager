@@ -3,12 +3,10 @@ describe('Telegram command: Lp', () => {
   let telegram;
   let handler;
   let user;
-  let walletModel;
+  let wallets, messages, positions, pools;
   let chainId;
   let positionManager;
   let staker;
-  let messageModel;
-  let positionModel;
   let poolFactory;
   let erc20Factory;
   let positionId;
@@ -27,9 +25,10 @@ describe('Telegram command: Lp', () => {
     telegram.addCommand('lp', handler);
     user = await db.model('User').findOne({telegramId: 1});
     if (!user) user = await db.model('User').create({telegramId: 1});
-    walletModel = container.resolve('WalletModel');
-    messageModel = container.resolve('MessageModel');
-    positionModel = container.resolve('PositionModel');
+    wallets = db.model('Wallet');
+    messages = db.model('Message');
+    positions = db.model('Position');
+    pools = db.model('Pool');
     chainId = container.resolve('chainId');
     ethnode = container.resolve('ethnode');
   });
@@ -44,11 +43,12 @@ describe('Telegram command: Lp', () => {
 
     positionId = '42161:0x46a15b0b27311cedf172ab29e4f4766fbe7f4364:31337';
 
-    await walletModel.deleteMany({});
-    await messageModel.deleteMany({});
-    await positionModel.deleteMany({});
+    await wallets.deleteMany({});
+    await messages.deleteMany({});
+    await positions.deleteMany({});
+    await pools.deleteMany({});
 
-    await walletModel.create({
+    await wallets.create({
       userId: user._id,
       chainId: chainId,
       address: USER_WALLET
@@ -57,7 +57,7 @@ describe('Telegram command: Lp', () => {
 
   it('send No wallets message', async () => {
     expect.assertions(1);
-    await walletModel.deleteMany({});
+    await wallets.deleteMany({});
     await handler.handle(msg, user);
 
     expect(telegram.sendMessage).toHaveBeenCalledWith(
@@ -81,19 +81,19 @@ describe('Telegram command: Lp', () => {
   describe('outputPosition', () => {
     it('creates new message for position', async () => {
       expect.assertions(3);
-      const position = await positionModel.fromBlockchain(positionId);
+      const position = await positions.fromBlockchain(positionId);
       await position.populate('pool');
       await handler.outputPosition(position, {}, msg.chat.id);
 
       expect(telegram.sendMessage).toHaveBeenCalled();
-      const savedMessage = await messageModel.findById('Position_' + position._id);
+      const savedMessage = await messages.findById('Position_' + position._id);
       expect(savedMessage).toBeDefined();
       expect(savedMessage.chatId).toBe(msg.chat.id);
     });
 
     it('updates existing message', async () => {
       expect.assertions(1);
-      const position = await positionModel.fromBlockchain(positionId);
+      const position = await positions.fromBlockchain(positionId);
       await handler.outputPosition(position, {}, msg.chat.id);
 
       telegram.reset();
@@ -106,7 +106,7 @@ describe('Telegram command: Lp', () => {
 
     it('skips update if content unchanged', async () => {
       expect.assertions(1);
-      const position = await positionModel.fromBlockchain(positionId);
+      const position = await positions.fromBlockchain(positionId);
       await handler.outputPosition(position, {}, msg.chat.id);
 
       telegram.reset();
@@ -117,10 +117,10 @@ describe('Telegram command: Lp', () => {
 
     it('should delete existing range alert when sending new position message', async () => {
       expect.assertions(1);
-      const position = await positionModel.fromBlockchain(positionId);
+      const position = await positions.fromBlockchain(positionId);
 
       // Create a range alert
-      await messageModel.create({
+      await messages.create({
         _id: 'Range_' + position._id,
         chatId: msg.chat.id,
         messageId: 999
@@ -128,13 +128,13 @@ describe('Telegram command: Lp', () => {
 
       await handler.outputPosition(position, {}, msg.chat.id);
 
-      const alert = await messageModel.findById('Range_' + position._id);
+      const alert = await messages.findById('Range_' + position._id);
       expect(alert).toBeNull();
     });
 
     it('should throw error if updating position without chatId and no existing message', async () => {
       expect.assertions(1);
-      const position = await positionModel.fromBlockchain(positionId);
+      const position = await positions.fromBlockchain(positionId);
 
       await expect(handler.outputPosition(position, {}))
         .rejects
@@ -145,7 +145,7 @@ describe('Telegram command: Lp', () => {
       it('displays STAKED status', async () => {
         //expect.assertions(1);
         return; // FIXME implement staking status mocks
-        const position = await positionModel.fromBlockchain(positionId);
+        const position = await positions.fromBlockchain(positionId);
         await handler.outputPosition(position, {}, msg.chat.id);
 
         const call = telegram.sendMessage.mock.calls[0];
@@ -154,7 +154,7 @@ describe('Telegram command: Lp', () => {
 
       it('displays UNSTAKED status', async () => {
         expect.assertions(1);
-        const position = await positionModel.fromBlockchain(positionId);
+        const position = await positions.fromBlockchain(positionId);
         await handler.outputPosition(position, {}, msg.chat.id);
         const call = telegram.sendMessage.mock.calls[0];
         expect(call[1]).toContain('💼 UNSTAKED');
@@ -162,7 +162,7 @@ describe('Telegram command: Lp', () => {
 
       it('displays correct arrow for price below range', async () => {
         expect.assertions(1);
-        const position = await positionModel.fromBlockchain(positionId);
+        const position = await positions.fromBlockchain(positionId);
         await handler.outputPosition(position, {}, msg.chat.id);
 
         const call = telegram.sendMessage.mock.calls[0];
@@ -176,7 +176,7 @@ describe('Telegram command: Lp', () => {
       expect.assertions(2);
       telegram.reset();
 
-      const position = await positionModel.fromBlockchain(positionId);
+      const position = await positions.fromBlockchain(positionId);
       await handler.outputPosition(position, {}, msg.chat.id);
 
       await db.model('Message').deleteMany({_id: /^Range_/});
@@ -188,28 +188,28 @@ describe('Telegram command: Lp', () => {
         expect.anything()
       );
 
-      const alert = await messageModel.findById('Range_' + position._id);
+      const alert = await messages.findById('Range_' + position._id);
       expect(alert).toBeDefined();
     });
 
     it('removes alert when position comes back in range', async () => {
       expect.assertions(2);
-      const position = await positionModel.fromBlockchain(positionId);
+      const position = await positions.fromBlockchain(positionId);
       await handler.outputPosition(position, {}, msg.chat.id);
       await handler.alertPriceRange(position, false);
 
-      const alert = await messageModel.findById('Range_' + position._id);
+      const alert = await messages.findById('Range_' + position._id);
       expect(alert).toBeDefined();
 
       await handler.alertPriceRange(position, true);
 
-      const removedAlert = await messageModel.findById('Range_' + position._id);
+      const removedAlert = await messages.findById('Range_' + position._id);
       expect(removedAlert).toBeNull();
     });
 
     it('does not send duplicate alerts', async () => {
       expect.assertions(1);
-      const position = await positionModel.fromBlockchain(positionId);
+      const position = await positions.fromBlockchain(positionId);
       await handler.outputPosition(position, {}, msg.chat.id);
 
       await handler.alertPriceRange(position, false);
@@ -221,10 +221,10 @@ describe('Telegram command: Lp', () => {
 
     it('should not send alert if position message is missing', async () => {
       expect.assertions(1);
-      const position = await positionModel.fromBlockchain(positionId);
+      const position = await positions.fromBlockchain(positionId);
 
       // Ensure no position message exists
-      await messageModel.deleteOne({_id: 'Position_' + position._id});
+      await messages.deleteOne({_id: 'Position_' + position._id});
 
       await handler.alertPriceRange(position, false);
 
@@ -233,7 +233,7 @@ describe('Telegram command: Lp', () => {
 
     it('should not send alert if already processing (onAir)', async () => {
       expect.assertions(1);
-      const position = await positionModel.fromBlockchain(positionId);
+      const position = await positions.fromBlockchain(positionId);
       await handler.outputPosition(position, {}, msg.chat.id);
 
       handler.onAir['range_' + position._id] = true;
@@ -251,7 +251,7 @@ describe('Telegram command: Lp', () => {
   describe('setEventListeners', () => {
     it('starts monitoring and sets event handlers', async () => {
       expect.assertions(3);
-      const position = await positionModel.fromBlockchain(positionId);
+      const position = await positions.fromBlockchain(positionId);
       await position.save();
       await position.populate('pool');
       const startMonitoringSpy = vi.spyOn(position, 'startMonitoring');
@@ -268,9 +268,9 @@ describe('Telegram command: Lp', () => {
   describe('restoreEventListeners', () => {
     it('restores monitoring for saved positions', async () => {
       expect.assertions(1);
-      const position = await positionModel.fromBlockchain(positionId);
+      const position = await positions.fromBlockchain(positionId);
       await position.save();
-      await messageModel.create({
+      await messages.create({
         _id: 'Position_' + position._id,
         chatId: msg.chat.id,
         messageId: 123
@@ -283,7 +283,7 @@ describe('Telegram command: Lp', () => {
 
     it('handles missing positions gracefully', async () => {
       expect.assertions(1);
-      await messageModel.create({
+      await messages.create({
         _id: `Position_42161:0x0000000000000000000000000000000000000000:31338`,
         chatId: msg.chat.id,
         messageId: 123

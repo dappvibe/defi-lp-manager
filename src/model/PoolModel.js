@@ -44,12 +44,9 @@ class PoolModel
   static {
     PoolModel.schema.plugin(autopopulate);
 
-    PoolModel.schema.post(['init', 'save'], (doc) => {
-      doc.contract = PoolModel.poolContractFactory(doc.address);
-    });
-
     PoolModel.schema.pre('save', async function() {
       const ensureToken = async (id) => {
+        if (typeof id === 'object') return id;
         let token = await PoolModel.TokenModel.findById(id);
         if (token === null) {
           token = await PoolModel.TokenModel.fromBlockchain(id);
@@ -66,7 +63,10 @@ class PoolModel
         ensureToken(this.token0),
         ensureToken(this.token1)
       ])
-      await this.populate('token0 token1');
+    });
+
+    PoolModel.schema.post(['init', 'save'], (doc) => {
+      doc.contract = PoolModel.poolContractFactory(doc.address);
     });
 
     const events = ['findOne', 'findById', 'find', 'findOneAndUpdate', 'findOneAndReplace', 'findOneAndDelete'];
@@ -294,16 +294,32 @@ class PoolModel
     catch (e) { throw new Error('Invalid PoolModel: ' + id); }
 
     const contract = PoolModel.poolContractFactory(address);
-    const [token0, token1, fee] = await Promise.all([
+    let [token0, token1, fee] = await Promise.all([
       contract.read.token0(),
       contract.read.token1(),
       contract.read.fee(),
     ]);
+
+    const token0Id = `${chainId}:${token0}`;
+    token0 = await PoolModel.TokenModel.findById(token0Id);
+    if (!token0) {
+      token0 = await PoolModel.TokenModel.fromBlockchain(token0Id);
+      if (token0) await token0.save();
+      else throw new Error(`Token ${token0Id} not found in blockchain`);
+    }
+    const token1Id = `${chainId}:${token1}`;
+    token1 = await PoolModel.TokenModel.findById(token1Id);
+    if (!token1) {
+      token1 = await PoolModel.TokenModel.fromBlockchain(token1Id);
+      if (token1) await token1.save();
+      else throw new Error(`Token ${token1Id} not found in blockchain`);
+    }
+
     const doc = new this({
       _id: id,
       chainId,
-      token0: `${chainId}:${token0.toLowerCase()}`,
-      token1: `${chainId}:${token1.toLowerCase()}`,
+      token0,
+      token1,
       fee
     });
     doc.contract = contract;

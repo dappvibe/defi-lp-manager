@@ -41,7 +41,6 @@ class PositionFactory
           }
         } else {
           pos = await this.positionModel.fromBlockchain(id);
-          await pos.populate('pool');
           pos.isStaked = isStaked;
           pos.save(); // nowait
         }

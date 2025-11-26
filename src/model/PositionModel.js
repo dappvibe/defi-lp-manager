@@ -30,7 +30,7 @@ class PositionModel
         if (!/^\d+$/.test(tokenId)) throw new Error('Invalid tokenId: ' + tokenId);
       }
     },
-    owner: { type: String, required: true, validate: isAddress },
+    owner: { type: String, required: true, lowercase: true, validate: isAddress },
     pool: { type: String, ref: 'Pool', required: true, autopopulate: true },
     tickLower: { type: Number, required: true },
     tickUpper: { type: Number, required: true },
@@ -48,15 +48,15 @@ class PositionModel
 
   static {
     PositionModel.schema.pre('save', async function() {
-      const id = this.pool;
-      await this.populate('pool');
-      if (this.pool === null) {
-        this.pool = await PositionModel.poolModel.findById(id);
-        if (!this.pool) {
-          this.pool = await PositionModel.poolModel.fromBlockchain(id);
-          if (this.pool) await this.pool.save();
-          else throw new Error(`Pool ${id} not found in blockchain`);
+      if (this.pool === null && this.populated('pool')) {
+        this.depopulate('pool');
+        let pool = await PositionModel.poolModel.findById(this.pool);
+        if (!pool) {
+          pool = await PositionModel.poolModel.fromBlockchain(this.pool);
+          if (pool) await pool.save();
+          else throw new Error(`Pool ${this.pool} not found in blockchain`);
         }
+        await this.populate('pool');
       }
     });
 
@@ -64,7 +64,7 @@ class PositionModel
     PositionModel.schema.post(events, async function(doc)  {
       if (!doc) return;
 
-      async function populatePool(doc) {
+      async function ensurePool(doc) {
         if (doc.pool === null) {
           doc.depopulate('pool');
           doc.pool = await PositionModel.poolModel.fromBlockchain(doc.pool);
@@ -77,9 +77,9 @@ class PositionModel
       }
 
       if (Array.isArray(doc)) {
-        await Promise.all(doc.map(populatePool));
+        await Promise.all(doc.map(ensurePool));
       } else {
-        await populatePool(doc);
+        await ensurePool(doc);
       }
     });
   }
@@ -227,11 +227,17 @@ class PositionModel
     };
 
     const poolAddress = await PositionModel.poolModel.getPoolAddress(data.token0, data.token1, data.fee);
+    const poolId = `${chainId}:${poolAddress}`;
+    let pool = await this.poolModel.findById(poolId);
+    if (!pool) {
+      pool = await this.poolModel.fromBlockchain(poolId);
+      await pool.save();
+    }
     return new this({
-      _id: id.toLowerCase(),
+      _id: id,
       tokenId,
-      owner: owner.toLowerCase(),
-      pool: `${chainId}:${poolAddress}`,
+      owner: owner,
+      pool: pool,
       tickLower: data.tickLower,
       tickUpper: data.tickUpper,
       liquidity: data.liquidity,

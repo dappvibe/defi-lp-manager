@@ -81,8 +81,8 @@ describe('PoolModel', () => {
       expect(obj._id).toBe(`${chainId}:${WETH_USDC}`);
       expect(obj.chainId).toBe(chainId);
       expect(obj.address).toBe(WETH_USDC);
-      expect(obj.token0).toBe(`${chainId}:${WETH}`);
-      expect(obj.token1).toBe(`${chainId}:${USDC}`);
+      expect(obj.token0.id).toBe(`${chainId}:${WETH}`);
+      expect(obj.token1.id).toBe(`${chainId}:${USDC}`);
       expect(obj.sqrtPriceX96).toBe(pool.sqrtPriceX96);
       expect(obj.liquidity).toBe(pool.liquidity);
       expect(obj.fee).toBe(100);

@@ -16,7 +16,7 @@ const {formatUnits} = require('viem');
 class TokenModel
 {
   static schema = new Schema({
-    _id: {type: String, required: true, lowercase: true }, // chainId:address
+    _id: {type: String, required: true, lowercase: true, validate: /^\d+:\w+$/ }, // chainId:address
     name: {type: String, required: true},
     symbol: {type: String, required: true},
     decimals: {type: Number, required: true, min: 2},
