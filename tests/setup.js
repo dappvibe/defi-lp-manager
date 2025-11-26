@@ -13,6 +13,7 @@ require('dotenv').config({path: '.env.example'});
 
 import MockApp from "./app";
 
+global.ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 global.USER_WALLET = '0x220866b1a2219f40e72f5c628b65d54268ca3a9d';
 global.WETH = '0x82af49447d8a07e3bd95bd0d56f35241523fbab1';
 global.USDT = '0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9';

@@ -1,6 +1,7 @@
 const {Schema} = require("mongoose");
 const {Position: UniswapPosition} = require("@uniswap/v3-sdk");
 const autopopulate = require('mongoose-autopopulate');
+const {isAddress} = require("viem");
 
 /**
  * @property {String} _id - Composite key in format chainId:address:tokenId
@@ -19,12 +20,21 @@ const autopopulate = require('mongoose-autopopulate');
 class PositionModel
 {
   static schema = new Schema({
-    _id: String, // chainId:nftManagerAddress:tokenId (manager distinguish DEXes)
-    owner: { type: String, required: true },    // address
+    _id: { // chainId:nftManagerAddress:tokenId (manager distinguish DEXes)
+      type: String,
+      lowercase: true,
+      validate: function(v) {
+        const [chainId, address, tokenId] = v.split(':');
+        if (!/^\d+$/.test(chainId)) throw new Error('chainId is not numeric: ' + v);
+        if (!isAddress(address)) throw new Error('Invalid address: ' + v);
+        if (!/^\d+$/.test(tokenId)) throw new Error('Invalid tokenId: ' + tokenId);
+      }
+    },
+    owner: { type: String, required: true, validate: isAddress },
     pool: { type: String, ref: 'Pool', required: true, autopopulate: true },
     tickLower: { type: Number, required: true },
     tickUpper: { type: Number, required: true },
-    liquidity: { type: BigInt, required: true },
+    liquidity: { type: BigInt, required: true, min: 0 },
     isStaked: { type: Boolean, required: true },
   }, { _id: false, timestamps: true });
 

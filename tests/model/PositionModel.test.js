@@ -39,7 +39,7 @@ describe('PositionModel', () => {
 
       const query = {
         _id: id,
-        owner: 'testOwner',
+        owner: ZERO_ADDRESS,
         pool: `${chainId}:${WETH_USDC}`,
         tickLower: -10,
         tickUpper: 10,
@@ -66,7 +66,7 @@ describe('PositionModel', () => {
       await pools.deleteMany({});
       await positions.create({
         ...query,
-        _id: `${chainId}:anotherPool`,
+        _id: `${chainId}:${ZERO_ADDRESS}:1`,
         isStaked: false
       });
       const found = await positions.find({ isStaked: false });
