@@ -25,6 +25,7 @@ describe('PoolModel', () => {
   })
 
   it('populates tokens even if they not exist in db', async () => {
+    expect.assertions(27);
     await pools.deleteMany({});
 
     const query = {
@@ -73,6 +74,7 @@ describe('PoolModel', () => {
 
   describe('fromBlockchain', () => {
     it('should fetch pool details and return new pool', async () => {
+      expect.assertions(10);
       const obj = await pools.fromBlockchain(`${chainId}:${WETH_USDC}`);
       expect(obj).toBeDefined();
       expect(obj.isNew).toBe(true); // unsaved
@@ -89,6 +91,7 @@ describe('PoolModel', () => {
 
   describe('getPrices', () => {
     it('should return current price without position', async () => {
+      expect.assertions(4);
       let prices = await pool.getPrices();
       expect(prices).toBeDefined();
       expect(prices.current).eq('2935.59');
@@ -97,6 +100,7 @@ describe('PoolModel', () => {
     });
 
     it('should return current and position prices with position', async () => {
+      expect.assertions(4);
       const prices = await pool.getPrices({
         tickLower: -197000, tickUpper: -196000
       });
@@ -109,6 +113,7 @@ describe('PoolModel', () => {
 
   describe('getTVL', () => {
     it('should return values', async () => {
+      expect.assertions(1);
       await ethnode.forCall(WETH)
         .forFunction('function balanceOf(address account) external view returns (uint256)')
         .withParams([pool.address])
@@ -125,6 +130,7 @@ describe('PoolModel', () => {
 
   describe('swap listener', () => {
     it('should emit events', async () => {
+      expect.assertions(7);
       // sample
       const logs = [
         {

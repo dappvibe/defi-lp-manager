@@ -26,6 +26,7 @@ describe('TokenModel', () => {
   })
 
   it('fromBlockchain() should fetch token details and return new doc', async () => {
+    expect.assertions(7);
     const token = await tokens.fromBlockchain(`${chainId}:${WETH}`);
     expect(token).toBeDefined();
     expect(token.address).toBe(WETH);
@@ -41,6 +42,7 @@ describe('TokenModel', () => {
   })
 
   it('instances have ERC20 contract', async () => {
+    expect.assertions(4);
     let token = await tokens.findById(`${chainId}:${WETH}`);
     expect(token).not.toBeNull();
     expect(token.contract).toBeDefined();
@@ -53,6 +55,7 @@ describe('TokenModel', () => {
   })
 
   it('format() should return human-friendly string', async () => {
+    expect.assertions(3);
     expect(eth.format(-141165908562470027n), 'Convert BigInt')
       .toBe('-0.141165908562470027'); // 18 decimals
 

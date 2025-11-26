@@ -29,6 +29,7 @@ describe('Telegram command: Wallet', () => {
   })
 
   it('list wallets on /wallet and provide button to add', async () => {
+    expect.assertions(1);
     await handler.listWallets(msg);
 
     expect(telegram.sendMessage).toHaveBeenCalledWith(
@@ -45,6 +46,7 @@ describe('Telegram command: Wallet', () => {
   });
 
   it('query for wallet address on button click', async () => {
+    expect.assertions(1);
     const query = {
       id: 100,
       data: 'add_wallet',
@@ -60,12 +62,14 @@ describe('Telegram command: Wallet', () => {
   })
 
   it('saves wallet on prompt reply', async () => {
+    expect.assertions(1);
     msg.text = USER_WALLET;
     const result = await handler.saveWallet(msg);
     expect(result).toBeTruthy();
   })
 
   it('removes wallet on callback', async () => {
+    expect.assertions(1);
     await walletModel.deleteMany({});
     const wallet = await walletModel.create({
       userId: user._id,

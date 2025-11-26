@@ -27,6 +27,8 @@ describe('MessageModel', () => {
 
   describe('schema & instance methods', () => {
     it('should correctly extract the type from _id', async () => {
+      expect.assertions(1);
+
       const data = {
         _id: 'position_' + position.id,
         chatId: 42,
@@ -40,6 +42,8 @@ describe('MessageModel', () => {
     });
 
     it('should correctly extract positionId if applicable', async () => {
+      expect.assertions(1);
+
       const data = {
         _id: `range_1:${address}:7890`,
         chatId: 11,
@@ -51,6 +55,8 @@ describe('MessageModel', () => {
     });
 
     it('should return null for positionId if type is invalid', async () => {
+      expect.assertions(1);
+
       const data = {
         _id: 'InvalidType_1:0xunknown:1111',
         chatId: 33,
@@ -63,6 +69,7 @@ describe('MessageModel', () => {
 
   describe('static methods and behavior', () => {
     it('should prevent duplicate entries with the same chatId and messageId', async () => {
+      expect.assertions(1);
       const data = {
         _id: `position_1:${address}:1`,
         chatId: 10,
@@ -76,6 +83,7 @@ describe('MessageModel', () => {
     });
 
     it('should populate metadata correctly', async () => {
+      expect.assertions(1);
       const data = {
         _id: `position_42161:${address}:1`,
         chatId: 1,
@@ -90,6 +98,7 @@ describe('MessageModel', () => {
 
   describe('timestamps', () => {
     it('should automatically set createdAt and updatedAt fields', async () => {
+      expect.assertions(4);
       const now = Date.now();
 
       const data = {
@@ -110,6 +119,7 @@ describe('MessageModel', () => {
 
   describe('indexes', () => {
     it('should enforce unique constraint on (chatId, messageId)', async () => {
+      expect.assertions(1);
       const data1 = {
         _id: `position_41261:${address}:1`,
         chatId: 123,

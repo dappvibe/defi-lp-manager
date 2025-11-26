@@ -30,6 +30,7 @@ describe('PositionModel', () => {
 
   describe('middleware', () => {
     it('populates pools even if they not exist in db', async () => {
+      expect.assertions(22);
       const check = (position, msg) => {
         expect(position, msg).not.toBeNull();
         expect(position.pool, msg).not.toBeNull();
@@ -81,6 +82,7 @@ describe('PositionModel', () => {
 
   describe('fromBlockchain()', () => {
     it('should return unsaved position', async () => {
+      expect.assertions(5);
       const id = `${chainId}:${positionManager.address}:31337`;
       const doc = await positions.fromBlockchain(id);
       expect(doc).toBeDefined();
@@ -93,6 +95,7 @@ describe('PositionModel', () => {
 
   describe('calculateUnclaimedFees()', () => {
     it('should calculate unclaimed fees', async () => {
+      expect.assertions(5);
       const fees = await position.calculateUnclaimedFees();
 
       expect(fees).toBeDefined();
@@ -105,6 +108,7 @@ describe('PositionModel', () => {
 
   describe('calculateTokenAmounts', () => {
     it('should calculate token amounts', async () => {
+      expect.assertions(3);
       const amounts = position.calculateTokenAmounts();
       expect(amounts).toBeDefined();
       expect(amounts[0]).eq('0.00099999');
@@ -114,6 +118,7 @@ describe('PositionModel', () => {
 
   describe('calculateCombinedValue()', () => {
     it('should calculate readable tokens total amount', async () => {
+      expect.assertions(1);
       const total = position.calculateCombinedValue();
       expect(total).toBeDefined();
     });
@@ -121,6 +126,7 @@ describe('PositionModel', () => {
 
   describe('calculateCakeRewards()', () => {
     it('should calculate cake rewards', async () => {
+      expect.assertions(1);
       await ethnode.forCall(staker.address)
         .thenReturn(['uint128'], [100000000020000n]);
       position.isStaked = true;

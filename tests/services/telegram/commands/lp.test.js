@@ -56,6 +56,7 @@ describe('Telegram command: Lp', () => {
   })
 
   it('send No wallets message', async () => {
+    expect.assertions(1);
     await walletModel.deleteMany({});
     await handler.handle(msg, user);
 
@@ -67,6 +68,7 @@ describe('Telegram command: Lp', () => {
   });
 
   it('list positions for all wallets', async () => {
+    expect.assertions(3);
     await handler.handle(msg);
 
     expect(telegram.sendMessage).toHaveBeenCalled();
@@ -78,6 +80,7 @@ describe('Telegram command: Lp', () => {
 
   describe('outputPosition', () => {
     it('creates new message for position', async () => {
+      expect.assertions(3);
       const position = await positionModel.fromBlockchain(positionId);
       await position.populate('pool');
       await handler.outputPosition(position, {}, msg.chat.id);
@@ -89,6 +92,7 @@ describe('Telegram command: Lp', () => {
     });
 
     it('updates existing message', async () => {
+      expect.assertions(1);
       const position = await positionModel.fromBlockchain(positionId);
       await handler.outputPosition(position, {}, msg.chat.id);
 
@@ -101,6 +105,7 @@ describe('Telegram command: Lp', () => {
     });
 
     it('skips update if content unchanged', async () => {
+      expect.assertions(1);
       const position = await positionModel.fromBlockchain(positionId);
       await handler.outputPosition(position, {}, msg.chat.id);
 
@@ -111,6 +116,7 @@ describe('Telegram command: Lp', () => {
     });
 
     it('should delete existing range alert when sending new position message', async () => {
+      expect.assertions(1);
       const position = await positionModel.fromBlockchain(positionId);
 
       // Create a range alert
@@ -127,6 +133,7 @@ describe('Telegram command: Lp', () => {
     });
 
     it('should throw error if updating position without chatId and no existing message', async () => {
+      expect.assertions(1);
       const position = await positionModel.fromBlockchain(positionId);
 
       await expect(handler.outputPosition(position, {}))
@@ -136,6 +143,7 @@ describe('Telegram command: Lp', () => {
 
     describe('PositionMessage content', () => {
       it('displays STAKED status', async () => {
+        //expect.assertions(1);
         return; // FIXME implement staking status mocks
         const position = await positionModel.fromBlockchain(positionId);
         await handler.outputPosition(position, {}, msg.chat.id);
@@ -145,6 +153,7 @@ describe('Telegram command: Lp', () => {
       });
 
       it('displays UNSTAKED status', async () => {
+        expect.assertions(1);
         const position = await positionModel.fromBlockchain(positionId);
         await handler.outputPosition(position, {}, msg.chat.id);
         const call = telegram.sendMessage.mock.calls[0];
@@ -152,6 +161,7 @@ describe('Telegram command: Lp', () => {
       });
 
       it('displays correct arrow for price below range', async () => {
+        expect.assertions(1);
         const position = await positionModel.fromBlockchain(positionId);
         await handler.outputPosition(position, {}, msg.chat.id);
 
@@ -163,6 +173,7 @@ describe('Telegram command: Lp', () => {
 
   describe('alertPriceRange', () => {
     it('sends alert when position goes out of range', async () => {
+      expect.assertions(2);
       telegram.reset();
 
       const position = await positionModel.fromBlockchain(positionId);
@@ -182,6 +193,7 @@ describe('Telegram command: Lp', () => {
     });
 
     it('removes alert when position comes back in range', async () => {
+      expect.assertions(2);
       const position = await positionModel.fromBlockchain(positionId);
       await handler.outputPosition(position, {}, msg.chat.id);
       await handler.alertPriceRange(position, false);
@@ -196,6 +208,7 @@ describe('Telegram command: Lp', () => {
     });
 
     it('does not send duplicate alerts', async () => {
+      expect.assertions(1);
       const position = await positionModel.fromBlockchain(positionId);
       await handler.outputPosition(position, {}, msg.chat.id);
 
@@ -207,6 +220,7 @@ describe('Telegram command: Lp', () => {
     });
 
     it('should not send alert if position message is missing', async () => {
+      expect.assertions(1);
       const position = await positionModel.fromBlockchain(positionId);
 
       // Ensure no position message exists
@@ -218,6 +232,7 @@ describe('Telegram command: Lp', () => {
     });
 
     it('should not send alert if already processing (onAir)', async () => {
+      expect.assertions(1);
       const position = await positionModel.fromBlockchain(positionId);
       await handler.outputPosition(position, {}, msg.chat.id);
 
@@ -235,6 +250,7 @@ describe('Telegram command: Lp', () => {
 
   describe('setEventListeners', () => {
     it('starts monitoring and sets event handlers', async () => {
+      expect.assertions(3);
       const position = await positionModel.fromBlockchain(positionId);
       await position.save();
       await position.populate('pool');
@@ -251,6 +267,7 @@ describe('Telegram command: Lp', () => {
 
   describe('restoreEventListeners', () => {
     it('restores monitoring for saved positions', async () => {
+      expect.assertions(1);
       const position = await positionModel.fromBlockchain(positionId);
       await position.save();
       await messageModel.create({
@@ -265,6 +282,7 @@ describe('Telegram command: Lp', () => {
     });
 
     it('handles missing positions gracefully', async () => {
+      expect.assertions(1);
       await messageModel.create({
         _id: `Position_42161:0x0000000000000000000000000000000000000000:31338`,
         chatId: msg.chat.id,
@@ -278,6 +296,7 @@ describe('Telegram command: Lp', () => {
 
   describe('getMyCommand', () => {
     it('returns command definition', () => {
+      expect.assertions(3);
       const [name, description] = handler.getMyCommand();
 
       expect(name).toBe('lp');

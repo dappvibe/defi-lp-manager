@@ -27,6 +27,7 @@ describe('Telegram command: Start', () => {
   })
 
   it('invite to add wallets if user has no wallets', async () => {
+    expect.assertions(1);
     await handler.handle(msg, user);
 
     expect(telegram.sendMessage).toHaveBeenCalledWith(
@@ -37,6 +38,7 @@ describe('Telegram command: Start', () => {
   });
 
   it('list wallets in message', async () => {
+    expect.assertions(1);
     await walletModel.create({
       chainId: 42161,
       address: '0x1234567890abcdef',

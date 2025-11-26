@@ -17,6 +17,7 @@ describe('PositionFactory', () => {
 
   describe('fetchPositions', () => {
     it('should fetch positions from both position manager and staker', async () => {
+      expect.assertions(5);
       const positions = [];
 
       for await (const position of positionFactory.fetchPositions(USER_WALLET)) {
