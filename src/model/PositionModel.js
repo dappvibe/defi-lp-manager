@@ -36,6 +36,44 @@ class PositionModel
   static cache;
   static cakePool; // promise
 
+  static {
+    PositionModel.schema.pre('save', async function() {
+      const id = this.pool;
+      await this.populate('pool');
+      if (this.pool === null) {
+        this.pool = await PositionModel.poolModel.findById(id);
+        if (!this.pool) {
+          this.pool = await PositionModel.poolModel.fromBlockchain(id);
+          if (this.pool) await this.pool.save();
+          else throw new Error(`Pool ${id} not found in blockchain`);
+        }
+      }
+    });
+
+    const events = ['findOne', 'findById', 'find', 'findOneAndUpdate', 'findOneAndReplace', 'findOneAndDelete'];
+    PositionModel.schema.post(events, async function(doc)  {
+      if (!doc) return;
+
+      async function populatePool(doc) {
+        if (doc.pool === null) {
+          doc.depopulate('pool');
+          doc.pool = await PositionModel.poolModel.fromBlockchain(doc.pool);
+          try {
+            await doc.pool.save();
+          } catch (e) {
+            if (e.code !== 11000) throw e;
+          }
+        }
+      }
+
+      if (Array.isArray(doc)) {
+        await Promise.all(doc.map(populatePool));
+      } else {
+        await populatePool(doc);
+      }
+    });
+  }
+
   get chainId() { return Number(this._id.split(':')[0]); }
   get positionManagerAddress() { return this._id.split(':')[1]; }
   get tokenId() { return Number(this._id.split(':')[2]); }
@@ -209,44 +247,6 @@ module.exports = function(mongoose, cache, chainId, cakePool, positionManager, s
   PositionModel.staker = staker;
   PositionModel.cache = cache;
   PositionModel.cakePool = cakePool;
-
-  // ensure referenced pool exists
-  PositionModel.schema.pre('save', async function() {
-    const id = this.pool;
-    await this.populate('pool');
-    if (this.pool === null) {
-      this.pool = await PoolModel.findById(id);
-      if (!this.pool) {
-        this.pool = await PoolModel.fromBlockchain(id);
-        if (this.pool) await this.pool.save();
-        else throw new Error(`Pool ${id} not found in blockchain`);
-      }
-    }
-  });
-
-  // post find fallback - if tokens not populated fetch from blockchain
-  const events = ['findOne', 'findById', 'find', 'findOneAndUpdate', 'findOneAndReplace', 'findOneAndDelete'];
-  PositionModel.schema.post(events, async function(doc)  {
-    if (!doc) return;
-
-    async function populatePool(doc) {
-      if (doc.pool === null) {
-        doc.depopulate('pool');
-        doc.pool = await PoolModel.fromBlockchain(doc.pool);
-        try {
-          await doc.pool.save();
-        } catch (e) {
-          if (e.code !== 11000) throw e; // duplicate is ok
-        }
-      }
-    }
-
-    if (Array.isArray(doc)) {
-      await Promise.all(doc.map(populatePool));
-    } else {
-      await populatePool(doc);
-    }
-  });
 
   return mongoose.model('Position', PositionModel.schema.loadClass(PositionModel).plugin(autopopulate));
 }

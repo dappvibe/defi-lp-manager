@@ -32,6 +32,60 @@ class PoolModel
   static poolContractFactory;
   static cache;
 
+  static {
+    PoolModel.schema.plugin(autopopulate);
+
+    PoolModel.schema.post(['init', 'save'], (doc) => {
+      doc.contract = PoolModel.poolContractFactory(doc.address);
+    });
+
+    PoolModel.schema.pre('save', async function() {
+      const ensureToken = async (id) => {
+        let token = await PoolModel.TokenModel.findById(id);
+        if (token === null) {
+          token = await PoolModel.TokenModel.fromBlockchain(id);
+          if (token) {
+            try {await token.save(); }
+            catch (e) { if (e.code !== 11000) throw e; }
+          }
+          else throw new Error(`Token ${id} not found in blockchain`);
+        }
+        return token;
+      };
+
+      await Promise.all([
+        ensureToken(this.token0),
+        ensureToken(this.token1)
+      ])
+      await this.populate('token0 token1');
+    });
+
+    const events = ['findOne', 'findById', 'find', 'findOneAndUpdate', 'findOneAndReplace', 'findOneAndDelete'];
+    PoolModel.schema.post(events, async function(doc)  {
+      if (!doc) return;
+
+      async function populateTokens(doc) {
+        for (const key of ['token0', 'token1']) {
+          if (doc[key] === null) {
+            doc.depopulate(key);
+            doc[key] = await PoolModel.TokenModel.fromBlockchain(doc[key]);
+            try {
+              await doc[key].save();
+            } catch (e) {
+              if (e.code !== 11000) throw e;
+            }
+          }
+        }
+      }
+
+      if (Array.isArray(doc)) {
+        await Promise.all(doc.map(populateTokens));
+      } else {
+        await populateTokens(doc);
+      }
+    });
+  }
+
 
   get chainId() { return Number(this._id.split(':')[0]); }
   get address() { return this._id.split(':')[1]; }
@@ -253,58 +307,7 @@ module.exports = function(mongoose, cache, poolFactoryContract, poolContract, To
   PoolModel.poolFactoryContract = poolFactoryContract;
   PoolModel.poolContractFactory = poolContract;
   PoolModel.cache = cache;
+  PoolModel.TokenModel = TokenModel;
 
-  PoolModel.schema.post(['init', 'save'], (doc) => {
-    doc.contract = poolContract(doc.address);
-  })
-
-  // so that model.create() returns populated object, validates token exists onchain
-  PoolModel.schema.pre('save', async function() {
-    const ensureToken = async (id) => {
-      let token = await TokenModel.findById(id);
-      if (token === null) {
-        token = await TokenModel.fromBlockchain(id);
-        if (token) {
-          try {await token.save(); }
-          catch (e) { if (e.code !== 11000) throw e; }
-        }
-        else throw new Error(`Token ${id} not found in blockchain`);
-      }
-      return token;
-    };
-
-    await Promise.all([
-      ensureToken(this.token0),
-      ensureToken(this.token1)
-    ])
-    await this.populate('token0 token1');
-  });
-
-  // post find fallback - if tokens not populated fetch from blockchain
-  const events = ['findOne', 'findById', 'find', 'findOneAndUpdate', 'findOneAndReplace', 'findOneAndDelete'];
-  PoolModel.schema.post(events, async function(doc)  {
-    if (!doc) return;
-
-    async function populateTokens(doc) {
-      for (const key of ['token0', 'token1']) {
-        if (doc[key] === null) {
-          doc.depopulate(key);
-          doc[key] = await TokenModel.fromBlockchain(doc[key]);
-          try {
-            await doc[key].save();
-          } catch (e) {
-            if (e.code !== 11000) throw e; // duplicate is ok
-          }
-        }
-      }
-    }
-
-    if (Array.isArray(doc)) {
-      await Promise.all(doc.map(populateTokens));
-    } else {
-      await populateTokens(doc);
-    }
-  });
-
-  return mongoose.model('Pool', PoolModel.schema.loadClass(PoolModel).plugin(autopopulate));
+  return mongoose.model('Pool', PoolModel.schema.loadClass(PoolModel));
 }

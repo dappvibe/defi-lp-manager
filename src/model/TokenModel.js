@@ -24,6 +24,12 @@ class TokenModel
 
   static erc20Factory;
 
+  static {
+    TokenModel.schema.post(['init', 'save'], function(doc) {
+      doc.contract = TokenModel.erc20Factory(doc.address);
+    });
+  }
+
   get chainId() {
     return Number(this._id.split(':')[0]);
   }
@@ -83,10 +89,6 @@ class TokenModel
   */
 module.exports = function(mongoose, erc20Factory) {
   TokenModel.erc20Factory = erc20Factory;
-
-  TokenModel.schema.post(['init', 'save'], function(doc) {
-    doc.contract = erc20Factory(doc.address);
-  })
 
   return mongoose.model('Token', TokenModel.schema.loadClass(TokenModel));
 };
