@@ -43,7 +43,7 @@ describe('PoolModel', () => {
     await tokens.deleteMany({});
     let pool;
     try {
-      pool = await pools.create({...query, _id: chainId+':0xfoobar'});
+      pool = await pools.create({...query, _id: chainId+':'+ZERO_ADDRESS});
     } catch (e) { if(e.code !== 11000) throw e; }
     check(pool, 'create()');
 
@@ -60,7 +60,7 @@ describe('PoolModel', () => {
     check(pool, 'findOneAndUpdate()');
 
     // find multiple
-    await pools.create({...query, _id: chainId+':0xbarbaz'});
+    await pools.create({...query, _id: chainId+':'+USER_WALLET});
     await tokens.deleteMany({});
     pool = await pools.find({fee: 100});
     expect(pool.length).toBe(2);

@@ -2,6 +2,7 @@ const {Schema} = require("mongoose");
 const {Pool: UniswapPool, tickToPrice} = require('@uniswap/v3-sdk');
 const autopopulate = require('mongoose-autopopulate');
 const {Price} = require("@uniswap/sdk-core");
+const {isAddress} = require("viem");
 
 /**
  * @property {String} _id - Composite key in format chainId:address
@@ -20,13 +21,21 @@ const {Price} = require("@uniswap/sdk-core");
 class PoolModel
 {
   static schema = new Schema({
-    _id: String, // chainId:address
+    _id: { // chainId:address
+      type: String,
+      lowercase: true,
+      validate: function(v) {
+        const [chainId, address] = v.split(':');
+        if (!/^\d+$/.test(chainId)) throw new Error('chainId is not numeric: ' + v);
+        if (!isAddress(address)) throw new Error('Invalid address: ' + v);
+      }
+    },
     token0: {type: String, ref: 'Token', required: true, autopopulate: true},
     token1: {type: String, ref: 'Token', required: true, autopopulate: true},
-    fee: {type: Number, required: true},
+    fee: {type: Number, required: true, min: 0},
     tick: Number,
-    sqrtPriceX96: String,
-    liquidity: String,
+    sqrtPriceX96: { type: String, validate: /^\d+$/ },
+    liquidity: { type: String, validate: /^\d+$/ },
   }, {_id: false, timestamps: true});
   static poolFactoryContract;
   static poolContractFactory;
