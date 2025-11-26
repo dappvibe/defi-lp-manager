@@ -11,7 +11,7 @@
 // To debug with live API's AND database comment out this line (use with CAUTION! Tests will CLEAR db!)
 require('dotenv').config({path: '.env.example'});
 
-import MockApp from "./_mocks/app";
+import MockApp from "./app";
 
 global.USER_WALLET = '0x220866b1a2219f40e72f5c628b65d54268ca3a9d';
 global.WETH = '0x82af49447d8a07e3bd95bd0d56f35241523fbab1';

@@ -1,8 +1,8 @@
-const App = require("../../src/app");
+const App = require("../src/app");
 const {createPublicClient, http} = require("viem");
 const {arbitrum} = require("viem/chains");
 const {asValue, asClass, asFunction} = require("awilix");
-const {MockTelegram} = require("../services/telegram/_mocks");
+const {MockTelegram} = require("./services/telegram/_mocks");
 const {getLocal} = require("mockthereum");
 
 class MockApp extends App {
