@@ -1,3 +1,5 @@
+[![X](https://dappvibe.vercel.app/x.svg?ref=defi-lp-manager)](https://dappvibe.vercel.app/go/x?ref=defi-lp-manager)
+
 # Position Monitor for PancakeSwap
 
 Telegram bot to display DeFi positions, its prices, range and notify if position is out of range.
